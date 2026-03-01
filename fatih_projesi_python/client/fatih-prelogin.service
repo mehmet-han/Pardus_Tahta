@@ -1,0 +1,21 @@
+[Unit]
+Description=Fatih Client Pre-Login Lock Screen
+Before=gdm.service
+After=systemd-user-sessions.service
+Requires=gdm.service
+
+[Service]
+Type=simple
+ExecStart=/opt/fatih-client/prelogin-launcher.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Run with minimal privileges
+User=gdm
+Group=gdm
+Environment="DISPLAY=:0"
+
+[Install]
+WantedBy=multi-user.target

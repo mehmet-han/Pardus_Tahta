@@ -1,0 +1,12 @@
+[Unit]
+Description=Reset GDM auto-login to fatih-kiosk for pre-login lock screen
+Before=gdm.service gdm3.service display-manager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/fatih-client/autologin-switch.sh kiosk
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

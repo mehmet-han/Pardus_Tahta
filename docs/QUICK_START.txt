@@ -1,0 +1,55 @@
+==========================================
+FATIH CLIENT X11 FIX - QUICK START GUIDE
+==========================================
+
+PROBLEM:
+--------
+Application fails to start with "Invalid MIT-MAGIC-COOKIE-1 key" error
+
+SOLUTION (2 STEPS):
+------------------
+
+1. Download all files and copy to your Pardus system
+
+2. Run the fix script:
+   
+   cd ~/Downloads  # or wherever you put the files
+   chmod +x fix_x11_auth.sh
+   sudo ./fix_x11_auth.sh
+
+3. Reboot:
+   
+   sudo reboot
+
+That's it! The application should now start automatically.
+
+TESTING WITHOUT REBOOT:
+-----------------------
+
+If you want to test immediately:
+
+   sudo pkill -f client.py
+   sudo -u etapadmin /opt/fatih-client/launch.sh --foreground
+
+Press Ctrl+C to stop, then reboot for permanent fix.
+
+CHECKING LOGS:
+--------------
+
+   tail -f /opt/fatih-client/logs/watchdog.log
+   tail -f /opt/fatih-client/logs/client.err.log
+
+DIAGNOSTIC:
+-----------
+
+To check if everything is configured correctly:
+
+   chmod +x diagnose_x11.sh
+   sudo -u etapadmin ./diagnose_x11.sh
+
+NEED HELP?
+----------
+
+Read README.md for detailed troubleshooting steps.
+
+==========================================

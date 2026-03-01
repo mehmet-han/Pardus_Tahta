@@ -1,0 +1,10 @@
+#!/bin/bash
+pkill -f client.py
+conda activate fatih
+eval "$(ssh-agent -s)"
+#ssh-add ~/.ssh/terazi
+
+git pull
+
+. client/install.sh
+. client/launch.sh

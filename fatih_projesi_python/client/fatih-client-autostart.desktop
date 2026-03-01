@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fatih Client
+Comment=Fatih Projesi Smartboard Client
+Path=/opt/fatih-client/
+Exec=sh -c 'sleep 5 && /opt/fatih-client/launch.sh'
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+OnlyShowIn=GNOME;XFCE;KDE;LXDE;MATE;

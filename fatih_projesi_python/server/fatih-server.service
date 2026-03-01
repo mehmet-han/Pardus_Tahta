@@ -1,0 +1,20 @@
+[Unit]
+Description=Fatih Projesi Control Server
+After=network.target
+
+[Service]
+Type=simple
+# This user should be the one you are logged in as on the server machine.
+User=cappittall
+# This must be the ABSOLUTE path to your server code.
+WorkingDirectory=/home/cappittall/Documents/Fatih_Projesi/fatih_projesi_python/server
+
+# This command runs uvicorn. It needs uvicorn to be installed for this user.
+# To install: pip install uvicorn fastapi python-multipart
+ExecStart=/home/cappittall/miniconda3/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

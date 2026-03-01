@@ -1,0 +1,18 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ACTUAL_USER=${SUDO_USER:-$USER}
+APP_DIR="/opt/fatih-client"
+CONFIG_DIR="/etc/fatih-client"
+
+pkill -f client.py
+sudo cp $SCRIPT_DIR/client/config.ini $CONFIG_DIR/config.ini
+sudo cp $SCRIPT_DIR/client/client.py $APP_DIR/client.py
+sudo cp $SCRIPT_DIR/client/launch.sh $APP_DIR/launch.sh
+
+sleep 1
+sudo -u $ACTUAL_USER $APP_DIR/launch.sh &
+
+# uvicorn server.app.main:app --host 0.0.0.0 --port 8000 --reload
+sudo systemctl restart fatih-server
+. logs
+

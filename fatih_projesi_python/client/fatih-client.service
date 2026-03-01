@@ -1,0 +1,21 @@
+[Unit]
+Description=Fatih Projesi Control Server
+After=network.target
+
+[Service]
+Type=simple
+# Change this user if you are not running as 'cappittall' on the server machine
+User=cappittall
+# Change this path if your project is located elsewhere
+WorkingDirectory=/home/cappittall/Documents/Fatih_Projesi/fatih_projesi_python/server
+
+# This command assumes the 'fatih' conda/virtual env is NOT used for the server
+# It runs uvicorn directly. Make sure uvicorn is installed globally on the server:
+# pip install uvicorn fastapi python-multipart
+ExecStart=/usr/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
