@@ -18,7 +18,8 @@ fi
 
 # 2. Bağımlılıkların Yüklenmesi
 echo "[1/6] Bağımlılıklar yükleniyor..."
-apt-get update
+# Bazı üçüncü taraf depolar (Google Earth vb.) GPG hatası verebilir, kurulumun durmaması için || true ekliyoruz
+apt-get update || echo "Uyarı: Paket listeleri güncellenirken bazı hatalar oluştu (muhtemelen ilgisiz bir depo kaynaklı), kuruluma devam ediliyor..."
 apt-get install -y python3 python3-pip python3-pyqt5 python3-evdev python3-requests python3-pyudev python3-urllib3
 
 # 3. Klasör Yapısının Hazırlanması
