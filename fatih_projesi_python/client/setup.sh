@@ -56,7 +56,6 @@ Environment=DISPLAY=:0
 ExecStart=/usr/bin/python3 /opt/fatih-client/client.py
 Restart=always
 RestartSec=3
-WatchdogSec=30
 StartLimitBurst=0
 
 [Install]
