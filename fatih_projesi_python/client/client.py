@@ -729,75 +729,58 @@ class OnScreenKeyboard(QDialog):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Ekran Klavyesi")
+        self.setWindowTitle("Sayısal Tuş Takımı")
         self.setModal(True)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
         layout = QVBoxLayout()
-
-        # Keyboard layout
         keyboard_layout = QGridLayout()
 
-        # Row 1: Numbers 1-0
-        numbers = "1234567890"
-        for i, char in enumerate(numbers):
+        # Numpad layout
+        buttons = [
+            ('1', 0, 0), ('2', 0, 1), ('3', 0, 2),
+            ('4', 1, 0), ('5', 1, 1), ('6', 1, 2),
+            ('7', 2, 0), ('8', 2, 1), ('9', 2, 2)
+        ]
+
+        for char, row, col in buttons:
             btn = QPushButton(char)
+            btn.setMinimumSize(80, 80)
+            btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
             btn.clicked.connect(lambda checked, c=char: self.add_char(c))
-            keyboard_layout.addWidget(btn, 0, i)
+            keyboard_layout.addWidget(btn, row, col)
 
-        # Row 2: QWERTYUIOP
-        qwerty1 = "qwertyuiop"
-        for i, char in enumerate(qwerty1):
-            btn = QPushButton(char.upper() if self.shift_pressed else char)
-            btn.clicked.connect(lambda checked, c=char: self.add_char(c))
-            keyboard_layout.addWidget(btn, 1, i)
-
-        # Row 3: ASDFGHJKL
-        qwerty2 = "asdfghjkl"
-        for i, char in enumerate(qwerty2):
-            btn = QPushButton(char.upper() if self.shift_pressed else char)
-            btn.clicked.connect(lambda checked, c=char: self.add_char(c))
-            keyboard_layout.addWidget(btn, 2, i)
-
-        # Row 4: ZXCVBNM and special keys
-        qwerty3 = "zxcvbnm"
-        for i, char in enumerate(qwerty3):
-            btn = QPushButton(char.upper() if self.shift_pressed else char)
-            btn.clicked.connect(lambda checked, c=char: self.add_char(c))
-            keyboard_layout.addWidget(btn, 3, i)
-
-        # Special keys
-        shift_btn = QPushButton("⇧ Shift")
-        shift_btn.clicked.connect(self.toggle_shift)
-        keyboard_layout.addWidget(shift_btn, 3, 7)
-
-        # NEW: Add a Tab button
-        tab_btn = QPushButton("⇥ Tab")
-        tab_btn.clicked.connect(self.press_tab)
-        keyboard_layout.addWidget(tab_btn, 3, 8)
-
+        # Bottom row
         backspace_btn = QPushButton("⌫")
+        backspace_btn.setMinimumSize(80, 80)
+        backspace_btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         backspace_btn.clicked.connect(self.backspace)
-        keyboard_layout.addWidget(backspace_btn, 3, 9)
+        keyboard_layout.addWidget(backspace_btn, 3, 0)
 
-        # Row 5: Space and Enter
-        space_btn = QPushButton("Space")
-        space_btn.clicked.connect(lambda: self.add_char(" "))
-        keyboard_layout.addWidget(space_btn, 4, 0, 1, 7)
+        zero_btn = QPushButton("0")
+        zero_btn.setMinimumSize(80, 80)
+        zero_btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        zero_btn.clicked.connect(lambda checked, c="0": self.add_char(c))
+        keyboard_layout.addWidget(zero_btn, 3, 1)
 
         enter_btn = QPushButton("Enter")
+        enter_btn.setMinimumSize(80, 80)
+        enter_btn.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        enter_btn.setStyleSheet("background-color: #0066cc; color: white;")
         enter_btn.clicked.connect(self.enter_text)
-        keyboard_layout.addWidget(enter_btn, 4, 7, 1, 3)
+        keyboard_layout.addWidget(enter_btn, 3, 2)
 
         layout.addLayout(keyboard_layout)
 
         # Control buttons
         control_layout = QHBoxLayout()
         clear_btn = QPushButton("Temizle")
+        clear_btn.setMinimumHeight(40)
         clear_btn.clicked.connect(self.clear_text)
         control_layout.addWidget(clear_btn)
 
         close_btn = QPushButton("Kapat")
+        close_btn.setMinimumHeight(40)
         close_btn.clicked.connect(self.accept)
         control_layout.addWidget(close_btn)
 
