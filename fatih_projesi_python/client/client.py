@@ -1014,7 +1014,7 @@ class BoardConfigDialog(QDialog):
             return
 
         # Şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', 'mebre')
+        config_password = SETTINGS.get('admin_password', '803580')
         if password != config_password:
             QMessageBox.warning(self, "Hata", "Şifre yanlış!")
             return
@@ -1166,7 +1166,8 @@ class ChangePasswordDialog(QDialog):
         current_layout = QHBoxLayout()
         current_layout.addWidget(QLabel("Mevcut Şifre:"))
         self.current_field = KeyboardLineEdit()
-        self.current_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self.current_field.setEchoMode(QLineEdit.EchoMode.Normal)
+        self.current_field.setText(SETTINGS.get('admin_password', '803580'))
         current_layout.addWidget(self.current_field)
         layout.addLayout(current_layout)
 
@@ -1211,7 +1212,7 @@ class ChangePasswordDialog(QDialog):
             return
 
         # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', 'mebre')
+        config_password = SETTINGS.get('admin_password', '803580')
         if current != config_password:
             QMessageBox.warning(self, "Hata", "Mevcut şifre yanlış!")
             return
@@ -2543,7 +2544,7 @@ class FatihClientApp(QMainWindow):
         2. Dinamik şifre (Mebrecep) ile kontrol
         """
         # Önce config'deki admin şifresi ile kontrol et
-        config_password = SETTINGS.get('admin_password', 'mebre')
+        config_password = SETTINGS.get('admin_password', '803580')
         if password == config_password:
             logging.info("Password validated via config admin_password")
             return True
@@ -3454,7 +3455,7 @@ if __name__ == '__main__':
             try:
                 validate_config()
                 print("✅ Configuration loaded successfully")
-                print(f"Admin password: {SETTINGS.get('admin_password', 'mebre')}")
+                print(f"Admin password: {SETTINGS.get('admin_password', '803580')}")
             except Exception as e:
                 print(f"❌ Configuration error: {e}")
             sys.exit(0)
