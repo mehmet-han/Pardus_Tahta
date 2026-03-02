@@ -16,9 +16,31 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
 from pyudev import Context, Monitor
 from datetime import datetime
+import subprocess as _subprocess
+import hashlib
+
+# --- Global flag: development mode (--no-lock) ---
+NO_LOCK_MODE = '--no-lock' in sys.argv
+if NO_LOCK_MODE:
+    print("[NO-LOCK] Development mode - locking disabled")
 
 # Disable SSL warnings since we're using verify=False for testing
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- Autostart dosya içeriği (watchdog ve client ortak kullanır) ---
+AUTOSTART_DIR = "/etc/xdg/autostart"
+AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "fatih-client-autostart.desktop")
+AUTOSTART_CONTENT = """[Desktop Entry]
+Type=Application
+Name=Fatih Client
+Comment=Akıllı Tahta Kilit Sistemi
+Exec=/usr/bin/python3 /opt/fatih-client/client.py
+Hidden=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
+Terminal=false
+"""
 
 # --- NEW: Setup Logging ---
 log_file = os.path.expanduser("~/fatih_client.log")
@@ -340,6 +362,363 @@ def check_usb_remove() -> bool:
     except Exception as e:
         logging.error(f"Error checking USB remove: {e}")
         return False
+
+# --- Desktop Environment Detection (Pardus ETAP) ---
+def detect_desktop_environment() -> str:
+    """
+    Çalışma zamanında masaüstü ortamını algıla.
+    Pardus ETAP: GNOME (birincil), XFCE (eski tahtalar), Cinnamon (özel imajlar)
+    """
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').upper()
+    session = os.environ.get('DESKTOP_SESSION', '').upper()
+    
+    if 'GNOME' in desktop or 'GNOME' in session:
+        return 'GNOME'
+    elif 'XFCE' in desktop or 'XFCE' in session:
+        return 'XFCE'
+    elif 'CINNAMON' in desktop or 'CINNAMON' in session:
+        return 'CINNAMON'
+    elif 'KDE' in desktop or 'KDE' in session:
+        return 'KDE'
+    
+    # Fallback: process detection
+    try:
+        result = _subprocess.run(['pgrep', '-x', 'gnome-shell'], capture_output=True)
+        if result.returncode == 0:
+            return 'GNOME'
+        result = _subprocess.run(['pgrep', '-x', 'xfce4-panel'], capture_output=True)
+        if result.returncode == 0:
+            return 'XFCE'
+    except Exception:
+        pass
+    
+    return 'UNKNOWN'
+
+DESKTOP_ENV = detect_desktop_environment()
+logging.info(f"Detected desktop environment: {DESKTOP_ENV}")
+
+
+# --- Panel/Taskbar Manager (C# TastbarWindows.cs karşılığı) ---
+class PanelManager:
+    """
+    Taskbar/panel gizleme/gösterme. Windows'taki TastbarWindows.cs karşılığı.
+    GNOME ve XFCE için farklı komutlar kullanılır.
+    """
+    
+    @staticmethod
+    def hide():
+        """Panel/taskbar'ı gizle"""
+        if NO_LOCK_MODE:
+            logging.info("[NO-LOCK] PanelManager.hide() skipped")
+            return
+        try:
+            de = DESKTOP_ENV
+            if de == 'GNOME':
+                # GNOME Shell: Dock/Panel gizle
+                cmds = [
+                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'dock-fixed', 'false'],
+                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'autohide', 'true'],
+                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'intellihide', 'false'],
+                ]
+                for cmd in cmds:
+                    try:
+                        _subprocess.run(cmd, capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+                # GNOME top bar gizleme denemesi
+                try:
+                    _subprocess.run(['gdbus', 'call', '--session',
+                                     '--dest', 'org.gnome.Shell',
+                                     '--object-path', '/org/gnome/Shell',
+                                     '--method', 'org.gnome.Shell.Eval',
+                                     'Main.panel.hide();'],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            elif de == 'XFCE':
+                # XFCE: Panel autohide = always
+                try:
+                    _subprocess.run(['xfconf-query', '-c', 'xfce4-panel',
+                                     '-p', '/panels/panel-1/autohide-behavior', '-s', '2'],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            elif de == 'CINNAMON':
+                try:
+                    _subprocess.run(['gsettings', 'set', 'org.cinnamon',
+                                     'panels-autohide', "['1:true']"],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            logging.info(f"Panel hidden ({de})")
+        except Exception as e:
+            logging.error(f"Error hiding panel: {e}")
+    
+    @staticmethod
+    def show():
+        """Panel/taskbar'ı göster"""
+        try:
+            de = DESKTOP_ENV
+            if de == 'GNOME':
+                cmds = [
+                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'dock-fixed', 'true'],
+                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'autohide', 'false'],
+                ]
+                for cmd in cmds:
+                    try:
+                        _subprocess.run(cmd, capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+                try:
+                    _subprocess.run(['gdbus', 'call', '--session',
+                                     '--dest', 'org.gnome.Shell',
+                                     '--object-path', '/org/gnome/Shell',
+                                     '--method', 'org.gnome.Shell.Eval',
+                                     'Main.panel.show();'],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            elif de == 'XFCE':
+                try:
+                    _subprocess.run(['xfconf-query', '-c', 'xfce4-panel',
+                                     '-p', '/panels/panel-1/autohide-behavior', '-s', '0'],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            elif de == 'CINNAMON':
+                try:
+                    _subprocess.run(['gsettings', 'set', 'org.cinnamon',
+                                     'panels-autohide', "['1:false']"],
+                                    capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            logging.info(f"Panel shown ({de})")
+        except Exception as e:
+            logging.error(f"Error showing panel: {e}")
+
+
+# --- Volume Control (C# VD/VU/VM karşılığı) ---
+class VolumeControl:
+    """
+    Ses kontrolü. Windows'taki SendMessageW VOLUME_MUTE/UP/DOWN karşılığı.
+    PulseAudio (pactl) veya ALSA (amixer) kullanır.
+    """
+    
+    @staticmethod
+    def mute():
+        """Sesi kapat (kilitlenme anında)"""
+        try:
+            cmds = [
+                ['pactl', 'set-sink-mute', '@DEFAULT_SINK@', '1'],
+                ['amixer', 'set', 'Master', 'mute'],
+            ]
+            for cmd in cmds:
+                try:
+                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
+                    if result.returncode == 0:
+                        logging.info(f"Audio muted using {cmd[0]}")
+                        return
+                except FileNotFoundError:
+                    continue
+                except Exception:
+                    continue
+        except Exception as e:
+            logging.error(f"Error muting audio: {e}")
+    
+    @staticmethod
+    def unmute():
+        """Sesi aç ve max yap (kilit açılınca)"""
+        try:
+            cmds_unmute = [
+                ['pactl', 'set-sink-mute', '@DEFAULT_SINK@', '0'],
+                ['amixer', 'set', 'Master', 'unmute'],
+            ]
+            cmds_volume = [
+                ['pactl', 'set-sink-volume', '@DEFAULT_SINK@', '100%'],
+                ['amixer', 'set', 'Master', '100%'],
+            ]
+            for cmd in cmds_unmute:
+                try:
+                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
+                    if result.returncode == 0:
+                        logging.info(f"Audio unmuted using {cmd[0]}")
+                        break
+                except (FileNotFoundError, Exception):
+                    continue
+            for cmd in cmds_volume:
+                try:
+                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
+                    if result.returncode == 0:
+                        logging.info(f"Volume set to max using {cmd[0]}")
+                        break
+                except (FileNotFoundError, Exception):
+                    continue
+        except Exception as e:
+            logging.error(f"Error unmuting audio: {e}")
+
+
+# --- Power Manager (C# powercfg karşılığı) ---
+class PowerManager:
+    """
+    Güç yönetimi. Uyku modu / ekran kapanması devre dışı bırakma.
+    """
+    
+    @staticmethod
+    def disable_sleep():
+        """Uyku modu ve ekran kapanmasını devre dışı bırak"""
+        try:
+            de = DESKTOP_ENV
+            if de == 'GNOME':
+                cmds = [
+                    ['gsettings', 'set', 'org.gnome.settings-daemon.plugins.power',
+                     'sleep-inactive-ac-type', 'nothing'],
+                    ['gsettings', 'set', 'org.gnome.settings-daemon.plugins.power',
+                     'sleep-inactive-battery-type', 'nothing'],
+                    ['gsettings', 'set', 'org.gnome.desktop.session', 'idle-delay', '0'],
+                    ['gsettings', 'set', 'org.gnome.desktop.screensaver', 'lock-enabled', 'false'],
+                ]
+                for cmd in cmds:
+                    try:
+                        _subprocess.run(cmd, capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+            elif de == 'XFCE':
+                cmds = [
+                    ['xfconf-query', '-c', 'xfce4-power-manager',
+                     '-p', '/xfce4-power-manager/inactivity-on-ac', '-s', '0'],
+                    ['xfconf-query', '-c', 'xfce4-power-manager',
+                     '-p', '/xfce4-power-manager/dpms-enabled', '-s', 'false'],
+                ]
+                for cmd in cmds:
+                    try:
+                        _subprocess.run(cmd, capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+            
+            # Genel: systemd-inhibit benzeri (tüm ortamlar)
+            try:
+                _subprocess.run(['xset', 's', 'off'], capture_output=True, timeout=3)
+                _subprocess.run(['xset', '-dpms'], capture_output=True, timeout=3)
+                _subprocess.run(['xset', 's', 'noblank'], capture_output=True, timeout=3)
+            except Exception:
+                pass
+            
+            logging.info(f"Sleep mode disabled ({de})")
+        except Exception as e:
+            logging.error(f"Error disabling sleep: {e}")
+
+
+# --- Shortcut Manager (C# CtrlAltDel karşılığı) ---
+class ShortcutManager:
+    """
+    Klavye kısayollarını devre dışı bırakma/geri yükleme.
+    GNOME ve XFCE için farklı komutlar.
+    """
+    _saved_shortcuts = {}
+    
+    @classmethod
+    def disable(cls):
+        """Tehlikeli kısayolları devre dışı bırak (kilitlenme anında)"""
+        if NO_LOCK_MODE:
+            logging.info("[NO-LOCK] ShortcutManager.disable() skipped")
+            return
+        try:
+            de = DESKTOP_ENV
+            if de == 'GNOME':
+                # Orijinal değerleri kaydet
+                shortcuts_to_disable = {
+                    'org.gnome.mutter overlay-key': "''",
+                    'org.gnome.settings-daemon.plugins.media-keys logout': "''",
+                    'org.gnome.desktop.wm.keybindings switch-to-workspace-up': "'[]'",
+                    'org.gnome.desktop.wm.keybindings switch-to-workspace-down': "'[]'",
+                    'org.gnome.desktop.wm.keybindings panel-main-menu': "'[]'",
+                }
+                for key, disable_val in shortcuts_to_disable.items():
+                    parts = key.rsplit(' ', 1)
+                    schema, prop = parts[0], parts[1]
+                    try:
+                        # Orijinal değeri kaydet
+                        result = _subprocess.run(
+                            ['gsettings', 'get', schema, prop],
+                            capture_output=True, text=True, timeout=3)
+                        if result.returncode == 0:
+                            cls._saved_shortcuts[key] = result.stdout.strip()
+                        
+                        # Devre dışı bırak
+                        _subprocess.run(
+                            ['gsettings', 'set', schema, prop, disable_val],
+                            capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+            
+            elif de == 'XFCE':
+                # XFCE kısayolları devre dışı bırakma
+                try:
+                    _subprocess.run(
+                        ['xfconf-query', '-c', 'xfce4-keyboard-shortcuts',
+                         '-p', '/commands/custom/super', '-s', ''],
+                        capture_output=True, timeout=3)
+                except Exception:
+                    pass
+            
+            # Ortak: Ctrl+Alt+Del engelleme (systemd mask)
+            try:
+                _subprocess.run(
+                    ['sudo', 'systemctl', 'mask', 'ctrl-alt-del.target'],
+                    capture_output=True, timeout=3)
+            except Exception:
+                pass
+            
+            logging.info(f"Keyboard shortcuts disabled ({de})")
+        except Exception as e:
+            logging.error(f"Error disabling shortcuts: {e}")
+    
+    @classmethod
+    def restore(cls):
+        """Kısayolları geri yükle (kilit açılınca)"""
+        try:
+            de = DESKTOP_ENV
+            if de == 'GNOME':
+                for key, original_val in cls._saved_shortcuts.items():
+                    parts = key.rsplit(' ', 1)
+                    schema, prop = parts[0], parts[1]
+                    try:
+                        _subprocess.run(
+                            ['gsettings', 'set', schema, prop, original_val],
+                            capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+                cls._saved_shortcuts.clear()
+            
+            # Ctrl+Alt+Del geri yükle
+            try:
+                _subprocess.run(
+                    ['sudo', 'systemctl', 'unmask', 'ctrl-alt-del.target'],
+                    capture_output=True, timeout=3)
+            except Exception:
+                pass
+            
+            logging.info(f"Keyboard shortcuts restored ({de})")
+        except Exception as e:
+            logging.error(f"Error restoring shortcuts: {e}")
+
+
+# --- Browser/App Killer (C# KillAllItem karşılığı) ---
+def kill_all_browsers():
+    """Tüm tarayıcıları ve system monitor uygulamalarını kapat."""
+    targets = [
+        'chromium', 'chromium-browser', 'firefox', 'firefox-esr',
+        'google-chrome', 'opera', 'midori', 'epiphany',
+        'gnome-system-monitor', 'xfce4-taskmanager',
+        'gnome-terminal', 'xfce4-terminal', 'xterm', 'konsole',
+    ]
+    for target in targets:
+        try:
+            _subprocess.run(['pkill', '-f', target], capture_output=True, timeout=3)
+        except Exception:
+            pass
+    logging.info("All browsers and monitors killed")
+
 
 # --- On-Screen Keyboard Dialog (equivalent to C# FormEkranKlavyesi) ---
 class OnScreenKeyboard(QDialog):
@@ -916,6 +1295,124 @@ class ChangePasswordDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"Şifre kaydedilemedi: {e}")
 
+
+# --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
+class ScheduleDialog(QDialog):
+    """Ders giriş/çıkış saatlerini gösteren form."""
+    DAYS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+
+    def __init__(self, parent=None, schedule_data=None):
+        super().__init__(None)
+        self.parent = parent
+        self.schedule_data = schedule_data
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Giriş/Çıkış Saatleri")
+        self.setModal(True)
+        self.setMinimumSize(500, 600)
+
+        layout = QVBoxLayout()
+
+        # Gün seçim butonları
+        day_layout = QHBoxLayout()
+        self.day_buttons = []
+        today = datetime.now().isoweekday()  # 1=Mon, 7=Sun
+        for i in range(1, 8):
+            btn = QPushButton(self.DAYS[i][:3])
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton { padding: 8px 12px; border: 1px solid #555; border-radius: 4px; background: #2a2a3e; color: white; }
+                QPushButton:checked { background: #0066cc; border-color: #0088ff; font-weight: bold; }
+            """)
+            btn.clicked.connect(lambda checked, day=i: self._select_day(day))
+            day_layout.addWidget(btn)
+            self.day_buttons.append(btn)
+        layout.addLayout(day_layout)
+
+        # Saat tablosu başlık
+        header = QHBoxLayout()
+        for text in ['Ders', 'Giriş', 'Çıkış']:
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: bold; font-size: 14px; padding: 4px; color: white; background: #333;")
+            lbl.setAlignment(Qt.AlignCenter)
+            header.addWidget(lbl)
+        layout.addLayout(header)
+
+        # 18 ders periyodu satırları
+        self.rows = []
+        for i in range(1, 19):
+            row_layout = QHBoxLayout()
+            ders_lbl = QLabel(f"{i}. Ders")
+            ders_lbl.setAlignment(Qt.AlignCenter)
+            ders_lbl.setStyleSheet("padding: 2px; font-size: 12px;")
+            giris_lbl = QLabel("—")
+            giris_lbl.setAlignment(Qt.AlignCenter)
+            giris_lbl.setStyleSheet("padding: 2px; font-size: 12px; color: #00cc66;")
+            cikis_lbl = QLabel("—")
+            cikis_lbl.setAlignment(Qt.AlignCenter)
+            cikis_lbl.setStyleSheet("padding: 2px; font-size: 12px; color: #ff6644;")
+            row_layout.addWidget(ders_lbl)
+            row_layout.addWidget(giris_lbl)
+            row_layout.addWidget(cikis_lbl)
+            layout.addLayout(row_layout)
+            self.rows.append((giris_lbl, cikis_lbl))
+
+        # Kapat butonu
+        close_btn = QPushButton("Kapat")
+        close_btn.setStyleSheet("padding: 8px; background: #0066cc; color: white; border-radius: 4px;")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        self.setLayout(layout)
+        self.setStyleSheet("background-color: #1e1e2e; color: white;")
+
+        # Bugünün gününü seç
+        self._select_day(today)
+
+    def _select_day(self, day_index):
+        """Seçilen güne göre saatleri güncelle."""
+        # Buton durumlarını güncelle
+        for i, btn in enumerate(self.day_buttons):
+            btn.setChecked(i + 1 == day_index)
+
+        # Tüm satırları temizle
+        for giris, cikis in self.rows:
+            giris.setText("—")
+            cikis.setText("—")
+
+        if not self.schedule_data or 'hours' not in self.schedule_data:
+            return
+
+        hours_data = self.schedule_data.get('hours')
+        try:
+            if isinstance(hours_data, list):
+                if day_index < len(hours_data):
+                    day_schedule = hours_data[day_index]
+                    for period in range(1, min(19, len(day_schedule))):
+                        period_data = day_schedule[period]
+                        if isinstance(period_data, list) and len(period_data) >= 3:
+                            start = period_data[1] if period_data[1] and period_data[1] != '0' else ''
+                            end = period_data[2] if period_data[2] and period_data[2] != '0' else ''
+                            if start:
+                                self.rows[period - 1][0].setText(start)
+                            if end:
+                                self.rows[period - 1][1].setText(end)
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(day_index), {})
+                for k in range(1, 19):
+                    slot = day_schedule.get(str(k))
+                    if slot and isinstance(slot, dict):
+                        start = slot.get('1', '')
+                        end = slot.get('2', '')
+                        if start and start != '0':
+                            self.rows[k - 1][0].setText(start)
+                        if end and end != '0':
+                            self.rows[k - 1][1].setText(end)
+        except Exception as e:
+            logging.warning(f"Error displaying schedule: {e}")
+
+
 # --- Keyboard Locker Thread (More Aggressive) ---
 class KeyboardLocker(threading.Thread):
     def __init__(self):
@@ -1204,7 +1701,8 @@ class NetworkClient:
         """
         data = {
             "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480"
+            "fnc": "3480",
+            "t_n": self.settings.get('board_id', '0')
         }
         response = self._make_request("5563", data)
         if response:
@@ -1274,8 +1772,14 @@ class FatihClientApp(QMainWindow):
         self.init_time_timer()
         self.init_schedule_timer() # New timer for scheduling
 
+        # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
+        PowerManager.disable_sleep()
+
         # Show the lock screen at startup
-        self.lock_system("Sistem başlangıcı")
+        if not NO_LOCK_MODE:
+            self.lock_system("Sistem başlangıcı")
+        else:
+            logging.info("[NO-LOCK] Skipping initial lock")
 
         self.poll_server()
 
@@ -1371,6 +1875,21 @@ class FatihClientApp(QMainWindow):
         self.admin_input.setGeometry(10, 10, 300, 30)
         self.admin_input.hide()
         self.admin_input.returnPressed.connect(self.process_admin_command)
+
+        # Version update notification label (initially hidden)
+        self.version_update_label = QLabel("", self)
+        self.version_update_label.setStyleSheet("""
+            QLabel {
+                color: #00ff88;
+                background-color: rgba(0, 0, 0, 200);
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+        """)
+        self.version_update_label.setAlignment(Qt.AlignCenter)
+        self.version_update_label.setGeometry(self.width() - 350, 20, 320, 40)
+        self.version_update_label.setVisible(False)
 
         # Set up context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1505,10 +2024,37 @@ class FatihClientApp(QMainWindow):
             new_version = self.network_client.check_version()
             if new_version and new_version != SETTINGS.get('version'):
                 logging.info(f"Version update available: {SETTINGS.get('version')} -> {new_version}")
-                # TODO: Add UI notification or auto-update trigger
+                self.version_update_label.setText(f"⬆ Güncelleme mevcut: v{new_version}")
+                self.version_update_label.setVisible(True)
+
+            # --- Bileşen 13: Autostart dosyası kontrolü ---
+            self._repair_autostart()
                 
         except Exception as e:
             logging.error(f"Error in maintenance tasks: {e}")
+
+    def _repair_autostart(self):
+        """Autostart dosyasını kontrol et, silinmişse/bozulmuşsa geri oluştur (Bileşen 13)."""
+        try:
+            if not os.path.exists(AUTOSTART_FILE):
+                logging.warning(f"Autostart file missing: {AUTOSTART_FILE}")
+                os.makedirs(AUTOSTART_DIR, exist_ok=True)
+                with open(AUTOSTART_FILE, 'w') as f:
+                    f.write(AUTOSTART_CONTENT)
+                logging.info(f"Autostart file restored: {AUTOSTART_FILE}")
+            else:
+                # İçerik doğru mu kontrol et
+                with open(AUTOSTART_FILE, 'r') as f:
+                    content = f.read()
+                if '/opt/fatih-client/client.py' not in content:
+                    logging.warning("Autostart file content is incorrect, restoring...")
+                    with open(AUTOSTART_FILE, 'w') as f:
+                        f.write(AUTOSTART_CONTENT)
+                    logging.info("Autostart file content restored")
+        except PermissionError:
+            logging.error("Permission denied when repairing autostart file")
+        except Exception as e:
+            logging.error(f"Error repairing autostart: {e}")
 
     def _format_time(self, time_str):
         """Saat formatını HH:MM formatına çevir (C# Tools.ClockFrmt karşılığı)"""
@@ -1741,13 +2287,23 @@ class FatihClientApp(QMainWindow):
         return headers
 
     def poll_server(self):
+        # --- Gece yarısı otomatik kapatma (C# CtrlNetworkVal karşılığı) ---
+        now = datetime.now()
+        if now.hour == 0 and now.minute <= 30:
+            logging.info("Gece yarısı olduğu için sistem kapatılıyor...")
+            self.save_log("Gece yarısı otomatik kapatma", "midnight")
+            _subprocess.run(['sudo', 'poweroff'], capture_output=True)
+            return
+
         response_text = self.network_client.ctrl_post()
         if response_text:
             logging.info("Successfully polled server.")
             commands = response_text.split(',')
             self.process_commands(commands)
         else:
-            self.message_label.setText("Sunucuya Bağlanılamıyor...")
+            # İnternet durumu gösterimi (C# CtrlNetworkVal karşılığı)
+            if self.is_locked:
+                self.message_label.setText("İNTERNET YOK!!!")
             logging.error("Failed to poll server.")
 
     def process_commands(self, commands):
@@ -1806,17 +2362,46 @@ class FatihClientApp(QMainWindow):
             
             if self.system_remove == 1:
                 self.remove_system()
+
+            # --- Log isteme (C# LogSend karşılığı) ---
+            if self.log_send == 1:
+                logging.info("Server requesting logs...")
+                try:
+                    log_path = os.path.expanduser("~/fatih_client.log")
+                    if os.path.exists(log_path):
+                        with open(log_path, 'r', errors='ignore') as f:
+                            lines = f.readlines()
+                        last_lines = ''.join(lines[-50:])  # Son 50 satır
+                        self.network_client.save_log(last_lines, "logfile")
+                        self.acknowledge_command("logSend", "0")
+                except Exception as le:
+                    logging.error(f"Error sending logs: {le}")
+
+            # --- Mesaj gelince ve sistem açıksa otomatik kilitle (C# davranışı) ---
+            if message != "Sistem Kilitli" and message != '0' and not self.is_locked:
+                logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
+                self.lock_system(f"Mesaj alındı: {message}")
+
         except (ValueError, IndexError) as e:
             logging.error(f"Error processing server commands '{commands}': {e}")
 
     def lock_system(self, reason=""):
+        if NO_LOCK_MODE:
+            logging.info(f"[NO-LOCK] lock_system() skipped: {reason}")
+            return
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
             
-            # NEW: Log the lock event and notify the server
+            # Log the lock event and notify the server
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
+
+            # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
+            PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
+            VolumeControl.mute()         # Ses kapat (C# VD)
+            ShortcutManager.disable()    # Kısayolları devre dışı bırak
+            kill_all_browsers()          # Tarayıcıları kapat (C# KillAllItem)
 
             # Ensure UI elements are visible
             self.login_button.setVisible(True)
@@ -1848,7 +2433,12 @@ class FatihClientApp(QMainWindow):
             self.keyboard_locker.stop()
             self.keyboard_locker = None
             
-        # NEW: Reset USB unlock flag if unlocked by other means (not USB)
+        # --- Güvenlik katmanlarını geri aç (C# LockFree karşılığı) ---
+        PanelManager.show()          # Taskbar göster
+        VolumeControl.unmute()       # Ses aç (C# VU)
+        ShortcutManager.restore()    # Kısayolları geri yükle
+
+        # Reset USB unlock flag if unlocked by other means (not USB)
         if not reason.startswith("USB ile"):
             self.usb_monitor.reset_usb_unlock_flag()
             
@@ -2006,6 +2596,11 @@ class FatihClientApp(QMainWindow):
         change_pass_action = QAction("Şifre Değiştir", self)
         change_pass_action.triggered.connect(self.show_change_password)
         context_menu.addAction(change_pass_action)
+
+        # Giriş/Çıkış Saatleri (C# FormGirisCikisSaatleri karşılığı)
+        schedule_action = QAction("Giriş/Çıkış Saatleri", self)
+        schedule_action.triggered.connect(self.show_schedule)
+        context_menu.addAction(schedule_action)
 
         context_menu.addSeparator()
 
@@ -2197,6 +2792,11 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         change_dialog = ChangePasswordDialog(self)
         change_dialog.exec()
 
+    def show_schedule(self):
+        """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
+        dialog = ScheduleDialog(self, self.schedule)
+        dialog.exec()
+
     def process_admin_command(self):
         """Process admin commands (equivalent to C#textBox1_KeyDown)"""
         command = self.admin_input.text().strip()
@@ -2282,6 +2882,9 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             label_height = 100
             label_x = (self.width() - label_width) // 2
             self.board_id_label.setGeometry(label_x, 20, label_width, label_height)
+
+        if hasattr(self, 'version_update_label'):
+            self.version_update_label.setGeometry(self.width() - 350, 20, 320, 40)
 
 def main():
     try:

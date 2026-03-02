@@ -1,0 +1,17 @@
+[Unit]
+Description=Fatih Akıllı Tahta İstemci Uygulaması
+After=graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/python3 /opt/fatih-client/client.py
+Restart=always
+RestartSec=3
+WatchdogSec=30
+StartLimitBurst=0
+
+[Install]
+WantedBy=graphical-session.target
