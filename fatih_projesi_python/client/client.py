@@ -985,10 +985,15 @@ class BoardConfigDialog(QDialog):
         button_layout = QHBoxLayout()
 
         cancel_btn = QPushButton("İptal")
+        cancel_btn.setMinimumHeight(50)
+        cancel_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         cancel_btn.clicked.connect(self.reject)
+        cancel_btn.clicked.connect(self.close)
         button_layout.addWidget(cancel_btn)
 
         confirm_btn = QPushButton("Onayla")
+        confirm_btn.setMinimumHeight(50)
+        confirm_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         confirm_btn.clicked.connect(self.confirm_selection)
         confirm_btn.setDefault(True)
         button_layout.addWidget(confirm_btn)
