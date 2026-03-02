@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/etapadmin/.Xauthority
+Environment=XAUTHORITY=/run/user/1000/gdm/Xauthority
 ExecStart=/usr/bin/python3 /opt/fatih-client/client.py
 Restart=always
 RestartSec=3
