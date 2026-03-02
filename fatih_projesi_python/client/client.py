@@ -2415,10 +2415,14 @@ class FatihClientApp(QMainWindow):
             
             QApplication.processEvents()
 
-            if not self.keyboard_locker or not self.keyboard_locker.is_alive():
-                self.keyboard_locker = KeyboardLocker()
-                self.keyboard_locker.start()
-
+            try:
+                if not getattr(self, 'keyboard_locker', None) or not self.keyboard_locker.is_alive():
+                    self.keyboard_locker = KeyboardLocker()
+                    self.keyboard_locker.start()
+                    logging.info("KeyboardLocker thread started successfully")
+            except Exception as e:
+                logging.error(f"Failed to start KeyboardLocker: {e}")
+                self.keyboard_locker = None
     def unlock_system(self, reason=""):
         logging.info(f"Unlocking system: {reason}")
 
