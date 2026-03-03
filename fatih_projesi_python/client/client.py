@@ -1174,8 +1174,16 @@ class ChangePasswordDialog(QDialog):
         current_layout = QHBoxLayout()
         current_layout.addWidget(QLabel("Mevcut Şifre:"))
         self.current_field = KeyboardLineEdit()
-        self.current_field.setEchoMode(QLineEdit.EchoMode.Normal)
-        self.current_field.setText(SETTINGS.get('admin_password', '803580'))
+        
+        # Mevcut şifre gösterimi mantığı (Okul şifreyi değiştirdiyse gizle)
+        config_password = SETTINGS.get('admin_password', '803580')
+        if config_password == '803580':
+            self.current_field.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.current_field.setText(config_password)
+        else:
+            self.current_field.setEchoMode(QLineEdit.EchoMode.Password)
+            self.current_field.setText('')
+            
         current_layout.addWidget(self.current_field)
         layout.addLayout(current_layout)
 
@@ -2357,11 +2365,13 @@ class FatihClientApp(QMainWindow):
                 # Birden fazla kapatma yöntemi dene
                 import subprocess
                 shutdown_commands = [
+                    ['dbus-send', '--system', '--print-reply', '--dest=org.freedesktop.login1', '/org/freedesktop/login1', 'org.freedesktop.login1.Manager.PowerOff', 'boolean:true'],
+                    ['systemctl', 'poweroff'],
+                    ['poweroff'],
                     ['sudo', 'poweroff'],
                     ['sudo', 'systemctl', 'poweroff'],
                     ['sudo', '/sbin/poweroff'],
                     ['sudo', 'shutdown', '-h', 'now'],
-                    ['poweroff'],
                 ]
                 for cmd in shutdown_commands:
                     try:
