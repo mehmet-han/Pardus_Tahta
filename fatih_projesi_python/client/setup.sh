@@ -31,6 +31,7 @@ mkdir -p "$INSTALL_DIR"
 echo "[3/6] Dosyalar kopyalanıyor..."
 cp ./client.py "$INSTALL_DIR/"
 cp ./watchdog.py "$INSTALL_DIR/"
+cp -r ./resources "$INSTALL_DIR/" 2>/dev/null || echo "Uyarı: resources klasörü bulunamadı."
 cp ./config.ini "$INSTALL_DIR/" 2>/dev/null || echo "Uyarı: config.ini bulunamadı, default kullanılacak."
 cp ./fatih-client-app.service "$INSTALL_DIR/" || echo "Uyarı: .service dosyası bulunamadı."
 
