@@ -2315,26 +2315,40 @@ class FatihClientApp(QMainWindow):
         if len(commands) < 5: return
         try:
             self.tahta_lock = int(commands[0])
-            message = commands[1] if commands[1] != '0' else "Sistem Kilitli"
+            message = commands[1] if commands[1] != '0' else ""
             self.shutDown = int(commands[2])
             self.system_remove = int(commands[3])
             self.log_send = int(commands[4])
             
-            self.message_label.setText(message)
-            
-            if self.tahta_lock == 1 and not self.is_locked:
+            # --- Mesaj gelirse ve sistem açıksa otomatik kilitle (C# davranışı) ---
+            if message != "" and not self.is_locked:
+                logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
+                self.manual_override = False # Mesaj gelirse override'ı iptal et
+                self.lock_system(f"Mesaj alındı: {message}")
+                if hasattr(self, 'message_label'):
+                    self.message_label.setText(message)
+                return
+
+            if self.tahta_lock == 1 and not self.is_locked and message == "":
                 # Don't lock if USB with password is present (regardless of how it was unlocked)
                 if check_usb_password():
                     logging.info("Server says lock, but USB is present. Skipping lock.")
                 elif self.manual_override:
-                    logging.info("Server says lock, but manual override is active (password/USB unlock). Skipping lock.")
+                    logging.info("Server says lock, but manual override is active. Skipping lock.")
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
-            elif self.tahta_lock == 0 and self.is_locked and message == "Sistem Kilitli":
+            elif self.tahta_lock == 0 and self.is_locked and message == "":
                 # C# mantığı: TahtaLock==0 && systmlock && Message==""
-                # Sadece mesaj boşken ("Sistem Kilitli" = varsayılan boş mesaj) kilidi aç
-                # Mesaj varken kilidi açma — mesaj öncelikli
-                self.unlock_system("Sunucudan gelen komut ile açıldı")
+                self.unlock_system("Mobilden veya Programdan İstek Geldiği İçin Açıldı")
+
+            # Update Message Label
+            if hasattr(self, 'message_label'):
+                if message != "":
+                    self.message_label.setText(message)
+                elif self.is_locked:
+                    self.message_label.setText("Sistem Kilitli")
+                else:
+                    self.message_label.setText(f"[{SETTINGS.get('version')}] {SETTINGS.get('board_name', 'Board')}")
             
             if self.shutDown == 1:
                 logging.info("Shutdown command received from server (mobile app)")
@@ -2385,10 +2399,7 @@ class FatihClientApp(QMainWindow):
                 except Exception as le:
                     logging.error(f"Error sending logs: {le}")
 
-            # --- Mesaj gelince ve sistem açıksa otomatik kilitle (C# davranışı) ---
-            if message != "Sistem Kilitli" and message != '0' and not self.is_locked:
-                logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
-                self.lock_system(f"Mesaj alındı: {message}")
+            pass
 
         except (ValueError, IndexError) as e:
             logging.error(f"Error processing server commands '{commands}': {e}")
