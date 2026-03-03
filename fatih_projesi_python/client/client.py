@@ -285,35 +285,43 @@ def check_usb_password() -> bool:
         with open('/proc/mounts', 'r') as f:
             mounts = f.readlines()
         
+        usb_mounts_found = []
         for mount in mounts:
             parts = mount.split()
             if len(parts) >= 2:
                 device = parts[0]
                 mount_point = parts[1]
                 
-                # Skip non-USB mount points (tmp, system directories)
-                if mount_point.startswith('/tmp') or mount_point.startswith('/sys') or mount_point.startswith('/proc'):
+                # Skip system mount points
+                if mount_point in ('/', '/boot', '/home') or mount_point.startswith('/sys') or mount_point.startswith('/proc') or mount_point.startswith('/dev'):
                     continue
                 
-                # Check if it's a removable device (USB drive) - typically mounted under /media or /mnt
+                # Check if it's a block device (USB drives are /dev/sd*, /dev/usb*, etc.)
                 if device.startswith('/dev/sd') or device.startswith('/dev/usb'):
-                    # Additional check: USB drives are usually mounted in /media or /mnt
-                    if not (mount_point.startswith('/media') or mount_point.startswith('/mnt') or mount_point.startswith('/run/media')):
-                        continue
-                        
-                    pass_file = os.path.join(mount_point, "pass.txt")
-                    if os.path.exists(pass_file):
-                        try:
-                            with open(pass_file, 'r') as f:
-                                content = f.read().strip()
-                                if content == USB_PASSWORD:
-                                    logging.info(f"USB password found at {mount_point}")
-                                    return True
-                        except Exception as e:
-                            logging.warning(f"Error reading pass.txt from {mount_point}: {e}")
-                            continue
+                    # USB drives can be mounted in /media, /mnt, /run/media, or /tmp
+                    if mount_point.startswith('/media') or mount_point.startswith('/mnt') or mount_point.startswith('/run/media') or mount_point.startswith('/tmp'):
+                        usb_mounts_found.append(mount_point)
+                        pass_file = os.path.join(mount_point, "pass.txt")
+                        if os.path.exists(pass_file):
+                            try:
+                                with open(pass_file, 'r') as f:
+                                    content = f.read().strip()
+                                    logging.info(f"USB pass.txt found at {mount_point}, content length: {len(content)}")
+                                    if content == USB_PASSWORD:
+                                        logging.info(f"USB password MATCHED at {mount_point}")
+                                        return True
+                                    else:
+                                        logging.warning(f"USB pass.txt content does NOT match at {mount_point}")
+                            except Exception as e:
+                                logging.warning(f"Error reading pass.txt from {mount_point}: {e}")
+                                continue
+                        else:
+                            logging.debug(f"No pass.txt at USB mount: {mount_point}")
         
-        logging.debug("No USB drive with correct password found")
+        if usb_mounts_found:
+            logging.info(f"USB mounts found but no valid password: {usb_mounts_found}")
+        else:
+            logging.debug("No USB drives detected in mount points")
         return False
         
     except Exception as e:
@@ -1766,11 +1774,19 @@ class FatihClientApp(QMainWindow):
 
         # Show the lock screen at startup
         if not NO_LOCK_MODE:
-            self.lock_system("Sistem başlangıcı")
+            # İlk başlangıçta USB kontrolü yap - USB takılıysa kilitleme
+            if check_usb_password():
+                logging.info("USB password found at startup - skipping initial lock")
+                self.usb_monitor.unlocked_by_usb = True
+                self.manual_override = True
+            else:
+                self.lock_system("Sistem başlangıcı")
         else:
             logging.info("[NO-LOCK] Skipping initial lock")
 
-        self.poll_server()
+        # İlk poll_server'ı geciktir - kilit ekranının kararlı olması için
+        # (Hemen çağırırsak sunucu tahta_lock=0 döndürüp kilidi anında açar)
+        QTimer.singleShot(5000, self.poll_server)
 
     def init_ui(self):
         # NEW: Visible change to confirm new version
@@ -2314,7 +2330,10 @@ class FatihClientApp(QMainWindow):
                     logging.info("Server says lock, but manual override is active (password/USB unlock). Skipping lock.")
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
-            elif self.tahta_lock == 0 and self.is_locked:
+            elif self.tahta_lock == 0 and self.is_locked and message == "Sistem Kilitli":
+                # C# mantığı: TahtaLock==0 && systmlock && Message==""
+                # Sadece mesaj boşken ("Sistem Kilitli" = varsayılan boş mesaj) kilidi aç
+                # Mesaj varken kilidi açma — mesaj öncelikli
                 self.unlock_system("Sunucudan gelen komut ile açıldı")
             
             if self.shutDown == 1:
