@@ -2347,7 +2347,8 @@ class FatihClientApp(QMainWindow):
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
                 # C# mantığı: TahtaLock==0 && systmlock && Message==""
-                self.unlock_system("Mobilden veya Programdan İstek Geldiği İçin Açıldı")
+                # "Sunucudan" kelimesi eklendi ki manual_override devreye girmesin, Mebrecep kilitlemeye devam edebilsin.
+                self.unlock_system("Sunucudan (Mobilden) İstek Geldiği İçin Açıldı")
 
             # Update Message Label
             if hasattr(self, 'message_label'):
