@@ -1938,7 +1938,7 @@ class FatihClientApp(QMainWindow):
 
         # Status message label
         self.message_label = QLabel("Yükleniyor...", self)
-        self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: rgba(0,0,0,0.5);")
+        self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: transparent;")
         self.message_label.setAlignment(Qt.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
