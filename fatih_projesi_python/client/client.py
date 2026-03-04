@@ -131,6 +131,73 @@ except ValueError as e:
 USB_PASSWORD = "32541kehİUFali_veli_hüseyin?İ44EHEJSTRİHTEMES5488965E8GİEİ"
 USB_REMOVE_PASSWORD = "uege32541kehİUFali_veli_hüseyin?İEHEJSTRİH52874TEMES548965E8GİEİ"
 
+# --- NEW: Ensure USB drives are mounted (fixes USB not working while locked) ---
+def ensure_usb_mounted():
+    """
+    Kilit aktifken masaüstü ortamı USB otomatik bağlama yapmayabilir.
+    Bu fonksiyon bağlanmamış USB cihazlarını udisksctl ile bağlar.
+    """
+    try:
+        # lsblk ile bağlanmamış USB block cihazlarını bul
+        result = _subprocess.run(
+            ['lsblk', '-rno', 'NAME,TYPE,MOUNTPOINT,TRAN'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return
+        
+        for line in result.stdout.strip().split('\n'):
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            
+            name = parts[0]
+            dev_type = parts[1]
+            mountpoint = parts[2] if len(parts) > 2 else ''
+            transport = parts[3] if len(parts) > 3 else ''
+            
+            # Sadece USB partition'ları ve mount edilmemişleri
+            if dev_type == 'part' and transport == 'usb' and mountpoint == '':
+                device_path = f'/dev/{name}'
+                logging.info(f"Bağlanmamış USB cihazı bulundu: {device_path}, mount ediliyor...")
+                try:
+                    mount_result = _subprocess.run(
+                        ['udisksctl', 'mount', '-b', device_path, '--no-user-interaction'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if mount_result.returncode == 0:
+                        logging.info(f"USB cihazı başarıyla mount edildi: {device_path} -> {mount_result.stdout.strip()}")
+                    else:
+                        logging.warning(f"USB mount başarısız: {device_path}: {mount_result.stderr.strip()}")
+                except Exception as me:
+                    logging.warning(f"USB mount hatası: {device_path}: {me}")
+            
+            # USB disk olup hiç partition'ı olmayan cihazlar (tek partition'sız USB)
+            elif dev_type == 'disk' and transport == 'usb' and mountpoint == '':
+                # Bu disk'in partition'ı var mı kontrol et
+                has_part = False
+                for check_line in result.stdout.strip().split('\n'):
+                    check_parts = check_line.split()
+                    if len(check_parts) >= 2 and check_parts[1] == 'part' and check_parts[0].startswith(name):
+                        has_part = True
+                        break
+                
+                if not has_part:
+                    device_path = f'/dev/{name}'
+                    logging.info(f"Partition'sız USB disk bulundu: {device_path}, mount ediliyor...")
+                    try:
+                        mount_result = _subprocess.run(
+                            ['udisksctl', 'mount', '-b', device_path, '--no-user-interaction'],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        if mount_result.returncode == 0:
+                            logging.info(f"USB disk mount edildi: {device_path} -> {mount_result.stdout.strip()}")
+                    except Exception as me:
+                        logging.warning(f"USB disk mount hatası: {device_path}: {me}")
+                        
+    except Exception as e:
+        logging.debug(f"ensure_usb_mounted hatası: {e}")
+
 # --- Dynamic Password Control (from C# pctrl.cs) ---
 # Sunucu ve istemci aynı algoritma ile şifre üretiyor
 # Öğretmen Mebrecep uygulamasından bu şifreyi görüp giriyor
@@ -1760,6 +1827,16 @@ class FatihClientApp(QMainWindow):
         self.tahta_lock = 0
         self.system_remove = 0
         self.log_send = 0
+        
+        # --- İNTERNET KOPMA KORUNMASI ---
+        # Sunucunun son gönderdiği tahta_lock değerini takip et
+        # -1 = sunucudan henüz cevap alınmadı (bilinmiyor)
+        # Bu sayede internet kopup geldiğinde sunucu varsayılan tahta_lock=0 
+        # dönerse, önceki durumla karşılaştırırız:
+        # - Eğer önceki değer 1 idi ve şimdi 0 → birileri Mebrecep/yönetimden açtı → kilidi aç
+        # - Eğer önceki değer -1 (bilinmiyor) ve şimdi 0 → internet yeni geldi → kilidi AÇMA
+        self.last_server_tahta_lock = -1  # Henüz sunucudan cevap yok
+        self.server_has_spoken = False  # Sunucu en az bir kez başarılı cevap verdi mi?
 
         # --- SCHEDULING ---
         self.schedule = None
@@ -2244,6 +2321,9 @@ class FatihClientApp(QMainWindow):
         Only locks system if it was originally unlocked by USB
         """
         try:
+            # Kilit aktifken USB otomatik mount edilmeyebilir, biz yapalım
+            ensure_usb_mounted()
+            
             # Check if USB with password is present
             usb_present = check_usb_password()
             
@@ -2314,10 +2394,16 @@ class FatihClientApp(QMainWindow):
             commands = response_text.split(',')
             self.process_commands(commands)
         else:
-            # İnternet durumu gösterimi (C# CtrlNetworkVal karşılığı)
+            # İNTERNET KOPTU - KİLİT DURUMUNU KORUMASI İÇİN:
+            # last_server_tahta_lock'u -1'e çek (bilinmiyor)
+            # Böylece internet geldiğinde sunucu tahta_lock=0 dönerse,
+            # "önceki değer -1 → sunucu ilk defa konuşuyor" olur ve kilidi AÇMAZ
+            self.last_server_tahta_lock = -1
+            self.server_has_spoken = False
+            
             if self.is_locked:
                 self.message_label.setText("İNTERNET YOK!!!")
-            logging.error("Failed to poll server.")
+            logging.error("Failed to poll server - lock state preserved, server state reset.")
 
     def process_commands(self, commands):
         if len(commands) < 5: return
@@ -2346,9 +2432,30 @@ class FatihClientApp(QMainWindow):
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
-                # C# mantığı: TahtaLock==0 && systmlock && Message==""
-                # "Sunucudan" kelimesi eklendi ki manual_override devreye girmesin, Mebrecep kilitlemeye devam edebilsin.
-                self.unlock_system("Sunucudan (Mobilden) İstek Geldiği İçin Açıldı")
+                # --- İNTERNET KOPMA KORUNMASI ---
+                # Kilidi SADECE sunucu bilinçli olarak 1→0 geçişi yaptığında aç
+                # Yani: Önceki sunucu değeri 1 idi (kilitli), şimdi 0 oldu (açık)
+                # Bu demek ki birisi Mebrecep/yönetim panelinden açtı
+                #
+                # Eğer önceki değer -1 ise (internet yeni geldi, sunucu durumu bilinmiyor)
+                # → kilidi AÇMA, çünkü bu varsayılan değer olabilir
+                # Öğrenci interneti çekip geri taktığında tahta açılmasın!
+                if self.last_server_tahta_lock == 1:
+                    # Sunucu önceden 1 (kilitli) demiş, şimdi 0 (açık) diyor
+                    # → Birisi Mebrecep/yönetimden açmış
+                    logging.info("Sunucu tahta_lock 1→0 geçişi: Mebrecep/yönetimden açıldı")
+                    self.unlock_system("Sunucudan (Mobilden) İstek Geldiği İçin Açıldı")
+                elif not self.server_has_spoken:
+                    # Sunucu ilk defa konuşuyor veya internet yeni geldi
+                    # → Kilidi AÇMA, varsayılan değer olabilir
+                    logging.info("Sunucu tahta_lock=0 ama ilk bağlantı/internet yeni geldi - kilit korunuyor")
+                else:
+                    # Sunucu zaten 0 diyordu ve hala 0 diyor, durum değişmedi
+                    logging.debug("Sunucu tahta_lock=0, önceki de 0 idi - değişiklik yok")
+            
+            # --- Sunucunun son bilinen durumunu güncelle ---
+            self.last_server_tahta_lock = self.tahta_lock
+            self.server_has_spoken = True
 
             # Update Message Label
             if hasattr(self, 'message_label'):
