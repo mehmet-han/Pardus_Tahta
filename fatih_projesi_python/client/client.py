@@ -138,9 +138,9 @@ def ensure_usb_mounted():
     Bu fonksiyon bağlanmamış USB cihazlarını udisksctl ile bağlar.
     """
     try:
-        # lsblk ile bağlanmamış USB block cihazlarını bul
+        # lsblk ile bağlanmamış USB block cihazlarını bul (RM=1: removable)
         result = _subprocess.run(
-            ['lsblk', '-rno', 'NAME,TYPE,MOUNTPOINT,TRAN'],
+            ['lsblk', '-rno', 'NAME,TYPE,RM,MOUNTPOINT'],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
@@ -148,16 +148,16 @@ def ensure_usb_mounted():
         
         for line in result.stdout.strip().split('\n'):
             parts = line.split()
-            if len(parts) < 2:
+            if len(parts) < 3:
                 continue
             
             name = parts[0]
             dev_type = parts[1]
-            mountpoint = parts[2] if len(parts) > 2 else ''
-            transport = parts[3] if len(parts) > 3 else ''
+            rm = parts[2]
+            mountpoint = parts[3] if len(parts) > 3 else ''
             
-            # Sadece USB partition'ları ve mount edilmemişleri
-            if dev_type == 'part' and transport == 'usb' and mountpoint == '':
+            # Sadece USB/Çıkarılabilir partition'ları ve mount edilmemişleri
+            if dev_type == 'part' and rm == '1' and mountpoint == '':
                 device_path = f'/dev/{name}'
                 logging.info(f"Bağlanmamış USB cihazı bulundu: {device_path}, mount ediliyor...")
                 try:
@@ -181,7 +181,7 @@ def ensure_usb_mounted():
                     logging.warning(f"USB mount hatası: {device_path}: {me}")
             
             # USB disk olup hiç partition'ı olmayan cihazlar (tek partition'sız USB)
-            elif dev_type == 'disk' and transport == 'usb' and mountpoint == '':
+            elif dev_type == 'disk' and rm == '1' and mountpoint == '':
                 # Bu disk'in partition'ı var mı kontrol et
                 has_part = False
                 for check_line in result.stdout.strip().split('\n'):
@@ -1603,6 +1603,13 @@ class UdevMonitor(QObject):
                 
     def check_device(self, device):
         mount_point = self.get_mount_point(device)
+        if not mount_point:
+            try:
+                ensure_usb_mounted()
+                time.sleep(1)
+                mount_point = self.get_mount_point(device)
+            except Exception:
+                pass
         if not mount_point: return
         
         unlock_file = os.path.join(mount_point, "pass.txt")
@@ -3039,13 +3046,12 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         if hasattr(self, 'background'):
             self.background.setGeometry(self.rect())
 
-        # Reposition login button
+        # Reposition login button to TOP-RIGHT
         if hasattr(self, 'login_button'):
-            screen_center_x = self.width() // 2
-            screen_center_y = self.height() // 2
             button_width = 280
-            button_height = 60
-            self.login_button.move(screen_center_x - button_width // 2, screen_center_y + 80)
+            padding_top = 30
+            padding_right = 30
+            self.login_button.move(self.width() - button_width - padding_right, padding_top)
 
         # Reposition other UI elements
         if hasattr(self, 'message_label'):
@@ -3173,12 +3179,13 @@ class FatihKioskMode(QMainWindow):
         self.login_button.setStyleSheet("background-color: #0066cc; color: white; border: 3px solid white; border-radius: 10px;")
         self.login_button.setFont(QFont('DejaVu Sans', 18))
         self.login_button.clicked.connect(self.show_login)
+        # Butonu sağ üst köşeye taşı
         button_width = 280
         button_height = 60
         self.login_button.setFixedSize(button_width, button_height)
-        screen_center_x = self.width() // 2
-        screen_center_y = self.height() // 2
-        self.login_button.move(screen_center_x - button_width // 2, screen_center_y + 80)
+        padding_top = 30
+        padding_right = 30
+        self.login_button.move(self.width() - button_width - padding_right, padding_top)
         self.login_button.raise_()
         self.login_button.setVisible(True)
         self.login_button.show()
