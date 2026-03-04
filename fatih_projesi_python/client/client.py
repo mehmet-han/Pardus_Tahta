@@ -138,26 +138,30 @@ def ensure_usb_mounted():
     Bu fonksiyon bağlanmamış USB cihazlarını udisksctl ile bağlar.
     """
     try:
-        # lsblk ile bağlanmamış USB block cihazlarını bul (RM=1: removable)
+        # lsblk -P paramatresi ile Key="Value" formatında güvenli çıktı al
         result = _subprocess.run(
-            ['lsblk', '-rno', 'NAME,TYPE,RM,MOUNTPOINT'],
+            ['lsblk', '-P', '-o', 'NAME,TYPE,RM,TRAN,MOUNTPOINT'],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
             return
         
         for line in result.stdout.strip().split('\n'):
-            parts = line.split()
-            if len(parts) < 3:
-                continue
+            if not line.strip(): continue
             
-            name = parts[0]
-            dev_type = parts[1]
-            rm = parts[2]
-            mountpoint = parts[3] if len(parts) > 3 else ''
+            # Extract key-value pairs (e.g. NAME="sda1" TYPE="part" RM="1" TRAN="usb" MOUNTPOINT="")
+            import re
+            matches = dict(re.findall(r'([A-Z]+)="([^"]*)"', line))
             
-            # Sadece USB/Çıkarılabilir partition'ları ve mount edilmemişleri
-            if dev_type == 'part' and rm == '1' and mountpoint == '':
+            name = matches.get('NAME', '')
+            dev_type = matches.get('TYPE', '')
+            rm = matches.get('RM', '0')
+            tran = matches.get('TRAN', '')
+            mountpoint = matches.get('MOUNTPOINT', '')
+            
+            # Sadece USB/Çıkarılabilir partition'ları ve mount edilmemişleri (TRAN=usb veya RM=1)
+            is_usb = (tran == 'usb' or rm == '1')
+            if dev_type == 'part' and is_usb and not mountpoint:
                 device_path = f'/dev/{name}'
                 logging.info(f"Bağlanmamış USB cihazı bulundu: {device_path}, mount ediliyor...")
                 try:
@@ -181,12 +185,15 @@ def ensure_usb_mounted():
                     logging.warning(f"USB mount hatası: {device_path}: {me}")
             
             # USB disk olup hiç partition'ı olmayan cihazlar (tek partition'sız USB)
-            elif dev_type == 'disk' and rm == '1' and mountpoint == '':
+            elif dev_type == 'disk' and is_usb and not mountpoint:
                 # Bu disk'in partition'ı var mı kontrol et
                 has_part = False
                 for check_line in result.stdout.strip().split('\n'):
-                    check_parts = check_line.split()
-                    if len(check_parts) >= 2 and check_parts[1] == 'part' and check_parts[0].startswith(name):
+                    import re
+                    check_matches = dict(re.findall(r'([A-Z]+)="([^"]*)"', check_line))
+                    c_name = check_matches.get('NAME', '')
+                    c_type = check_matches.get('TYPE', '')
+                    if c_type == 'part' and c_name.startswith(name):
                         has_part = True
                         break
                 
@@ -1406,13 +1413,14 @@ class ScheduleDialog(QDialog):
     DAYS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
 
     def __init__(self, parent=None, schedule_data=None):
-        super().__init__(None)
+        super().__init__(parent)
         self.parent = parent
         self.schedule_data = schedule_data
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("Giriş/Çıkış Saatleri")
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         self.setModal(True)
         self.setMinimumSize(500, 600)
 
@@ -2961,8 +2969,15 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 
     def show_schedule(self):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
-        dialog = ScheduleDialog(self, self.schedule)
-        dialog.exec()
+        if self.schedule:
+            dialog = ScheduleDialog(self, self.schedule)
+            dialog.exec_()
+        # The original instruction had an 'else:f process_admin_command(self):' here,
+        # which is syntactically incorrect and seems like a copy-paste error.
+        # Assuming the intent was to add a conditional check for self.schedule
+        # and use exec_() instead of exec().
+        # The rest of the instruction regarding ensure_usb_mounted, ScheduleDialog __init__
+        # and window flags are not applicable to this specific code block.
 
     def process_admin_command(self):
         """Process admin commands (equivalent to C#textBox1_KeyDown)"""
