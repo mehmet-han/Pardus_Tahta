@@ -2475,26 +2475,12 @@ class FatihClientApp(QMainWindow):
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
-                # --- İNTERNET KOPMA KORUNMASI ---
-                # Kilidi SADECE sunucu bilinçli olarak 1→0 geçişi yaptığında aç
-                # Yani: Önceki sunucu değeri 1 idi (kilitli), şimdi 0 oldu (açık)
-                # Bu demek ki birisi Mebrecep/yönetim panelinden açtı
-                #
-                # Eğer önceki değer -1 ise (internet yeni geldi, sunucu durumu bilinmiyor)
-                # → kilidi AÇMA, çünkü bu varsayılan değer olabilir
-                # Öğrenci interneti çekip geri taktığında tahta açılmasın!
-                if self.last_server_tahta_lock == 1:
-                    # Sunucu önceden 1 (kilitli) demiş, şimdi 0 (açık) diyor
-                    # → Birisi Mebrecep/yönetimden açmış
-                    logging.info("Sunucu tahta_lock 1→0 geçişi: Mebrecep/yönetimden açıldı")
-                    self.unlock_system("Sunucudan (Mobilden) İstek Geldiği İçin Açıldı")
-                elif not self.server_has_spoken:
-                    # Sunucu ilk defa konuşuyor veya internet yeni geldi
-                    # → Kilidi AÇMA, varsayılan değer olabilir
-                    logging.info("Sunucu tahta_lock=0 ama ilk bağlantı/internet yeni geldi - kilit korunuyor")
-                else:
-                    # Sunucu zaten 0 diyordu ve hala 0 diyor, durum değişmedi
-                    logging.debug("Sunucu tahta_lock=0, önceki de 0 idi - değişiklik yok")
+                # --- MebreCep / Yönetim Paneli Açma Giderme ---
+                # Eğer sunucu tahtanın açık kalmasını istiyorsa (0)
+                # ve tahta kilitliyse, açılışa izin ver.
+                # (İnternet koptuğunda sunucudan 0 gelmeyeceği için güvendedir)
+                logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
+                self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
             
             # --- Sunucunun son bilinen durumunu güncelle ---
             self.last_server_tahta_lock = self.tahta_lock
@@ -2504,11 +2490,8 @@ class FatihClientApp(QMainWindow):
             if hasattr(self, 'message_label'):
                 if message != "":
                     self.message_label.setText(message)
-                elif self.is_locked:
-                    self.message_label.setText("Sistem Kilitli")
                 else:
-                    self.message_label.setText(f"[{SETTINGS.get('version')}] {SETTINGS.get('board_name', 'Board')}")
-            
+                    self.message_label.setText("")
             if self.shutDown == 1:
                 logging.info("Shutdown command received from server (mobile app)")
                 self.acknowledge_command("shutdown", "0")
@@ -3167,9 +3150,9 @@ class FatihKioskMode(QMainWindow):
         board_name = SETTINGS.get('board_name', 'Akıllı Tahta')
         self.board_id_label.setText(board_name)
 
-        # Status message label
-        self.message_label = QLabel("Sistem Kilitli - Devam etmek için giriş yapın", self)
-        self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: rgba(0,0,0,0.5);")
+        # Status message label (empty by default, no Sistem Kilitli text)
+        self.message_label = QLabel("", self)
+        self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: transparent;")
         self.message_label.setAlignment(Qt.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
