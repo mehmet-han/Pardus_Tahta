@@ -1952,16 +1952,18 @@ class FatihClientApp(QMainWindow):
         button_width = 280
         button_height = 60
         self.login_button.setFixedSize(button_width, button_height)
-        # Butonu ekranın ortasına konumlandır
-        screen_center_x = self.width() // 2
-        screen_center_y = self.height() // 2
-        self.login_button.move(screen_center_x - button_width // 2, screen_center_y + 80)
+        
+        # Butonu sağ üst köşeye taşı (üstten ve sağdan boşluk bırakarak)
+        padding_top = 30
+        padding_right = 30
+        self.login_button.move(self.width() - button_width - padding_right, padding_top)
+        
         self.login_button.raise_()
         self.login_button.setVisible(True)
         self.login_button.show()
 
-        logging.info(f"Login button positioned at: ({screen_center_x - button_width // 2}, {screen_center_y + 80})")
-        print(f"Login button created and positioned at: ({screen_center_x - button_width // 2}, {screen_center_y + 80})")
+        logging.info(f"Login button positioned at top-right: ({self.width() - button_width - padding_right}, {padding_top})")
+        print(f"Login button moved to top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button visible: {self.login_button.isVisible()}")
         print(f"Login button enabled: {self.login_button.isEnabled()}")
         print(f"Button parent: {self.login_button.parent()}")
@@ -1992,7 +1994,8 @@ class FatihClientApp(QMainWindow):
             }
         """)
         self.version_update_label.setAlignment(Qt.AlignCenter)
-        self.version_update_label.setGeometry(self.width() - 350, 20, 320, 40)
+        # Move below the login button to avoid overlap (button is at y=30-90)
+        self.version_update_label.setGeometry(self.width() - 350, 110, 320, 40)
         self.version_update_label.setVisible(False)
 
         # Set up context menu
