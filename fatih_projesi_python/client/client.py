@@ -1961,8 +1961,8 @@ class FatihClientApp(QMainWindow):
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
 
-        # Login button - TAHTAYI AÇ butonu
-        self.login_button = QPushButton("TAHTAYI AÇ", self)
+        # Login button - Tahtayı Açın butonu
+        self.login_button = QPushButton("Tahtayı Açın", self)
         self.login_button.setStyleSheet("background-color: #0066cc; color: white; border: 3px solid white; border-radius: 10px;")
         self.login_button.setFont(QFont('DejaVu Sans', 18))
         self.login_button.clicked.connect(self.show_login_dialog)
