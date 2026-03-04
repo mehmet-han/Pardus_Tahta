@@ -371,14 +371,23 @@ def check_usb_password() -> bool:
                         pass_file = os.path.join(mount_point, "pass.txt")
                         if os.path.exists(pass_file):
                             try:
-                                with open(pass_file, 'r') as f:
-                                    content = f.read().strip()
-                                    logging.info(f"USB pass.txt found at {mount_point}, content length: {len(content)}")
-                                    if content == USB_PASSWORD:
-                                        logging.info(f"USB password MATCHED at {mount_point}")
-                                        return True
-                                    else:
-                                        logging.warning(f"USB pass.txt content does NOT match at {mount_point}")
+                                # First try UTF-8 with BOM signature (handles standard notepad saves and Windows defaults properly)
+                                try:
+                                    with open(pass_file, 'r', encoding='utf-8-sig') as f:
+                                        content = f.read().strip()
+                                except UnicodeDecodeError:
+                                    # Fallback to Turkish Windows encoding
+                                    with open(pass_file, 'r', encoding='cp1254') as f:
+                                        content = f.read().strip()
+                                        
+                                logging.info(f"USB pass.txt found at {mount_point}, content length: {len(content)}")
+                                if content == USB_PASSWORD:
+                                    logging.info(f"USB password MATCHED at {mount_point}")
+                                    return True
+                                else:
+                                    logging.warning(f"USB pass.txt content does NOT match at {mount_point}. Expected len:{len(USB_PASSWORD)} Got len:{len(content)}")
+                                    logging.debug(f"Expected: '{USB_PASSWORD}'")
+                                    logging.debug(f"Got:      '{content}'")
                             except Exception as e:
                                 logging.warning(f"Error reading pass.txt from {mount_point}: {e}")
                                 continue
@@ -423,11 +432,16 @@ def check_usb_remove() -> bool:
                     remove_file = os.path.join(mount_point, "rmove.txt")
                     if os.path.exists(remove_file):
                         try:
-                            with open(remove_file, 'r') as f:
-                                content = f.read().strip()
-                                if content == USB_REMOVE_PASSWORD:
-                                    logging.info(f"USB remove command found at {mount_point}")
-                                    return True
+                            try:
+                                with open(remove_file, 'r', encoding='utf-8-sig') as f:
+                                    content = f.read().strip()
+                            except UnicodeDecodeError:
+                                with open(remove_file, 'r', encoding='cp1254') as f:
+                                    content = f.read().strip()
+                                    
+                            if content == USB_REMOVE_PASSWORD:
+                                logging.info(f"USB remove command found at {mount_point}")
+                                return True
                         except Exception as e:
                             logging.warning(f"Error reading rmove.txt from {mount_point}: {e}")
                             continue
@@ -2302,18 +2316,18 @@ class FatihClientApp(QMainWindow):
             # It's time to be unlocked.
             if self.is_locked:
                 self.manual_override = False # Reset override on any schedule action
-                self.unlock_system("Zamanlanmış kilit açma")
+                self.unlock_system("Derse giriş: Zamanlanmış kilit açma")
         else:
-            # It's time to be locked.
+            # It's time to be locked. (Teneffüs veya okul çıkışı)
             if not self.is_locked:
                 # Check if USB with password is present - if so, don't lock
                 if check_usb_password():
-                    logging.info("Schedule says lock, but USB is present. Skipping lock.")
+                    logging.info("Teneffüs/Çıkış saati (lock), but USB is present. Skipping lock.")
                 elif self.manual_override:
-                    logging.info("Schedule says lock, but manual override is active. Skipping lock.")
+                    logging.info("Teneffüs/Çıkış saati (lock), but manual override is active. Skipping lock.")
                     # Keep manual_override active until the next scheduled unlock period
                 else:
-                    self.lock_system("Zamanlanmış kilitleme")
+                    self.lock_system("Teneffüs / Çıkış: Zamanlanmış kilitleme")
         
     def check_usb_status(self):
         """
