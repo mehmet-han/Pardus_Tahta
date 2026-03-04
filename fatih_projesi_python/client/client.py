@@ -168,7 +168,15 @@ def ensure_usb_mounted():
                     if mount_result.returncode == 0:
                         logging.info(f"USB cihazı başarıyla mount edildi: {device_path} -> {mount_result.stdout.strip()}")
                     else:
-                        logging.warning(f"USB mount başarısız: {device_path}: {mount_result.stderr.strip()}")
+                        logging.warning(f"USB mount başarısız (udisksctl): {device_path}: {mount_result.stderr.strip()}")
+                        # Native fallback for root service
+                        fallback_dir = f"/media/usb_{name}"
+                        os.makedirs(fallback_dir, exist_ok=True)
+                        fallback_mount = _subprocess.run(['mount', device_path, fallback_dir], capture_output=True, text=True)
+                        if fallback_mount.returncode == 0:
+                            logging.info(f"USB fallback mount başarılı: {device_path} -> {fallback_dir}")
+                        else:
+                            logging.warning(f"USB fallback mount hatası: {fallback_mount.stderr.strip()}")
                 except Exception as me:
                     logging.warning(f"USB mount hatası: {device_path}: {me}")
             
@@ -192,6 +200,16 @@ def ensure_usb_mounted():
                         )
                         if mount_result.returncode == 0:
                             logging.info(f"USB disk mount edildi: {device_path} -> {mount_result.stdout.strip()}")
+                        else:
+                            logging.warning(f"USB disk mount başarısız (udisksctl): {device_path}: {mount_result.stderr.strip()}")
+                            # Native fallback for root service
+                            fallback_dir = f"/media/usb_{name}"
+                            os.makedirs(fallback_dir, exist_ok=True)
+                            fallback_mount = _subprocess.run(['mount', device_path, fallback_dir], capture_output=True, text=True)
+                            if fallback_mount.returncode == 0:
+                                logging.info(f"USB disk fallback mount başarılı: {device_path} -> {fallback_dir}")
+                            else:
+                                logging.warning(f"USB disk fallback mount hatası: {fallback_mount.stderr.strip()}")
                     except Exception as me:
                         logging.warning(f"USB disk mount hatası: {device_path}: {me}")
                         
@@ -1956,7 +1974,8 @@ class FatihClientApp(QMainWindow):
         # Butonu sağ üst köşeye taşı (üstten ve sağdan boşluk bırakarak)
         padding_top = 30
         padding_right = 30
-        self.login_button.move(self.width() - button_width - padding_right, padding_top)
+        screen_width = QApplication.primaryScreen().geometry().width()
+        self.login_button.move(screen_width - button_width - padding_right, padding_top)
         
         self.login_button.raise_()
         self.login_button.setVisible(True)
