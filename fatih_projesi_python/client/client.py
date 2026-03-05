@@ -1952,6 +1952,7 @@ class FatihClientApp(QMainWindow):
         # --- SCHEDULING ---
         self.schedule = None
         self.manual_override = False # True if unlocked by user, ignores schedule until next lock time
+        self.manual_unlock_time = 0  # To track exactly when manual override occurred (for offline 1h timeout)
         # C# kSaat[] karşılığı - çıkış saatlerinde tekrar kilitlemeyi önler
         self.exit_time_locked = [0] * 20  # index 1-18 kullanılacak (her ders periyodu için)
         self.last_schedule_day = -1  # Gün değişince exit_time_locked sıfırlanacak
@@ -2496,6 +2497,15 @@ class FatihClientApp(QMainWindow):
             
             if self.is_locked:
                 self.message_label.setText("İNTERNET YOK!!!")
+            else:
+                # İNTERNET YOK VE SİSTEM AÇIK: 1 SAAT (3600 saniye) KURALI
+                if self.manual_override and self.manual_unlock_time > 0:
+                    time_unlocked = time.time() - self.manual_unlock_time
+                    if time_unlocked > 3600:
+                        logging.warning(f"Internet is disconnected and system has been unlocked for {time_unlocked:.0f} seconds. Activating lock.")
+                        self.manual_override = False
+                        self.lock_system("İnternet bağlantısı 1 saatten uzun süredir yok")
+            
             logging.error("Failed to poll server - lock state preserved, server state reset.")
 
     def process_commands(self, commands):
@@ -2650,9 +2660,12 @@ class FatihClientApp(QMainWindow):
         logging.info(f"Unlocking system: {reason}")
 
         # Set manual override if this is not a scheduled or server-commanded unlock
-        if "Zamanlanmış" not in reason and "Sunucudan" not in reason:
+        # Veya sunucudan gelmiş olsa bile, kullanıcının MebreCep/Yönetim ekranından 
+        # açması durumu da manual override sayılmalıdır
+        if "Zamanlanmış" not in reason:
             self.manual_override = True
-            logging.info("Manual override activated.")
+            self.manual_unlock_time = time.time()
+            logging.info("Manual override activated (or server unlock received). Timer started.")
 
         self.is_locked = False
         self.hide()
