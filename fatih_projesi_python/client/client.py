@@ -9,7 +9,7 @@ import random
 import shutil
 import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
-                           QVBoxLayout, QHBoxLayout, QWidget, QDialog, QGridLayout,
+                           QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
                            QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction)
 from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
@@ -836,9 +836,10 @@ def kill_all_browsers():
 
 # --- On-Screen Keyboard Dialog (equivalent to C# FormEkranKlavyesi) ---
 class OnScreenKeyboard(QDialog):
-    def __init__(self, target_field=None):
+    def __init__(self, target_field=None, on_enter_callback=None):
         super().__init__()
         self.target_field = target_field
+        self.on_enter_callback = on_enter_callback
         self.shift_pressed = False
         self.init_ui()
 
@@ -944,15 +945,22 @@ class OnScreenKeyboard(QDialog):
 
     def enter_text(self):
         if self.target_field:
-            # In a real app, this might submit a form
             self.accept()
+            # Klavyeden Enter'a basıldığında üst formun giriş işlemini tetikle
+            if self.on_enter_callback:
+                self.on_enter_callback()
 
 # --- NEW: LineEdit that opens the keyboard on click ---
 class KeyboardLineEdit(QLineEdit):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, on_enter_callback=None):
         super().__init__(parent)
         self._keyboard = None
         self._just_closed = False
+        self._on_enter_callback = on_enter_callback
+
+    def set_on_enter_callback(self, callback):
+        """Enter callback'ini sonradan ayarlamak için."""
+        self._on_enter_callback = callback
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
@@ -961,7 +969,7 @@ class KeyboardLineEdit(QLineEdit):
             return
 
         if self._keyboard is None or not self._keyboard.isVisible():
-            self._keyboard = OnScreenKeyboard(target_field=self)
+            self._keyboard = OnScreenKeyboard(target_field=self, on_enter_callback=self._on_enter_callback)
             
             if self.parent():
                 parent_pos = self.parent().mapToGlobal(QPoint(0,0))
@@ -1009,6 +1017,7 @@ class LoginDialog(QDialog):
         self.password_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_field.setPlaceholderText("Mebrecep den şifre yazınız")
         self.password_field.setFont(QFont("Arial", 14))
+        self.password_field.set_on_enter_callback(self.attempt_login)
         layout.addWidget(self.password_field)
 
         # Buttons
@@ -1267,19 +1276,32 @@ class ChangePasswordDialog(QDialog):
         self.setWindowTitle("Şifre Değiştir")
         self.setModal(True)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
+        layout.setSpacing(12)
+        layout.setContentsMargins(25, 20, 25, 20)
 
         # Title
         title = QLabel("Admin Şifresini Değiştir")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
+        # Form layout - labellar sağ yaslı, textboxlar hizalı
+        form_layout = QFormLayout()
+        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form_layout.setFormAlignment(Qt.AlignCenter)
+        form_layout.setSpacing(10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
         # Current password
-        current_layout = QHBoxLayout()
-        current_layout.addWidget(QLabel("Mevcut Şifre:"))
+        current_label = QLabel("Mevcut Şifre:")
+        current_label.setFont(QFont("Arial", 12))
         self.current_field = KeyboardLineEdit()
+        self.current_field.setMinimumWidth(250)
+        self.current_field.setMinimumHeight(35)
+        self.current_field.setFont(QFont("Arial", 12))
         
         # Mevcut şifre gösterimi mantığı (Okul şifreyi değiştirdiyse gizle)
         config_password = SETTINGS.get('admin_password', '803580')
@@ -1290,33 +1312,43 @@ class ChangePasswordDialog(QDialog):
             self.current_field.setEchoMode(QLineEdit.EchoMode.Password)
             self.current_field.setText('')
             
-        current_layout.addWidget(self.current_field)
-        layout.addLayout(current_layout)
+        form_layout.addRow(current_label, self.current_field)
 
         # New password
-        new_layout = QHBoxLayout()
-        new_layout.addWidget(QLabel("Yeni Şifre:"))
+        new_label = QLabel("Yeni Şifre:")
+        new_label.setFont(QFont("Arial", 12))
         self.new_field = KeyboardLineEdit()
         self.new_field.setEchoMode(QLineEdit.EchoMode.Password)
-        new_layout.addWidget(self.new_field)
-        layout.addLayout(new_layout)
+        self.new_field.setMinimumWidth(250)
+        self.new_field.setMinimumHeight(35)
+        self.new_field.setFont(QFont("Arial", 12))
+        form_layout.addRow(new_label, self.new_field)
 
         # Confirm password
-        confirm_layout = QHBoxLayout()
-        confirm_layout.addWidget(QLabel("Yeni Şifre (Tekrar):"))
+        confirm_label = QLabel("Yeni Şifre (Tekrar):")
+        confirm_label.setFont(QFont("Arial", 12))
         self.confirm_field = KeyboardLineEdit()
         self.confirm_field.setEchoMode(QLineEdit.EchoMode.Password)
-        confirm_layout.addWidget(self.confirm_field)
-        layout.addLayout(confirm_layout)
+        self.confirm_field.setMinimumWidth(250)
+        self.confirm_field.setMinimumHeight(35)
+        self.confirm_field.setFont(QFont("Arial", 12))
+        form_layout.addRow(confirm_label, self.confirm_field)
+
+        layout.addLayout(form_layout)
 
         # Buttons
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(15)
 
         cancel_btn = QPushButton("İptal")
+        cancel_btn.setMinimumHeight(40)
+        cancel_btn.setFont(QFont("Arial", 11))
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
         change_btn = QPushButton("Değiştir")
+        change_btn.setMinimumHeight(40)
+        change_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         change_btn.clicked.connect(self.change_password)
         change_btn.setDefault(True)
         button_layout.addWidget(change_btn)
@@ -3478,6 +3510,8 @@ class FatihKioskMode(QMainWindow):
         password_field.setPlaceholderText("Mebrecep'ten şifre yazınız")
         password_field.setFont(QFont("Arial", 16))
         password_field.setMinimumHeight(50)
+        # Klavyeden Enter'a basıldığında doğrudan giriş yapsın
+        password_field.set_on_enter_callback(lambda: self.attempt_unlock(password_field.text(), dialog))
         layout.addWidget(password_field)
 
         button_layout = QHBoxLayout()
