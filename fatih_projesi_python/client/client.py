@@ -1942,6 +1942,7 @@ class FatihClientApp(QMainWindow):
         # - Eğer önceki değer -1 (bilinmiyor) ve şimdi 0 → internet yeni geldi → kilidi AÇMA
         self.last_server_tahta_lock = -1  # Henüz sunucudan cevap yok
         self.server_has_spoken = False  # Sunucu en az bir kez başarılı cevap verdi mi?
+        self.last_local_lock_time = 0 # Yerel kilitleme zamanı (sunucu yarışmasını önlemek için)
 
         # --- SCHEDULING ---
         self.schedule = None
@@ -2520,11 +2521,19 @@ class FatihClientApp(QMainWindow):
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
                 # --- MebreCep / Yönetim Paneli Açma Giderme ---
-                # Eğer sunucu tahtanın açık kalmasını istiyorsa (0)
-                # ve tahta kilitliyse, açılışa izin ver.
-                # (İnternet koptuğunda sunucudan 0 gelmeyeceği için güvendedir)
-                logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
-                self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
+                # Sunucu "Açık" (0) gönderiyor. Ancak:
+                # Eğer sistemi biz KENDİMİZ (başlangıç veya çıkış saati) yeni kilitlediysek,
+                # sunucunun veritabanı henüz güncellenmemiş olabilir (eski 0 değerini gönderiyordur).
+                # Bu yüzden son kendi kilitlememizden itibaren 10 saniye boyunca sunucunun 0'ını yoksayacağız.
+                time_since_local_lock = time.time() - getattr(self, 'last_local_lock_time', 0)
+                if time_since_local_lock < 10:
+                    logging.info("Server says unlock (0), but we locked locally recently. Ignoring to prevent flicker.")
+                    self.acknowledge_command("tahtaLock", "1")
+                else:
+                    # Eğer sunucu tahtanın açık kalmasını istiyorsa (0)
+                    # ve tahta kilitliyse, açılışa izin ver.
+                    logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
+                    self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
             
             # --- Sunucunun son bilinen durumunu güncelle ---
             self.last_server_tahta_lock = self.tahta_lock
@@ -2599,6 +2608,9 @@ class FatihClientApp(QMainWindow):
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
+            
+            # Record the time we decided to lock locally to override old server status
+            self.last_local_lock_time = time.time()
             
             # Log the lock event and notify the server
             self.save_log(reason, "lock")
