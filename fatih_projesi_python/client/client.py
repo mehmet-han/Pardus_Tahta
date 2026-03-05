@@ -2524,9 +2524,9 @@ class FatihClientApp(QMainWindow):
                 # Sunucu "Açık" (0) gönderiyor. Ancak:
                 # Eğer sistemi biz KENDİMİZ (başlangıç veya çıkış saati) yeni kilitlediysek,
                 # sunucunun veritabanı henüz güncellenmemiş olabilir (eski 0 değerini gönderiyordur).
-                # Bu yüzden son kendi kilitlememizden itibaren 10 saniye boyunca sunucunun 0'ını yoksayacağız.
+                # Bu yüzden son kendi kilitlememizden itibaren 15 saniye boyunca sunucunun 0'ını yoksayacağız.
                 time_since_local_lock = time.time() - getattr(self, 'last_local_lock_time', 0)
-                if time_since_local_lock < 10:
+                if time_since_local_lock < 15:
                     logging.info("Server says unlock (0), but we locked locally recently. Ignoring to prevent flicker.")
                     self.acknowledge_command("tahtaLock", "1")
                 else:
