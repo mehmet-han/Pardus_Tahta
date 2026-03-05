@@ -2612,8 +2612,13 @@ class FatihClientApp(QMainWindow):
                 # --- MebreCep / Yönetim Paneli Açma Giderme ---
                 # Sunucu "Açık" (0) gönderiyor.
                 # Eğer yeni kilitlediysek ve sunucudan 1 gelmesini bekliyorsak, bu 0'ı yoksay.
-                if self.expected_server_tahta_lock == 1:
+                if self.expected_server_tahta_lock == 1 and (time.time() - self.last_lock_time) < 30:
                     logging.info("Server says unlock (0), but we are waiting for it to acknowledge our lock (1). Ignoring.")
+                elif self.expected_server_tahta_lock == 1 and (time.time() - self.last_lock_time) >= 30:
+                    # 30 saniye gecti, sunucu hala 1 onaylamadi - artik MebreCep komutlarini kabul et
+                    logging.info(f"Expected lock timeout: 30s gecti, expected sifirlaniyor. MebreCep komutu kabul edildi.")
+                    self.expected_server_tahta_lock = -1
+                    self.unlock_system("Sunucudan (Mobilden) Istek Geldi")
                 elif time.time() - self.last_lock_time < 15:
                     logging.info(f"Server says unlock (0), but lock cooldown is active ({time.time() - self.last_lock_time:.1f}s < 15s). Ignoring stale command.")
                 else:
