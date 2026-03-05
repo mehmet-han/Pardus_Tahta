@@ -2060,6 +2060,31 @@ class FatihClientApp(QMainWindow):
         self.login_button.setVisible(True)
         self.login_button.show()
 
+        # --- YENİ: Tahtayı Açma Kılavuzu (Kullanıcı İsteği) ---
+        self.help_guide_label = QLabel(self)
+        self.help_guide_label.setText(
+            "👋 Merhaba! Tahtayı Açmak İçin:\n\n"
+            "📱 Cep telefonunuza MebreCep uygulamasını indirin.\n\n"
+            "🔓 Uygulamadan Akıllı Tahta menüsünden sınıfınızı seçip akıllı tahtayı açıp kilitleyebilirsiniz.\n\n"
+            "🔑 Akıllı tahtada İnternet Yoksa: Uygulamadaki 'İnternetsiz Şifre Al' kodunu buradaki 'Tahtayı Aç' butonuna tıklayarak girin.\n\n"
+            "✨ Ders bitiminde tahtanız otomatik olarak kilitlenecektir."
+        )
+        self.help_guide_label.setWordWrap(True)
+        self.help_guide_label.setStyleSheet("""
+            QLabel {
+                color: white; 
+                background-color: rgba(0, 0, 0, 180); 
+                padding: 20px;
+                border-radius: 15px;
+                border: 2px solid #0066cc;
+                font-size: 15px;
+                line-height: 1.4;
+            }
+        """)
+        # Başlangıç konumu (resizeEvent'ta güncellenecek)
+        self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
+        self.help_guide_label.show()
+
         logging.info(f"Login button positioned at top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button moved to top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button visible: {self.login_button.isVisible()}")
@@ -3131,8 +3156,16 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             label_x = (self.width() - label_width) // 2
             self.board_id_label.setGeometry(label_x, 20, label_width, label_height)
 
+        if hasattr(self, 'help_guide_label'):
+            guide_width = 400
+            padding_right = 30
+            # Buton 30'da başlıyor, 60 boyunda = 90'da bitiyor. 
+            # Kılavuzu 110'a koyalım.
+            self.help_guide_label.setGeometry(self.width() - guide_width - padding_right, 110, guide_width, 320)
+
         if hasattr(self, 'version_update_label'):
-            self.version_update_label.setGeometry(self.width() - 350, 20, 320, 40)
+            # Kılavuzun altına taşı ki çakışmasın
+            self.version_update_label.setGeometry(self.width() - 350, 450, 320, 40)
 
 def main():
     try:
@@ -3254,6 +3287,30 @@ class FatihKioskMode(QMainWindow):
         self.login_button.raise_()
         self.login_button.setVisible(True)
         self.login_button.show()
+
+        # --- YENİ: Tahtayı Açma Kılavuzu (Kiosk Modu) ---
+        self.help_guide_label = QLabel(self)
+        self.help_guide_label.setText(
+            "👋 Merhaba! Tahtayı Açmak İçin:\n\n"
+            "📱 Cep telefonunuza MebreCep uygulamasını indirin.\n\n"
+            "🔓 Uygulamadan Akıllı Tahta menüsünden sınıfınızı seçip akıllı tahtayı açıp kilitleyebilirsiniz.\n\n"
+            "🔑 Akıllı tahtada İnternet Yoksa: Uygulamadaki 'İnternetsiz Şifre Al' kodunu buradaki 'Tahtayı Aç' butonuna tıklayarak girin.\n\n"
+            "✨ Ders bitiminde tahtanız otomatik olarak kilitlenecektir."
+        )
+        self.help_guide_label.setWordWrap(True)
+        self.help_guide_label.setStyleSheet("""
+            QLabel {
+                color: white; 
+                background-color: rgba(0, 0, 0, 180); 
+                padding: 20px;
+                border-radius: 15px;
+                border: 2px solid #0066cc;
+                font-size: 15px;
+                line-height: 1.4;
+            }
+        """)
+        self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
+        self.help_guide_label.show()
 
         # Keyboard locker
         self.keyboard_locker = KeyboardLocker()
