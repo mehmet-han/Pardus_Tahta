@@ -1064,58 +1064,83 @@ class BoardConfigDialog(QDialog):
         self.setWindowTitle("Tahta Yapılandırması")
         self.setModal(True)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setMinimumWidth(480)
 
         layout = QVBoxLayout()
+        layout.setSpacing(12)
+        layout.setContentsMargins(25, 20, 25, 20)
 
         # Title
         title = QLabel("Tahta Yapılandırması")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
+        # Form layout - labellar sağ yaslı, textboxlar hizalı
+        form_layout = QFormLayout()
+        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form_layout.setFormAlignment(Qt.AlignCenter)
+        form_layout.setSpacing(10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
         # Corporate code input - maskelenmiş görünsün (**** şeklinde)
-        corporate_layout = QHBoxLayout()
-        corporate_layout.addWidget(QLabel("Kurum Kodu:"))
+        corporate_label = QLabel("Kurum Kodu:")
+        corporate_label.setFont(QFont("Arial", 12))
         self.corporate_code_field = KeyboardLineEdit()
         self.corporate_code_field.setEchoMode(QLineEdit.EchoMode.Password)  # **** şeklinde görünsün
         self.corporate_code_field.setText(SETTINGS.get('corporate_code', ''))
-        corporate_layout.addWidget(self.corporate_code_field)
-        layout.addLayout(corporate_layout)
+        self.corporate_code_field.setMinimumWidth(250)
+        self.corporate_code_field.setMinimumHeight(35)
+        self.corporate_code_field.setFont(QFont("Arial", 12))
+        form_layout.addRow(corporate_label, self.corporate_code_field)
 
         # Password input - admin şifresi zorunlu
-        password_layout = QHBoxLayout()
-        password_layout.addWidget(QLabel("Şifre:"))
+        password_label = QLabel("Şifre:")
+        password_label.setFont(QFont("Arial", 12))
         self.password_field = KeyboardLineEdit()
         self.password_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_field.setPlaceholderText("Admin şifresini giriniz")
-        password_layout.addWidget(self.password_field)
-        layout.addLayout(password_layout)
+        self.password_field.setMinimumWidth(250)
+        self.password_field.setMinimumHeight(35)
+        self.password_field.setFont(QFont("Arial", 12))
+        form_layout.addRow(password_label, self.password_field)
+
+        layout.addLayout(form_layout)
 
         # Fetch boards button
         self.fetch_btn = QPushButton("Tahtaları Getir")
+        self.fetch_btn.setMinimumHeight(40)
+        self.fetch_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         self.fetch_btn.clicked.connect(self.fetch_boards)
         layout.addWidget(self.fetch_btn)
 
-        # Board selection
-        board_layout = QHBoxLayout()
-        board_layout.addWidget(QLabel("Tahta Seçin:"))
+        # Board selection - form layout ile hizalı
+        board_form = QFormLayout()
+        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        board_form.setSpacing(10)
+        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        board_label = QLabel("Tahta Seçin:")
+        board_label.setFont(QFont("Arial", 12))
         self.board_combo = QComboBox()
         self.board_combo.setEnabled(False)
-        board_layout.addWidget(self.board_combo)
-        layout.addLayout(board_layout)
+        self.board_combo.setMinimumHeight(35)
+        self.board_combo.setFont(QFont("Arial", 12))
+        board_form.addRow(board_label, self.board_combo)
+        layout.addLayout(board_form)
 
         # Buttons
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(15)
 
         cancel_btn = QPushButton("İptal")
-        cancel_btn.setMinimumHeight(50)
+        cancel_btn.setMinimumHeight(45)
         cancel_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.clicked.connect(self.close)
         button_layout.addWidget(cancel_btn)
 
         confirm_btn = QPushButton("Onayla")
-        confirm_btn.setMinimumHeight(50)
+        confirm_btn.setMinimumHeight(45)
         confirm_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         confirm_btn.clicked.connect(self.confirm_selection)
         confirm_btn.setDefault(True)
