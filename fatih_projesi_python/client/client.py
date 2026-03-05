@@ -2060,6 +2060,27 @@ class FatihClientApp(QMainWindow):
         self.login_button.setVisible(True)
         self.login_button.show()
 
+        # --- YENİ: Yardım Kılavuzu Aç/Kapat Butonu ---
+        self.help_toggle_button = QPushButton("❓", self)
+        self.help_toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 0, 0, 150); 
+                color: #00ff88; 
+                border: 2px solid white; 
+                border-radius: 25px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 220);
+            }
+        """)
+        self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
+        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
+        toggle_size = 50
+        self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
+        # Position updated in resizeEvent
+        self.help_toggle_button.setGeometry(self.width() - button_width - 100, padding_top + 5, toggle_size, toggle_size)
+        self.help_toggle_button.show()
+
         # --- YENİ: Tahtayı Açma Kılavuzu (Kullanıcı İsteği) ---
         self.help_guide_label = QLabel(self)
         self.help_guide_label.setText(
@@ -2083,7 +2104,7 @@ class FatihClientApp(QMainWindow):
         """)
         # Başlangıç konumu (resizeEvent'ta güncellenecek)
         self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
-        self.help_guide_label.show()
+        self.help_guide_label.hide() # Varsayılan olarak gizli
 
         logging.info(f"Login button positioned at top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button moved to top-right: ({self.width() - button_width - padding_right}, {padding_top})")
@@ -2171,6 +2192,11 @@ class FatihClientApp(QMainWindow):
 
         except Exception as e:
             logging.error(f"System tray initialization failed: {e}")
+
+    def toggle_help_guide(self):
+        """Toggles the visibility of the unlock help guide."""
+        if hasattr(self, 'help_guide_label'):
+            self.help_guide_label.setVisible(not self.help_guide_label.isVisible())
 
     def init_network_timer(self):
         self.timer = QTimer(self)
@@ -3157,6 +3183,14 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             label_x = (self.width() - label_width) // 2
             self.board_id_label.setGeometry(label_x, 20, label_width, label_height)
 
+        if hasattr(self, 'help_toggle_button'):
+            toggle_size = 50
+            padding_top = 35
+            padding_right = 30
+            button_width = 280
+            # Tahtayı Açın butonunun soluna yerleştir
+            self.help_toggle_button.setGeometry(self.width() - button_width - padding_right - toggle_size - 15, padding_top, toggle_size, toggle_size)
+
         if hasattr(self, 'help_guide_label'):
             guide_width = 400
             padding_right = 30
@@ -3289,6 +3323,26 @@ class FatihKioskMode(QMainWindow):
         self.login_button.setVisible(True)
         self.login_button.show()
 
+        # --- YENİ: Yardım Kılavuzu Aç/Kapat Butonu (Kiosk Modu) ---
+        self.help_toggle_button = QPushButton("❓", self)
+        self.help_toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 0, 0, 150); 
+                color: #00ff88; 
+                border: 2px solid white; 
+                border-radius: 25px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 220);
+            }
+        """)
+        self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
+        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
+        toggle_size = 50
+        self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
+        self.help_toggle_button.setGeometry(self.width() - button_width - 100, padding_top + 5, toggle_size, toggle_size)
+        self.help_toggle_button.show()
+
         # --- YENİ: Tahtayı Açma Kılavuzu (Kiosk Modu) ---
         self.help_guide_label = QLabel(self)
         self.help_guide_label.setText(
@@ -3311,7 +3365,7 @@ class FatihKioskMode(QMainWindow):
             }
         """)
         self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
-        self.help_guide_label.show()
+        self.help_guide_label.hide() # Varsayılan olarak gizli
 
         # Keyboard locker
         self.keyboard_locker = KeyboardLocker()
