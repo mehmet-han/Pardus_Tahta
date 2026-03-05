@@ -3800,11 +3800,10 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             self.background.setGeometry(self.rect())
 
         if hasattr(self, 'login_button'):
-            screen_center_x = self.width() // 2
-            screen_center_y = self.height() // 2
             button_width = 280
-            button_height = 60
-            self.login_button.move(screen_center_x - button_width // 2, screen_center_y + 80)
+            padding_top = 30
+            padding_right = 30
+            self.login_button.move(self.width() - button_width - padding_right, padding_top)
 
         if hasattr(self, 'message_label'):
             self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
@@ -3816,6 +3815,21 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             label_width = 450
             label_x = (self.width() - label_width) // 2
             self.board_id_label.setGeometry(label_x, 20, label_width, 100)
+            
+        if hasattr(self, 'help_toggle_button'):
+            toggle_size = 50
+            padding_top = 35
+            padding_right = 30
+            button_width = 280
+            self.help_toggle_button.setGeometry(self.width() - button_width - padding_right - toggle_size - 15, padding_top, toggle_size, toggle_size)
+
+        if hasattr(self, 'help_guide_label'):
+            guide_width = 400
+            padding_right = 30
+            self.help_guide_label.setGeometry(self.width() - guide_width - padding_right, 110, guide_width, 320)
+            
+        if hasattr(self, 'warning_label'):
+            self.warning_label.setGeometry(self.width() // 2 - 200, self.height() // 2 - 25, 400, 50)
 
 if __name__ == '__main__':
     # Check command line arguments
