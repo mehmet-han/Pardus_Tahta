@@ -1942,7 +1942,12 @@ class FatihClientApp(QMainWindow):
         # - Eğer önceki değer -1 (bilinmiyor) ve şimdi 0 → internet yeni geldi → kilidi AÇMA
         self.last_server_tahta_lock = -1  # Henüz sunucudan cevap yok
         self.server_has_spoken = False  # Sunucu en az bir kez başarılı cevap verdi mi?
-        self.last_local_lock_time = 0 # Yerel kilitleme zamanı (sunucu yarışmasını önlemek için)
+        
+        # Yerel kilit/kilit açma durumunu sunucunun yansıtmasını beklemek için
+        # -1 = Gelen her şeyi kabul et (beklenti yok)
+        # 0 = Sunucunun 0 döndürmesini bekliyoruz (yeni açtık)
+        # 1 = Sunucunun 1 döndürmesini bekliyoruz (yeni kilitledik)
+        self.expected_server_tahta_lock = -1 
 
         # --- SCHEDULING ---
         self.schedule = None
@@ -2521,19 +2526,19 @@ class FatihClientApp(QMainWindow):
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
                 # --- MebreCep / Yönetim Paneli Açma Giderme ---
-                # Sunucu "Açık" (0) gönderiyor. Ancak:
-                # Eğer sistemi biz KENDİMİZ (başlangıç veya çıkış saati) yeni kilitlediysek,
-                # sunucunun veritabanı henüz güncellenmemiş olabilir (eski 0 değerini gönderiyordur).
-                # Bu yüzden son kendi kilitlememizden itibaren 15 saniye boyunca sunucunun 0'ını yoksayacağız.
-                time_since_local_lock = time.time() - getattr(self, 'last_local_lock_time', 0)
-                if time_since_local_lock < 15:
-                    logging.info("Server says unlock (0), but we locked locally recently. Ignoring to prevent flicker.")
-                    self.acknowledge_command("tahtaLock", "1")
+                # Sunucu "Açık" (0) gönderiyor.
+                # Eğer yeni kilitlediysek ve sunucudan 1 gelmesini bekliyorsak, bu 0'ı yoksay.
+                if self.expected_server_tahta_lock == 1:
+                    logging.info("Server says unlock (0), but we are waiting for it to acknowledge our lock (1). Ignoring.")
                 else:
-                    # Eğer sunucu tahtanın açık kalmasını istiyorsa (0)
-                    # ve tahta kilitliyse, açılışa izin ver.
                     logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
                     self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
+            
+            # Eğer sunucudan gelen değer beklediğimiz değerse, beklentiyi sıfırla (-1)
+            # Artık sunucunun güncel durumunu tamamen kabul edebiliriz.
+            if self.expected_server_tahta_lock != -1 and self.expected_server_tahta_lock == self.tahta_lock:
+                logging.info(f"Server synchronized with expected state: {self.tahta_lock}")
+                self.expected_server_tahta_lock = -1
             
             # --- Sunucunun son bilinen durumunu güncelle ---
             self.last_server_tahta_lock = self.tahta_lock
@@ -2609,10 +2614,7 @@ class FatihClientApp(QMainWindow):
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
             
-            # Record the time we decided to lock locally to override old server status
-            self.last_local_lock_time = time.time()
-            
-            # Log the lock event and notify the server
+            # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
 
@@ -2711,8 +2713,21 @@ class FatihClientApp(QMainWindow):
         logging.warning("Could not activate system lock screen - no supported method found")
         return False
 
-    def acknowledge_command(self, column, value):
-        self.network_client.set_value(column, value)
+    def acknowledge_command(self, cmd_key, cmd_val):
+        # Notify the server that we have processed a command.
+        if cmd_key == "tahtaLock":
+            # Yerel olarak tahtanın kilit durumunu değiştirdiğimizde, 
+            # sunucuya bu durumu bildiriyoruz ve sunucudan bu durumun gelmesini bekliyoruz.
+            try:
+                self.expected_server_tahta_lock = int(cmd_val)
+                logging.debug(f"Expected server tahta_lock set to: {self.expected_server_tahta_lock}")
+            except ValueError:
+                pass
+                
+        def send_ack():
+            self.network_client.set_value(cmd_key, cmd_val)
+
+        threading.Thread(target=send_ack, daemon=True).start()
 
     def remove_system(self):
         logging.info("SYSTEM REMOVE command received. Uninstalling...")
