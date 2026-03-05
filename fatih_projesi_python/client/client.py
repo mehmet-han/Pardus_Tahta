@@ -1955,6 +1955,14 @@ class FatihClientApp(QMainWindow):
         # tahta_lock=0 komutları yoksayılır.
         self.last_lock_time = 0
 
+        # --- C# startWork / ewt MEKANİZMASI ---
+        # İlk açılışta sunucu komutlarını yoksay.
+        # C# kodu: startWork = false, ewt sayacı her timer tick'te artar,
+        # ewt >= 4 olunca startWork = true olur.
+        # Bu sayede ilk ~20 saniye sunucudan gelen eski 'aç' komutları yoksayılır.
+        self.start_work = False
+        self.early_wait_ticks = 0
+
         # --- SCHEDULING ---
         self.schedule = None
         self.manual_override = False # True if unlocked by user, ignores schedule until next lock time
@@ -2541,6 +2549,19 @@ class FatihClientApp(QMainWindow):
         response_text = self.network_client.ctrl_post()
         if response_text:
             logging.info("Successfully polled server.")
+            
+            # --- C# startWork mekanizmasi ---
+            # Ilk acilista sunucu komutlarini yoksay (ewt >= 4 olana kadar)
+            if not self.start_work:
+                self.early_wait_ticks += 1
+                if self.early_wait_ticks >= 4:
+                    self.early_wait_ticks = 0
+                    self.start_work = True
+                    logging.info("start_work=True: Sunucu komutlari artik islenecek (C# ewt mekanizmasi)")
+                else:
+                    logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
+                    return
+            
             commands = response_text.split(',')
             self.process_commands(commands)
         else:
