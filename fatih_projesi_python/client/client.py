@@ -2609,21 +2609,16 @@ class FatihClientApp(QMainWindow):
                     self.manual_override = False # Sunucudan kilitleme gelirse override'ı iptal et
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
-                # --- MebreCep / Yönetim Paneli Açma Giderme ---
-                # Sunucu "Açık" (0) gönderiyor.
-                # Eğer yeni kilitlediysek ve sunucudan 1 gelmesini bekliyorsak, bu 0'ı yoksay.
-                if self.expected_server_tahta_lock == 1 and (time.time() - self.last_lock_time) < 30:
-                    logging.info("Server says unlock (0), but we are waiting for it to acknowledge our lock (1). Ignoring.")
-                elif self.expected_server_tahta_lock == 1 and (time.time() - self.last_lock_time) >= 30:
-                    # 30 saniye gecti, sunucu hala 1 onaylamadi - artik MebreCep komutlarini kabul et
-                    logging.info(f"Expected lock timeout: 30s gecti, expected sifirlaniyor. MebreCep komutu kabul edildi.")
-                    self.expected_server_tahta_lock = -1
+                # --- DURUM DEGISIMI ALGILAMA ---
+                # Sadece sunucu durumu 1->0 degistiginde kilit ac (gercek MebreCep komutu)
+                # Sunucu surekli 0 gonderiyorsa (eski/bayat komut) yoksay
+                if self.last_server_tahta_lock == 1:
+                    # Sunucu onceden 1 (kilitli) idi, simdi 0 (acik) -> GERCEK MebreCep komutu
+                    logging.info("Sunucu durumu 1->0 degisti: Gercek MebreCep/Yonetim Paneli komutu alindi")
                     self.unlock_system("Sunucudan (Mobilden) Istek Geldi")
-                elif time.time() - self.last_lock_time < 15:
-                    logging.info(f"Server says unlock (0), but lock cooldown is active ({time.time() - self.last_lock_time:.1f}s < 15s). Ignoring stale command.")
                 else:
-                    logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
-                    self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
+                    # Sunucu zaten 0 idi veya bilinmiyor (-1) -> eski/bayat komut, yoksay
+                    logging.info(f"Server says unlock (0), but last_server={self.last_server_tahta_lock} (no 1->0 change). Stale command ignored.")
             
             # Eğer sunucudan gelen değer beklediğimiz değerse, beklentiyi sıfırla (-1)
             # Artık sunucunun güncel durumunu tamamen kabul edebiliriz.
