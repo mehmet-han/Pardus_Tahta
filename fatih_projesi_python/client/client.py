@@ -2694,7 +2694,8 @@ class FatihClientApp(QMainWindow):
 
         # Reset USB unlock flag if unlocked by other means (not USB)
         if not reason.startswith("USB ile"):
-            self.usb_monitor.reset_usb_unlock_flag()
+            if hasattr(self, 'usb_monitor') and self.usb_monitor:
+                self.usb_monitor.reset_usb_unlock_flag()
             
         self.acknowledge_command("tahtaLock", "0")
         
