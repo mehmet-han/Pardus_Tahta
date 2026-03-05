@@ -2522,6 +2522,8 @@ class FatihClientApp(QMainWindow):
                     logging.info("Server says lock, but USB is present. Skipping lock.")
                 elif self.manual_override:
                     logging.info("Server says lock, but manual override is active. Skipping lock.")
+                elif self.expected_server_tahta_lock == 0:
+                    logging.info("Server says lock (1), but we just unlocked and expect acknowledgment (0). Ignoring.")
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
