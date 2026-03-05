@@ -824,7 +824,8 @@ def kill_all_browsers():
         'chromium', 'chromium-browser', 'firefox', 'firefox-esr',
         'google-chrome', 'opera', 'midori', 'epiphany',
         'gnome-system-monitor', 'xfce4-taskmanager',
-        'gnome-terminal', 'xfce4-terminal', 'xterm', 'konsole',
+        # NOT: Terminal emulatörleri listeden çıkarıldı.
+        # Uygulama terminalden başlatıldığında terminali öldürmek uygulamayı da öldürür.
     ]
     for target in targets:
         try:
