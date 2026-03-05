@@ -2269,52 +2269,12 @@ class FatihClientApp(QMainWindow):
                 return ""
         return time_str if len(time_str) == 5 else ""
 
-    def is_in_class_period(self):
-        """
-        Şu an ders saati içinde mi kontrol et.
-        check_schedule ile aynı mantığı kullanır ama sadece True/False döndürür.
-        """
-        if not self.schedule or 'hours' not in self.schedule:
-            return False
-
-        now = datetime.now()
-        day_of_week = now.isoweekday()
-        current_time_str = now.strftime("%H:%M")
-
-        try:
-            hours_data = self.schedule['hours']
-            if isinstance(hours_data, list):
-                if day_of_week < len(hours_data):
-                    day_schedule = hours_data[day_of_week]
-                    for period_idx in range(1, min(19, len(day_schedule))):
-                        period_data = day_schedule[period_idx]
-                        if isinstance(period_data, list) and len(period_data) >= 3:
-                            start_time = period_data[1] if len(period_data) > 1 else ""
-                            end_time = period_data[2] if len(period_data) > 2 else ""
-                            if start_time and end_time and start_time != "0" and end_time != "0":
-                                if start_time <= current_time_str < end_time:
-                                    return True
-            elif isinstance(hours_data, dict):
-                day_schedule = hours_data.get(str(day_of_week), {})
-                for k in range(1, 19):
-                    slot = day_schedule.get(str(k))
-                    if slot and isinstance(slot, dict):
-                        start_time = slot.get('1', '')
-                        end_time = slot.get('2', '')
-                        if start_time and end_time and start_time != '0' and end_time != '0':
-                            if start_time <= current_time_str < end_time:
-                                return True
-        except Exception as e:
-            logging.warning(f"Error checking class period: {e}")
-
-        return False
-
     def check_schedule(self):
-        """Check the current time against the schedule and lock/unlock accordingly.
+        """Ders çıkış saatinde otomatik kilitleme.
         
-        İki aşamalı kontrol:
-        1. Ders saati içindeyse aç (mevcut mantık)
-        2. Çıkış saati geldiğinde kilitle (C# timer1Thread mantığı)
+        NOT: Ders saati başladığında otomatik açılma YAPILMAZ.
+        Tahta sadece MebreCep, admin şifresi veya yönetim panelinden açılır.
+        Bu fonksiyon sadece ders bittiğinde (çıkış saati) otomatik kilitler.
         """
         if not self.schedule or 'hours' not in self.schedule:
             logging.debug("Schedule not available, skipping check.")
@@ -2331,7 +2291,6 @@ class FatihClientApp(QMainWindow):
             self.last_schedule_day = day_of_week
             logging.info(f"New day detected ({day_of_week}), reset exit_time_locked counters")
 
-        is_in_unlocked_period = False
         exit_time_triggered = False
         exit_time_log = ""
         try:
@@ -2356,10 +2315,6 @@ class FatihClientApp(QMainWindow):
                             end_time = period_data[2] if len(period_data) > 2 else ""
 
                             if start_time and end_time and start_time != "0" and end_time != "0" and start_time != "" and end_time != "":
-                                # Ders saati içinde mi? (mevcut mantık)
-                                if start_time <= current_time_str < end_time:
-                                    is_in_unlocked_period = True
-                                    logging.debug(f"Current time {current_time_str} is in unlocked period: {start_time}-{end_time}")
 
                                 # --- C# timer1Thread mantığı: Çıkış saati kontrolü ---
                                 # Çıkış saati geldiğinde kilitle (tenefüs/ders bitimi)
@@ -2400,8 +2355,6 @@ class FatihClientApp(QMainWindow):
                         end_time = slot.get('2')
 
                         if start_time and end_time and start_time != "0" and end_time != "0":
-                            if start_time <= current_time_str < end_time:
-                                is_in_unlocked_period = True
 
                             # Çıkış saati kontrolü (dict format)
                             formatted_exit = self._format_time(end_time)
@@ -2445,23 +2398,8 @@ class FatihClientApp(QMainWindow):
                 self.save_log(exit_time_log, "schedule")
                 return  # Çıkış saati kilitledi, aşağıdaki mantığa geçme
 
-        # --- Apply Locking/Unlocking Logic (mevcut mantık) ---
-        if is_in_unlocked_period:
-            # It's time to be unlocked.
-            if self.is_locked:
-                self.manual_override = False # Reset override on any schedule action
-                self.unlock_system("Derse giriş: Zamanlanmış kilit açma")
-        else:
-            # It's time to be locked. (Teneffüs veya okul çıkışı)
-            if not self.is_locked:
-                # Check if USB with password is present - if so, don't lock
-                if check_usb_password():
-                    logging.info("Teneffüs/Çıkış saati (lock), but USB is present. Skipping lock.")
-                elif self.manual_override:
-                    logging.info("Teneffüs/Çıkış saati (lock), but manual override is active. Skipping lock.")
-                    # Keep manual_override active until the next scheduled unlock period
-                else:
-                    self.lock_system("Teneffüs / Çıkış: Zamanlanmış kilitleme")
+        # NOT: Ders saati başladığında otomatik açılma YAPILMAZ.
+        # Tahta sadece MebreCep, admin şifresi veya yönetim panelinden açılır.
         
     def check_usb_status(self):
         """
@@ -2577,10 +2515,6 @@ class FatihClientApp(QMainWindow):
                     logging.info("Server says lock, but USB is present. Skipping lock.")
                 elif self.manual_override:
                     logging.info("Server says lock, but manual override is active. Skipping lock.")
-                elif self.is_in_class_period():
-                    logging.info("Server says lock, but we are in a class period. Skipping lock.")
-                    # Sunucuya ders saatinde olduğumuzu bildir
-                    self.acknowledge_command("tahtaLock", "0")
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
