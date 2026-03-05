@@ -2586,6 +2586,10 @@ class FatihClientApp(QMainWindow):
             self.system_remove = int(commands[3])
             self.log_send = int(commands[4])
             
+            # --- DEBUG: Tum durum degiskenlerini logla ---
+            lock_age = time.time() - self.last_lock_time if self.last_lock_time > 0 else -1
+            logging.info(f"[CMD] tahta_lock={self.tahta_lock}, is_locked={self.is_locked}, expected={self.expected_server_tahta_lock}, lock_age={lock_age:.1f}s, start_work={self.start_work}")
+            
             # --- Mesaj gelirse ve sistem açıksa otomatik kilitle (C# davranışı) ---
             if message != "" and not self.is_locked:
                 logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
