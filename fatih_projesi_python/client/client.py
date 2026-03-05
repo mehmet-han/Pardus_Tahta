@@ -2269,6 +2269,46 @@ class FatihClientApp(QMainWindow):
                 return ""
         return time_str if len(time_str) == 5 else ""
 
+    def is_in_class_period(self):
+        """
+        Şu an ders saati içinde mi kontrol et.
+        check_schedule ile aynı mantığı kullanır ama sadece True/False döndürür.
+        """
+        if not self.schedule or 'hours' not in self.schedule:
+            return False
+
+        now = datetime.now()
+        day_of_week = now.isoweekday()
+        current_time_str = now.strftime("%H:%M")
+
+        try:
+            hours_data = self.schedule['hours']
+            if isinstance(hours_data, list):
+                if day_of_week < len(hours_data):
+                    day_schedule = hours_data[day_of_week]
+                    for period_idx in range(1, min(19, len(day_schedule))):
+                        period_data = day_schedule[period_idx]
+                        if isinstance(period_data, list) and len(period_data) >= 3:
+                            start_time = period_data[1] if len(period_data) > 1 else ""
+                            end_time = period_data[2] if len(period_data) > 2 else ""
+                            if start_time and end_time and start_time != "0" and end_time != "0":
+                                if start_time <= current_time_str < end_time:
+                                    return True
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(day_of_week), {})
+                for k in range(1, 19):
+                    slot = day_schedule.get(str(k))
+                    if slot and isinstance(slot, dict):
+                        start_time = slot.get('1', '')
+                        end_time = slot.get('2', '')
+                        if start_time and end_time and start_time != '0' and end_time != '0':
+                            if start_time <= current_time_str < end_time:
+                                return True
+        except Exception as e:
+            logging.warning(f"Error checking class period: {e}")
+
+        return False
+
     def check_schedule(self):
         """Check the current time against the schedule and lock/unlock accordingly.
         
@@ -2537,6 +2577,10 @@ class FatihClientApp(QMainWindow):
                     logging.info("Server says lock, but USB is present. Skipping lock.")
                 elif self.manual_override:
                     logging.info("Server says lock, but manual override is active. Skipping lock.")
+                elif self.is_in_class_period():
+                    logging.info("Server says lock, but we are in a class period. Skipping lock.")
+                    # Sunucuya ders saatinde olduğumuzu bildir
+                    self.acknowledge_command("tahtaLock", "0")
                 else:
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
             elif self.tahta_lock == 0 and self.is_locked and message == "":
