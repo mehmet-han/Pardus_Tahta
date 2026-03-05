@@ -1948,6 +1948,12 @@ class FatihClientApp(QMainWindow):
         # 0 = Sunucunun 0 döndürmesini bekliyoruz (yeni açtık)
         # 1 = Sunucunun 1 döndürmesini bekliyoruz (yeni kilitledik)
         self.expected_server_tahta_lock = -1 
+        
+        # --- KİLİTLEME SOĞUMA SÜRESİ ---
+        # Kilitleme yapıldıktan sonra sunucunun eski 'aç' komutunu yoksaymak için
+        # zaman damgası. 10 saniyelik soğuma süresi boyunca sunucudan gelen
+        # tahta_lock=0 komutları yoksayılır.
+        self.last_lock_time = 0
 
         # --- SCHEDULING ---
         self.schedule = None
@@ -2583,6 +2589,8 @@ class FatihClientApp(QMainWindow):
                 # Eğer yeni kilitlediysek ve sunucudan 1 gelmesini bekliyorsak, bu 0'ı yoksay.
                 if self.expected_server_tahta_lock == 1:
                     logging.info("Server says unlock (0), but we are waiting for it to acknowledge our lock (1). Ignoring.")
+                elif time.time() - self.last_lock_time < 10:
+                    logging.info(f"Server says unlock (0), but lock cooldown is active ({time.time() - self.last_lock_time:.1f}s < 10s). Ignoring stale command.")
                 else:
                     logging.info("Sunucu tahta_lock=0 (Açık) komutu gönderdi, sistem açılıyor")
                     self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
@@ -2666,7 +2674,7 @@ class FatihClientApp(QMainWindow):
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
-            
+            self.last_lock_time = time.time()  # Soğuma süresini başlat
             # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
