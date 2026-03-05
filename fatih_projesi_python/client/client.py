@@ -3324,7 +3324,7 @@ class FatihKioskMode(QMainWindow):
         self.login_button.show()
 
         # --- YENİ: Yardım Kılavuzu Aç/Kapat Butonu (Kiosk Modu) ---
-        self.help_toggle_button = QPushButton("❓", self)
+        self.help_toggle_button = QPushButton("ℹ", self)
         self.help_toggle_button.setStyleSheet("""
             QPushButton {
                 background-color: rgba(0, 0, 0, 150); 
