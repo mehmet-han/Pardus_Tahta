@@ -29,11 +29,15 @@ rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*
 # Cython ile client.py'yi C uzantısına (.so) derle
 python3 compile_client.py build_ext --inplace
 
-if [ ! -f fatih_projesi_python/client/client*.so ]; then
-    echo "❌ HATA: Kod şifreleme başarısız oldu!"
+# Dosyayı bul ve ana dizine (.so olarak) al
+COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+
+if [ -z "$COMPILED_FILE" ]; then
+    echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
     exit 1
 fi
-echo "✅ Kodlar başarıyla şifrelendi (.so oluşturuldu)."
+
+echo "✅ Kodlar başarıyla şifrelendi (.so oluşturuldu: $COMPILED_FILE)."
 
 echo "[3/6] Sistem dosyaları hedefe kopyalanıyor..."
 INSTALL_DIR="/opt/fatih-client"
@@ -41,7 +45,7 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/resources"
 
 # Şifrelenmiş .so dosyasını kopyala
-cp fatih_projesi_python/client/client*.so "$INSTALL_DIR/"
+cp "$COMPILED_FILE" "$INSTALL_DIR/"
 
 # Çalıştırmak için ufak bir main.py oluştur (sadece derlenmiş kütüphaneyi içe aktarır)
 cat <<EOF > "$INSTALL_DIR/main.py"
