@@ -14,11 +14,10 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "[1/6] Gerekli paketler yükleniyor..."
-apt-get update -qq
-apt-get install -y python3-pip python3-pyqt5 evdev
-# Cython ve kaynak kurucuları yükle (kodu C'ye çevirip şifrelemek için)
-apt-get install -y python3-pip python3-pyqt5 evdev python3-dev gcc
-pip3 install Cython==3.0.11
+apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
+# Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
+apt-get install -y python3-pip python3-pyqt5 python3-dev gcc python3-setuptools python3-evdev || echo "Uyarı: Bazı apt paketleri bulunamadı, pip3 ile kurulmaya çalışılacak..."
+pip3 install Cython==3.0.11 setuptools evdev --break-system-packages || pip3 install Cython==3.0.11 setuptools evdev
 
 echo "[2/6] Python kodları şifreleniyor (Obfuscation)..."
 # Ana projenin olduğu dizine geç
