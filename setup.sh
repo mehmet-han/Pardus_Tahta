@@ -91,9 +91,17 @@ chown -R root:root "$INSTALL_DIR"
 echo "[4/6] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
 if [ ! -z "$CORPORATE_CODE" ]; then
-    # Kurum kodunu config.ini içine yaz (Eğer config parser kullanılabilirse)
-    # Basit bir replace işlemi:
-    sed -i "s/^corporate_code =.*/corporate_code = $CORPORATE_CODE/g" "$INSTALL_DIR/config.ini" 2>/dev/null || echo "corporate_code = $CORPORATE_CODE" >> "$INSTALL_DIR/config.ini"
+    # config.ini yoksa veya içinde [settings] yoksa sıfırdan oluştur
+    if [ ! -f "$INSTALL_DIR/config.ini" ] || ! grep -q "\[settings\]" "$INSTALL_DIR/config.ini"; then
+        echo "[settings]" > "$INSTALL_DIR/config.ini"
+        echo "corporate_code = $CORPORATE_CODE" >> "$INSTALL_DIR/config.ini"
+    else
+        # Varsa sadece corporate_code satırını değiştir veya ekle
+        sed -i "s/^corporate_code =.*/corporate_code = $CORPORATE_CODE/g" "$INSTALL_DIR/config.ini"
+        if ! grep -q "^corporate_code =" "$INSTALL_DIR/config.ini"; then
+            echo "corporate_code = $CORPORATE_CODE" >> "$INSTALL_DIR/config.ini"
+        fi
+    fi
     
     # Kullanıcı klasörüne kopyala
     mkdir -p /home/etapadmin/.config/fatih-client
