@@ -90,19 +90,23 @@ chown -R root:root "$INSTALL_DIR"
 
 echo "[4/6] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
+
+# Tüm zorunlu değişkenleri barındıran tam teşekküllü varsayılan config'i oluştur:
+cat <<EOF > "$INSTALL_DIR/config.ini"
+[settings]
+api_url = https://api.mebre.com.tr
+wb_user = fatih
+wb_pass = fth123
+user_agent = fatih-client
+board_id = 0
+version = 1
+sub_version = 0
+corporate_code = ${CORPORATE_CODE:-0}
+# İsteğe bağlı NTP sunucular vb. eklenebilir
+ntp_servers = time.google.com,time.windows.com
+EOF
+
 if [ ! -z "$CORPORATE_CODE" ]; then
-    # config.ini yoksa veya içinde [settings] yoksa sıfırdan oluştur
-    if [ ! -f "$INSTALL_DIR/config.ini" ] || ! grep -q "\[settings\]" "$INSTALL_DIR/config.ini"; then
-        echo "[settings]" > "$INSTALL_DIR/config.ini"
-        echo "corporate_code = $CORPORATE_CODE" >> "$INSTALL_DIR/config.ini"
-    else
-        # Varsa sadece corporate_code satırını değiştir veya ekle
-        sed -i "s/^corporate_code =.*/corporate_code = $CORPORATE_CODE/g" "$INSTALL_DIR/config.ini"
-        if ! grep -q "^corporate_code =" "$INSTALL_DIR/config.ini"; then
-            echo "corporate_code = $CORPORATE_CODE" >> "$INSTALL_DIR/config.ini"
-        fi
-    fi
-    
     # Kullanıcı klasörüne kopyala
     mkdir -p /home/etapadmin/.config/fatih-client
     cp "$INSTALL_DIR/config.ini" /home/etapadmin/.config/fatih-client/config.ini
