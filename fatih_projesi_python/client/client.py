@@ -2961,7 +2961,7 @@ class FatihClientApp(QMainWindow):
 
         context_menu.exec(QCursor.pos())
 
-    def show_system_status(self):
+    def show_system_status(self, checked=False):
         """Show system status dialog - Kurum kodu kaldırıldı"""
         board_name = SETTINGS.get('board_name', 'Akıllı Tahta')
         status_text = f"""
@@ -2976,7 +2976,7 @@ ________________________________________________________________________________
 """
         QMessageBox.information(self, "Sistem Durumu", status_text.strip())
 
-    def show_settings(self):
+    def show_settings(self, checked=False):
         """Show settings dialog"""
         settings_text = f"""
 Mevcut Ayarlar:
@@ -2991,12 +2991,12 @@ ________________________________________________________________________________
 """
         QMessageBox.information(self, "Ayarlar", settings_text.strip())
 
-    def show_on_screen_keyboard(self):
+    def show_on_screen_keyboard(self, checked=False):
         """Show on-screen keyboard"""
         keyboard = OnScreenKeyboard()
         keyboard.exec()
 
-    def show_logs(self):
+    def show_logs(self, checked=False):
         """Show recent logs"""
         log_file = os.path.expanduser("~/fatih_client.log")
         if os.path.exists(log_file):
@@ -3022,7 +3022,7 @@ ________________________________________________________________________________
         else:
             QMessageBox.information(self, "Bilgi", "Henüz kayıt dosyası oluşturulmamış.")
 
-    def restart_system(self):
+    def restart_system(self, checked=False):
         """Restart the system"""
         reply = QMessageBox.question(
             self, "Yeniden Başlat",
@@ -3059,7 +3059,7 @@ ________________________________________________________________________________
             logging.warning("All reboot methods failed, trying os.system")
             os.system("sudo reboot || reboot")
 
-    def shutdown_system(self):
+    def shutdown_system(self, checked=False):
         """Shutdown the system"""
         reply = QMessageBox.question(
             self, "Kapat",
@@ -3097,7 +3097,7 @@ ________________________________________________________________________________
             logging.warning("All shutdown methods failed, trying os.system")
             os.system("sudo poweroff || poweroff")
 
-    def show_about(self):
+    def show_about(self, checked=False):
         """Show about dialog"""
         about_text = f"""
 Fatih Akıllı Tahta İstemcisi
@@ -3109,17 +3109,17 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
         QMessageBox.about(self, "Hakkında", about_text.strip())
 
-    def show_board_config(self):
+    def show_board_config(self, checked=False):
         """Show board configuration dialog"""
         config_dialog = BoardConfigDialog(self, network_client=self.network_client)
         config_dialog.exec()
 
-    def show_change_password(self):
+    def show_change_password(self, checked=False):
         """Show change password dialog"""
         change_dialog = ChangePasswordDialog(self)
         change_dialog.exec()
 
-    def show_schedule(self):
+    def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
         if self.schedule:
             dialog = ScheduleDialog(self, self.schedule)
