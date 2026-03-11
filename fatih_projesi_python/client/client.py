@@ -1035,6 +1035,10 @@ class LoginDialog(QDialog):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+        
+        # Ensure the focus is actually placed on the password field
+        # so the onscreen keyboard logic or physical typing fires
+        QTimer.singleShot(100, self.password_field.setFocus)
 
     def attempt_login(self):
         password = self.password_field.text()
@@ -1599,16 +1603,15 @@ class KeyboardLocker(threading.Thread):
                 device = InputDevice(path)
                 caps = device.capabilities()
 
-                # Only grab keyboard devices, NOT mice
-                # Check if device has keyboard-specific keys and lacks mouse buttons
+                # Changed logic: Lock anything that might be used to type or bypass the lock screen.
+                # Since MEB school boards use various touch layers and generic HID devices, 
+                # we'll be more inclusive and lock general EV_KEY devices that look like keyboards.
                 if ecodes.EV_KEY in caps:
+                    # Check if device has keyboard-specific keys
                     has_keyboard_keys = any(key in caps.get(ecodes.EV_KEY, [])
-                                          for key in [ecodes.KEY_A, ecodes.KEY_ENTER, ecodes.KEY_SPACE])
-                    has_mouse_buttons = any(key in caps.get(ecodes.EV_KEY, [])
-                                          for key in [ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE])
-
-                    # Only lock if it's a keyboard (has keyboard keys but no mouse buttons)
-                    if has_keyboard_keys and not has_mouse_buttons:
+                                          for key in [ecodes.KEY_A, ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_ESC])
+                    
+                    if has_keyboard_keys:
                         logging.info(f"Found keyboard device to lock: {device.name} at {device.path}")
                         self.devices.append(device)
                     elif has_mouse_buttons:
@@ -1797,10 +1800,17 @@ class NetworkClient:
             return None
 
     def check_network(self):
-        """Check if network is available by connecting to a known host."""
+        """Check if network is available by connecting to the API host."""
         try:
             import socket
-            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            from urllib.parse import urlparse
+            
+            # Use the API URL hostname instead of 8.8.8.8 to bypass MEB network restrictions
+            domain = urlparse(self.api_url).netloc
+            if not domain:
+                domain = "api.mebre.com.tr" # Fallback
+                
+            socket.create_connection((domain, 443), timeout=3)
             return True
         except OSError:
             return False
