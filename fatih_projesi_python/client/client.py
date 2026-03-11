@@ -1800,20 +1800,24 @@ class NetworkClient:
             return None
 
     def check_network(self):
-        """Check if network is available by connecting to the API host."""
+        """Check if network is available. Made specifically for Fatih internet."""
         try:
+            # En garanti yol: Kendi API'sine 3 saniyelik basit bir istek atıp atmadığına bakmak.
+            # 403 (Yasak) dönse bile bu internete çıktığımızın (sunucunun bizi gördüğünün) kanıtıdır.
+            import requests
+            response = requests.get(self.api_url, timeout=3, verify=False)
+            return True  # 200, 403, 500 ne dönerse dönsün bağlantı var demektir.
+        except requests.exceptions.RequestException:
+            # Eğer requests.get hata verirse bile, en azından Fatih Ağı yerel bağlantı sağlıyor mu diye bakalım
             import socket
-            from urllib.parse import urlparse
-            
-            # Use the API URL hostname instead of 8.8.8.8 to bypass MEB network restrictions
-            domain = urlparse(self.api_url).netloc
-            if not domain:
-                domain = "api.mebre.com.tr" # Fallback
-                
-            socket.create_connection((domain, 443), timeout=3)
-            return True
-        except OSError:
-            return False
+            try:
+                # Fatih hattında MEB DNS'ine veya kendi API adresine son bir kez ping dene
+                from urllib.parse import urlparse
+                domain = urlparse(self.api_url).netloc or "api.mebre.com.tr"
+                socket.create_connection((domain, 443), timeout=3)
+                return True
+            except OSError:
+                return False
 
     def ctrl_post(self):
         """
