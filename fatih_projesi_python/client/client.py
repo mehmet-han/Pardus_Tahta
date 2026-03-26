@@ -1795,13 +1795,6 @@ class NetworkClient:
             if response.status_code != 200:
                 logging.error(f"API Error: {response.status_code} for {self.api_url} with data {data}. Response: {response.text[:200]}")
                 return None
-            
-            # WAF / Firewall block page detection
-            resp_text = response.text.lower()
-            if "ip adresini kontrol" in resp_text or "<html" in resp_text or "<body" in resp_text:
-                logging.error(f"WAF/Firewall blocked the request. Response: {response.text[:100]}")
-                return None
-            
             return response
         except requests.exceptions.SSLError as e:
             logging.error(f"SSL Error during network request: {e}. This is likely due to an untrusted server certificate. Temporarily bypassing verification.")
@@ -1939,7 +1932,10 @@ class NetworkClient:
         data = {"fnc": "3480"}
         response = self._make_request("5570", data)
         if response and response.text:
-            return response.text.strip()
+            nw = response.text.strip()
+            # C# logic: if Nw != "" && Nw != null && Nw.Length < 6 && Nw != ClassVariable.Vercion
+            if len(nw) < 6:
+                return nw
         return current_version
 
 
@@ -2603,7 +2599,12 @@ class FatihClientApp(QMainWindow):
             logging.error("Failed to poll server - lock state preserved, server state reset.")
 
     def process_commands(self, commands):
-        if len(commands) < 5: return
+        if len(commands) < 5:
+            # C# uses a catch for formatting issues with short/invalid WAF messages that sets tahta_lock = -5
+            self.tahta_lock = -5
+            self.shutDown = -5
+            self.system_remove = -5
+            return
         try:
             self.tahta_lock = int(commands[0])
             message = commands[1] if commands[1] != '0' else ""
