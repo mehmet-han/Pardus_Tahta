@@ -95,18 +95,18 @@ echo "[4/6] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
 
 # Tüm zorunlu değişkenleri barındıran tam teşekküllü varsayılan config'i oluştur:
+# ÖNEMLİ: API URL, kullanıcı adı, şifre ve user-agent C# ClassVariable.cs ile birebir aynı olmalıdır!
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
-api_url = https://api.mebre.com.tr
-wb_user = fatih
-wb_pass = fth123
-user_agent = fatih-client
+api_url = https://api.mebre.com.tr/v4/s_brt.php
+wb_user = hcrKd_r
+wb_pass = B1Mu?WjG!Ga6
+user_agent = agent_SmartBoart
 board_id = 0
-version = 1
-sub_version = 0
+version = V2.13
+sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
-# İsteğe bağlı NTP sunucular vb. eklenebilir
-ntp_servers = time.google.com,time.windows.com
+ntp_servers = time.windows.com,time.google.com,time.cloudflare.com,time.apple.com
 EOF
 
 if [ ! -z "$CORPORATE_CODE" ]; then

@@ -1772,24 +1772,20 @@ class NetworkClient:
         logging.debug(f"Request headers: {headers}")
         return headers
 
-    def _make_request(self, core_code: str, data: dict, timeout: int = 5):
-        """Makes a POST request to the server and returns the response."""
+    def _make_request(self, core_code: str, data: dict, timeout: int = 100):
+        """Makes a POST request to the server. Timeout 100s matches C# WebClient default."""
         if not self.check_network():
             logging.warning("Network is unavailable. Aborting request.")
             return None
         
         headers = self._get_headers(core_code)
         try:
-            # IMPORTANT: Added verify=False to bypass SSL certificate verification.
-            # This is a potential security risk and is for testing purposes.
-            # If this resolves the connection issue, the server's SSL certificate
-            # may need to be fixed or added to the system's trust store.
             response = requests.post(
                 self.api_url, 
                 headers=headers, 
                 data=data,
                 auth=self.auth, 
-                timeout=15,
+                timeout=timeout,
                 verify=False
             )
             if response.status_code != 200:
