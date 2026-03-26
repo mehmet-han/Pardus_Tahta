@@ -1789,7 +1789,7 @@ class NetworkClient:
                 headers=headers, 
                 data=data,
                 auth=self.auth, 
-                timeout=timeout,
+                timeout=15,
                 verify=False
             )
             if response.status_code != 200:
@@ -2294,35 +2294,39 @@ class FatihClientApp(QMainWindow):
         """
         Perform periodic maintenance tasks, including fetching the schedule.
         """
-        try:
-            logging.info("Performing periodic maintenance tasks")
-            
-            # Get board values/schedule
-            all_boards_data = self.network_client.get_values()
-            if all_boards_data:
-                logging.info(f"Retrieved {len(all_boards_data)} board configurations")
-                # Find this board's schedule
-                my_board_id_str = SETTINGS.get('board_id', '0')
-                for board_data in all_boards_data:
-                    if str(board_data.get('id')) == my_board_id_str:
-                        self.schedule = board_data
-                        logging.info(f"Successfully loaded schedule for board {my_board_id_str}")
-                        break
-                else:
-                    logging.warning(f"Could not find schedule for board ID {my_board_id_str} in server response.")
-
-            # Check for version updates
-            new_version = self.network_client.check_version()
-            if new_version and new_version != SETTINGS.get('version'):
-                logging.info(f"Version update available: {SETTINGS.get('version')} -> {new_version}")
-                self.version_update_label.setText(f"⬆ Güncelleme mevcut: v{new_version}")
-                self.version_update_label.setVisible(True)
-
-            # --- Bileşen 13: Autostart dosyası kontrolü ---
-            self._repair_autostart()
+        def _maintenance_task():
+            try:
+                logging.info("Performing periodic maintenance tasks")
                 
-        except Exception as e:
-            logging.error(f"Error in maintenance tasks: {e}")
+                # Get board values/schedule
+                all_boards_data = self.network_client.get_values()
+                if all_boards_data:
+                    logging.info(f"Retrieved {len(all_boards_data)} board configurations")
+                    # Find this board's schedule
+                    my_board_id_str = SETTINGS.get('board_id', '0')
+                    for board_data in all_boards_data:
+                        if str(board_data.get('id')) == my_board_id_str:
+                            self.schedule = board_data
+                            logging.info(f"Successfully loaded schedule for board {my_board_id_str}")
+                            break
+                    else:
+                        logging.warning(f"Could not find schedule for board ID {my_board_id_str} in server response.")
+
+                # Check for version updates
+                new_version = self.network_client.check_version()
+                if new_version and new_version != SETTINGS.get('version'):
+                    logging.info(f"Version update available: {SETTINGS.get('version')} -> {new_version}")
+                    if hasattr(self, 'version_update_label'):
+                        QTimer.singleShot(0, lambda: self.version_update_label.setText(f"⬆ Güncelleme mevcut: v{new_version}"))
+                        QTimer.singleShot(0, lambda: self.version_update_label.setVisible(True))
+
+                # --- Bileşen 13: Autostart dosyası kontrolü ---
+                self._repair_autostart()
+                    
+            except Exception as e:
+                logging.error(f"Error in maintenance tasks: {e}")
+
+        threading.Thread(target=_maintenance_task, daemon=True).start()
 
     def _repair_autostart(self):
         """Autostart dosyasını kontrol et, silinmişse/bozulmuşsa geri oluştur (Bileşen 13)."""
@@ -2567,36 +2571,35 @@ class FatihClientApp(QMainWindow):
             _subprocess.run(['sudo', 'poweroff'], capture_output=True)
             return
 
-        response_text = self.network_client.ctrl_post()
-        if response_text:
-            logging.info("Successfully polled server.")
-            
-            # --- C# startWork mekanizmasi ---
-            # Ilk acilista sunucu komutlarini yoksay (ewt >= 4 olana kadar)
-            if not self.start_work:
-                self.early_wait_ticks += 1
-                if self.early_wait_ticks >= 4:
-                    self.early_wait_ticks = 0
-                    self.start_work = True
-                    logging.info("start_work=True: Sunucu komutlari artik islenecek (C# ewt mekanizmasi)")
-                else:
-                    logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
-                    return
-            
-            commands = response_text.split(',')
-            self.process_commands(commands)
-        else:
-            # İNTERNET KOPTU - KİLİT DURUMUNU KORUMASI İÇİN:
-            # last_server_tahta_lock'u -1'e çek (bilinmiyor)
-            # Böylece internet geldiğinde sunucu tahta_lock=0 dönerse,
-            # "önceki değer -1 → sunucu ilk defa konuşuyor" olur ve kilidi AÇMAZ
-            self.last_server_tahta_lock = -1
-            self.server_has_spoken = False
-            
-            if self.is_locked:
-                self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>')
-            
-            logging.error("Failed to poll server - lock state preserved, server state reset.")
+        def _poll_task():
+            response_text = self.network_client.ctrl_post()
+            if response_text:
+                logging.info("Successfully polled server.")
+                
+                # --- C# startWork mekanizmasi ---
+                if not self.start_work:
+                    self.early_wait_ticks += 1
+                    if self.early_wait_ticks >= 4:
+                        self.early_wait_ticks = 0
+                        self.start_work = True
+                        logging.info("start_work=True: Sunucu komutlari artik islenecek (C# ewt mekanizmasi)")
+                    else:
+                        logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
+                        return
+                
+                commands = response_text.split(',')
+                QTimer.singleShot(0, lambda: self.process_commands(commands))
+            else:
+                # İNTERNET KOPTU - KİLİT DURUMUNU KORUMASI İÇİN:
+                self.last_server_tahta_lock = -1
+                self.server_has_spoken = False
+                
+                if self.is_locked:
+                    QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>'))
+                
+                logging.error("Failed to poll server - lock state preserved, server state reset.")
+
+        threading.Thread(target=_poll_task, daemon=True).start()
 
     def process_commands(self, commands):
         if len(commands) < 5:
@@ -2884,7 +2887,7 @@ class FatihClientApp(QMainWindow):
 
         try:
             logging.info("Creating login dialog...")
-            login_dialog = LoginDialog(self)
+            login_dialog = LoginDialog(None)
             logging.info("Executing login dialog...")
             result = login_dialog.exec()
             logging.info(f"Login dialog result: {result}")
