@@ -44,6 +44,9 @@ INSTALL_DIR="/opt/fatih-client"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/resources"
 
+# Temizlik: Eski derlenmemiş script varsa sil (python'un .py'yi öncelikli yüklemesini engellemek için)
+rm -f "$INSTALL_DIR/client.py" 2>/dev/null
+
 # Şifrelenmiş .so dosyasını kopyala
 cp "$COMPILED_FILE" "$INSTALL_DIR/"
 

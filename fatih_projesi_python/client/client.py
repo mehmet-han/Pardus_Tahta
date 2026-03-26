@@ -34,7 +34,7 @@ AUTOSTART_CONTENT = """[Desktop Entry]
 Type=Application
 Name=Fatih Client
 Comment=Akıllı Tahta Kilit Sistemi
-Exec=/usr/bin/python3 /opt/fatih-client/client.py
+Exec=/usr/bin/python3 /opt/fatih-client/main.py
 Hidden=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
@@ -2337,7 +2337,7 @@ class FatihClientApp(QMainWindow):
                 # İçerik doğru mu kontrol et
                 with open(AUTOSTART_FILE, 'r') as f:
                     content = f.read()
-                if '/opt/fatih-client/client.py' not in content:
+                if '/opt/fatih-client/main.py' not in content:
                     logging.warning("Autostart file content is incorrect, restoring...")
                     with open(AUTOSTART_FILE, 'w') as f:
                         f.write(AUTOSTART_CONTENT)
