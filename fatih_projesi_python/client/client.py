@@ -838,7 +838,8 @@ def kill_all_browsers():
 # --- On-Screen Keyboard Dialog (equivalent to C# FormEkranKlavyesi) ---
 class OnScreenKeyboard(QDialog):
     def __init__(self, target_field=None, on_enter_callback=None):
-        super().__init__()
+        parent = target_field.window() if target_field else None
+        super().__init__(parent)
         self.target_field = target_field
         self.on_enter_callback = on_enter_callback
         self.shift_pressed = False
@@ -995,7 +996,7 @@ class KeyboardLineEdit(QLineEdit):
 # --- Login Dialog ---
 class LoginDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(None)
+        super().__init__(parent)
         self.parent = parent
         self.init_ui()
 
@@ -1794,6 +1795,13 @@ class NetworkClient:
             if response.status_code != 200:
                 logging.error(f"API Error: {response.status_code} for {self.api_url} with data {data}. Response: {response.text[:200]}")
                 return None
+            
+            # WAF / Firewall block page detection
+            resp_text = response.text.lower()
+            if "ip adresini kontrol" in resp_text or "<html" in resp_text or "<body" in resp_text:
+                logging.error(f"WAF/Firewall blocked the request. Response: {response.text[:100]}")
+                return None
+            
             return response
         except requests.exceptions.SSLError as e:
             logging.error(f"SSL Error during network request: {e}. This is likely due to an untrusted server certificate. Temporarily bypassing verification.")
