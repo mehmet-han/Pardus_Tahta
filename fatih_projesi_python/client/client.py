@@ -2065,8 +2065,9 @@ class FatihClientApp(QMainWindow):
         self.update_board_id_display()
 
         # Status message label
-        self.message_label = QLabel("", self)
-        self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: transparent;")
+        self.message_label = QLabel("Yükleniyor...", self)
+        # Siyah renk istendi
+        self.message_label.setStyleSheet("color: black; font-size: 32px; background-color: transparent;")
         self.message_label.setAlignment(Qt.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
@@ -2157,51 +2158,7 @@ class FatihClientApp(QMainWindow):
         self.login_button.setVisible(True)
         self.login_button.show()
 
-        # --- YENİ: Yardım Kılavuzu Aç/Kapat Butonu ---
-        self.help_toggle_button = QPushButton("ℹ", self)
-        self.help_toggle_button.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(0, 0, 0, 150); 
-                color: #00ff88; 
-                border: 2px solid white; 
-                border-radius: 25px;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 0, 0, 220);
-            }
-        """)
-        self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
-        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
-        toggle_size = 50
-        self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
-        # Position updated in resizeEvent
-        self.help_toggle_button.setGeometry(self.width() - button_width - 100, padding_top + 5, toggle_size, toggle_size)
-        self.help_toggle_button.show()
-
-        # --- YENİ: Tahtayı Açma Kılavuzu (Kullanıcı İsteği) ---
-        self.help_guide_label = QLabel(self)
-        self.help_guide_label.setText(
-            "👋 Merhaba! Tahtayı Açmak İçin:\n\n"
-            "📱 Cep telefonunuza MebreCep uygulamasını indirin.\n\n"
-            "🔓 Uygulamadan Akıllı Tahta menüsünden sınıfınızı seçip akıllı tahtayı açıp kilitleyebilirsiniz.\n\n"
-            "🔑 Akıllı tahtada İnternet Yoksa: Uygulamadaki 'İnternetsiz Şifre Al' kodunu buradaki 'Tahtayı Aç' butonuna tıklayarak girin.\n\n"
-            "✨ Ders bitiminde tahtanız otomatik olarak kilitlenecektir."
-        )
-        self.help_guide_label.setWordWrap(True)
-        self.help_guide_label.setStyleSheet("""
-            QLabel {
-                color: white; 
-                background-color: rgba(0, 0, 0, 180); 
-                padding: 20px;
-                border-radius: 15px;
-                border: 2px solid #0066cc;
-                font-size: 15px;
-                line-height: 1.4;
-            }
-        """)
-        # Başlangıç konumu (resizeEvent'ta güncellenecek)
-        self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
-        self.help_guide_label.hide() # Varsayılan olarak gizli
+        # --- (i) Butonu ve Kılavuz C# uyumu için kaldırıldı ---
 
         logging.info(f"Login button positioned at top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button moved to top-right: ({self.width() - button_width - padding_right}, {padding_top})")
