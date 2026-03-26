@@ -2594,7 +2594,7 @@ class FatihClientApp(QMainWindow):
             self.server_has_spoken = False
             
             if self.is_locked:
-                self.message_label.setText("İNTERNET YOK!!!")
+                self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>')
             
             logging.error("Failed to poll server - lock state preserved, server state reset.")
 
