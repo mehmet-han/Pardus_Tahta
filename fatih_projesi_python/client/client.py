@@ -2065,11 +2065,77 @@ class FatihClientApp(QMainWindow):
         self.update_board_id_display()
 
         # Status message label
-        self.message_label = QLabel("Yükleniyor...", self)
+        self.message_label = QLabel("", self)
         self.message_label.setStyleSheet("color: white; font-size: 32px; background-color: transparent;")
         self.message_label.setAlignment(Qt.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
+
+        # --- GÖMÜLÜ GİRİŞ FORMU (Dialog yerine - Cinnamon WM sorunu çözümü) ---
+        self.login_panel = QWidget(self)
+        self.login_panel.setStyleSheet("""
+            QWidget#loginPanel {
+                background-color: rgba(30, 30, 30, 240);
+                border: 2px solid #0066cc;
+                border-radius: 15px;
+            }
+            QLabel { color: white; }
+            QLineEdit {
+                background-color: #3c3c3c;
+                color: white;
+                border: 2px solid #555;
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 18px;
+            }
+            QLineEdit:focus { border-color: #0066cc; }
+            QPushButton {
+                padding: 12px 25px;
+                border-radius: 5px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+        """)
+        self.login_panel.setObjectName("loginPanel")
+        panel_w, panel_h = 420, 280
+        self.login_panel.setGeometry(
+            (self.width() - panel_w) // 2,
+            (self.height() - panel_h) // 2,
+            panel_w, panel_h
+        )
+        lp_layout = QVBoxLayout(self.login_panel)
+        lp_layout.setSpacing(15)
+        lp_layout.setContentsMargins(30, 25, 30, 25)
+
+        lp_title = QLabel("Yönetici Girişi")
+        lp_title.setFont(QFont('Sans', 18, QFont.Bold))
+        lp_title.setAlignment(Qt.AlignCenter)
+        lp_layout.addWidget(lp_title)
+
+        self.login_password_field = QLineEdit()
+        self.login_password_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
+        self.login_password_field.returnPressed.connect(self._login_attempt)
+        lp_layout.addWidget(self.login_password_field)
+
+        self.login_error_label = QLabel("")
+        self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
+        self.login_error_label.setAlignment(Qt.AlignCenter)
+        lp_layout.addWidget(self.login_error_label)
+
+        btn_layout = QHBoxLayout()
+        cancel_btn = QPushButton("İptal")
+        cancel_btn.setStyleSheet("background-color: #555; color: white;")
+        cancel_btn.clicked.connect(self._login_cancel)
+        btn_layout.addWidget(cancel_btn)
+
+        login_btn = QPushButton("Giriş")
+        login_btn.setStyleSheet("background-color: #0066cc; color: white;")
+        login_btn.clicked.connect(self._login_attempt)
+        btn_layout.addWidget(login_btn)
+        lp_layout.addLayout(btn_layout)
+
+        self.login_panel.hide()  # Başlangıçta gizli
 
         # Login button - Tahtayı Açın butonu
         self.login_button = QPushButton("Tahtayı Açın", self)
@@ -2865,33 +2931,37 @@ class FatihClientApp(QMainWindow):
         self.board_id_label.setText(board_name)
 
     def show_login_dialog(self):
-        """Show the login dialog"""
+        """Gömülü giriş panelini göster (Dialog değil, aynı pencere içinde)"""
         logging.info("Login button clicked!")
-
         if not self.is_locked:
-            logging.info("System is not locked, not showing login dialog")
             return
+        self.login_password_field.clear()
+        self.login_error_label.setText("")
+        self.login_panel.show()
+        self.login_panel.raise_()
+        self.login_password_field.setFocus()
+        logging.info("Embedded login panel shown")
 
-        try:
-            logging.info("Creating login dialog...")
-            login_dialog = LoginDialog(None)
-            login_dialog.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
-            logging.info("Executing login dialog...")
-            result = login_dialog.exec()
-            logging.info(f"Login dialog result: {result}")
+    def _login_attempt(self):
+        """Gömülü giriş formundan şifre denemesi"""
+        password = self.login_password_field.text()
+        logging.info(f"Login attempt with password: {'*' * len(password)}")
+        if self.validate_admin_password(password):
+            logging.info("Password validated successfully")
+            self.login_panel.hide()
+            self.acknowledge_command("tahtaLock", "0")
+            self.save_log("Admin şifre ile giriş yapıldı", "login")
+            self.unlock_system("Admin şifre ile açıldı")
+        else:
+            logging.warning("Invalid password entered")
+            self.login_error_label.setText("❌ Geçersiz şifre!")
+            self.login_password_field.clear()
+            self.login_password_field.setFocus()
 
-            if result == QDialog.DialogCode.Accepted:
-                logging.info("Login successful, hiding login button")
-                self.login_button.hide()
-        except Exception as e:
-            logging.error(f"Error in login dialog: {e}")
-        finally:
-            # CRITICAL: Kilit ekranı her durumda tekrar öne gelsin
-            if self.is_locked:
-                self.showFullScreen()
-                self.raise_()
-                self.activateWindow()
-                logging.info("Lock screen re-raised after login dialog")
+    def _login_cancel(self):
+        """Gömülü giriş panelini kapat"""
+        self.login_panel.hide()
+        logging.info("Login panel cancelled")
 
     def validate_admin_password(self, password):
         """
