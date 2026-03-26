@@ -1611,6 +1611,9 @@ class KeyboardLocker(threading.Thread):
                     has_keyboard_keys = any(key in caps.get(ecodes.EV_KEY, [])
                                           for key in [ecodes.KEY_A, ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_ESC])
                     
+                    has_mouse_buttons = any(key in caps.get(ecodes.EV_KEY, [])
+                                          for key in [getattr(ecodes, 'BTN_LEFT', 272), getattr(ecodes, 'BTN_RIGHT', 273), getattr(ecodes, 'BTN_MOUSE', 272)])
+                    
                     if has_keyboard_keys:
                         logging.info(f"Found keyboard device to lock: {device.name} at {device.path}")
                         self.devices.append(device)
