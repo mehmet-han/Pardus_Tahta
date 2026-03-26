@@ -3,6 +3,14 @@ fatih_projesi_python/.logs/
 fatih_projesi_python/logs/
 fatih_projesi_python/logs/*
 
+# Build artifacts
+dist/
+build/
+*.so
+*.c
+*.egg-info/
+pyarmor.error.log
+
 # Environment variables
 .env
 
