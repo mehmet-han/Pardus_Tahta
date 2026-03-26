@@ -2559,14 +2559,6 @@ class FatihClientApp(QMainWindow):
         return headers
 
     def poll_server(self):
-        # --- Gece yarısı otomatik kapatma (C# CtrlNetworkVal karşılığı) ---
-        now = datetime.now()
-        if now.hour == 0 and now.minute <= 30:
-            logging.info("Gece yarısı olduğu için sistem kapatılıyor...")
-            self.save_log("Gece yarısı otomatik kapatma", "midnight")
-            _subprocess.run(['sudo', 'poweroff'], capture_output=True)
-            return
-
         def _poll_task():
             response_text = self.network_client.ctrl_post()
             if response_text:
@@ -2875,7 +2867,6 @@ class FatihClientApp(QMainWindow):
     def show_login_dialog(self):
         """Show the login dialog"""
         logging.info("Login button clicked!")
-        print("Login button clicked!")
 
         if not self.is_locked:
             logging.info("System is not locked, not showing login dialog")
@@ -2884,6 +2875,7 @@ class FatihClientApp(QMainWindow):
         try:
             logging.info("Creating login dialog...")
             login_dialog = LoginDialog(None)
+            login_dialog.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
             logging.info("Executing login dialog...")
             result = login_dialog.exec()
             logging.info(f"Login dialog result: {result}")
@@ -2893,7 +2885,13 @@ class FatihClientApp(QMainWindow):
                 self.login_button.hide()
         except Exception as e:
             logging.error(f"Error in login dialog: {e}")
-            print(f"Error in login dialog: {e}")
+        finally:
+            # CRITICAL: Kilit ekranı her durumda tekrar öne gelsin
+            if self.is_locked:
+                self.showFullScreen()
+                self.raise_()
+                self.activateWindow()
+                logging.info("Lock screen re-raised after login dialog")
 
     def validate_admin_password(self, password):
         """
