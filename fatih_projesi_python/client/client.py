@@ -2072,8 +2072,8 @@ class FatihClientApp(QMainWindow):
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
 
-        # --- GÖMÜLÜ GİRİŞ FORMU (Dialog yerine - Cinnamon WM sorunu çözümü) ---
-        self.login_panel = QWidget(self)
+        # --- GÖMÜLÜ GİRİŞ FORMU (Frameless top-level window - Cinnamon WM z-order fix) ---
+        self.login_panel = QWidget(None)  # None parent = top-level window, not child
         self.login_panel.setStyleSheet("""
             QWidget#loginPanel {
                 background-color: rgba(30, 30, 30, 240);
@@ -2098,6 +2098,11 @@ class FatihClientApp(QMainWindow):
             }
         """)
         self.login_panel.setObjectName("loginPanel")
+        # Top-level pencere özellikleri - Cinnamon WM'de child widget z-order sorununu çözer
+        self.login_panel.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+        )
+        self.login_panel.setAttribute(Qt.WA_TranslucentBackground, False)
         panel_w, panel_h = 420, 280
         self.login_panel.setGeometry(
             (self.width() - panel_w) // 2,
@@ -2158,7 +2163,60 @@ class FatihClientApp(QMainWindow):
         self.login_button.setVisible(True)
         self.login_button.show()
 
-        # --- (i) Butonu ve Kılavuz C# uyumu için kaldırıldı ---
+        # --- (i) Yardım Kılavuzu Butonu ---
+        self.help_toggle_button = QPushButton("ℹ", self)
+        self.help_toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(0, 0, 0, 150);
+                color: #00ff88;
+                border: 2px solid white;
+                border-radius: 25px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 220);
+            }
+        """)
+        self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
+        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
+        toggle_size = 50
+        self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
+        # Tahtayı Açın butonunun hemen soluna (15px boşluk)
+        self.help_toggle_button.move(
+            screen_width - button_width - padding_right - toggle_size - 15,
+            padding_top + 5
+        )
+        self.help_toggle_button.raise_()
+        self.help_toggle_button.show()
+
+        # --- Yardım Kılavuzu Paneli (top-level frameless - login_panel ile aynı pattern) ---
+        self.help_guide_label = QWidget(None)  # top-level window
+        self.help_guide_label.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+        )
+        self.help_guide_label.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.help_guide_label.setStyleSheet("""
+            QWidget {
+                background-color: rgba(0, 0, 0, 210);
+                border: 2px solid #0066cc;
+                border-radius: 15px;
+            }
+        """)
+        hg_layout = QVBoxLayout(self.help_guide_label)
+        hg_layout.setContentsMargins(20, 20, 20, 20)
+        hg_text = QLabel(
+            "👋 Merhaba! Tahtayı Açmak İçin:\n\n"
+            "📱 Cep telefonunuza MebreCep uygulamasını indirin.\n\n"
+            "🔓 Uygulamadan Akıllı Tahta menüsünden sınıfınızı seçip "
+            "akıllı tahtayı açıp kilitleyebilirsiniz.\n\n"
+            "🔑 Akıllı tahtada İnternet Yoksa: Uygulamadaki 'İnternetsiz "
+            "Şifre Al' kodunu buradaki 'Tahtayı Açın' butonuna tıklayarak girin.\n\n"
+            "✨ Ders bitiminde tahtanız otomatik olarak kilitlenecektir."
+        )
+        hg_text.setWordWrap(True)
+        hg_text.setStyleSheet("color: white; font-size: 15px; background: transparent;")
+        hg_layout.addWidget(hg_text)
+        self.help_guide_label.hide()
+
 
         logging.info(f"Login button positioned at top-right: ({self.width() - button_width - padding_right}, {padding_top})")
         print(f"Login button moved to top-right: ({self.width() - button_width - padding_right}, {padding_top})")
@@ -2248,9 +2306,23 @@ class FatihClientApp(QMainWindow):
             logging.error(f"System tray initialization failed: {e}")
 
     def toggle_help_guide(self):
-        """Toggles the visibility of the unlock help guide."""
-        if hasattr(self, 'help_guide_label'):
-            self.help_guide_label.setVisible(not self.help_guide_label.isVisible())
+        """(i) butonuna basıldığında yardım kılavuzunu göster/gizle (top-level window)."""
+        if not hasattr(self, 'help_guide_label'):
+            return
+        if self.help_guide_label.isVisible():
+            self.help_guide_label.hide()
+            logging.info("Help guide hidden")
+        else:
+            # Ekran koordinatlarına göre konumlandır (sağ üst köşe)
+            screen = QApplication.primaryScreen().geometry()
+            guide_w, guide_h = 400, 320
+            guide_x = screen.width() - guide_w - 30
+            guide_y = 110  # (i) butonunun altı
+            self.help_guide_label.setGeometry(guide_x, guide_y, guide_w, guide_h)
+            self.help_guide_label.show()
+            self.help_guide_label.raise_()
+            self.help_guide_label.activateWindow()
+            logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
         self.timer = QTimer(self)
@@ -2655,6 +2727,10 @@ class FatihClientApp(QMainWindow):
                 if self.last_server_tahta_lock == 1:
                     # Sunucu onceden 1 (kilitli) idi, simdi 0 (acik) -> GERCEK MebreCep komutu
                     logging.info("Sunucu durumu 1->0 degisti: Gercek MebreCep/Yonetim Paneli komutu alindi")
+                    # Kullanıcı şifre formunu açmışsa, formu kapat sonra unlock et
+                    if hasattr(self, 'login_panel') and self.login_panel.isVisible():
+                        logging.info("Login panel açık - önce panel kapatılıyor, sonra unlock yapılacak")
+                        self.login_panel.hide()
                     self.unlock_system("Sunucudan (Mobilden) Istek Geldi")
                 else:
                     # Sunucu zaten 0 idi veya bilinmiyor (-1) -> eski/bayat komut, yoksay
@@ -2888,16 +2964,30 @@ class FatihClientApp(QMainWindow):
         self.board_id_label.setText(board_name)
 
     def show_login_dialog(self):
-        """Gömülü giriş panelini göster (Dialog değil, aynı pencere içinde)"""
-        logging.info("Login button clicked!")
+        """Giriş panelini göster (top-level frameless window - Cinnamon WM fix)"""
+        logging.info(f"Login button clicked! is_locked={self.is_locked}")
         if not self.is_locked:
+            logging.warning("show_login_dialog called but is_locked=False - skipping")
             return
+        # C# stms=false: login panel açıkken sunucu komutlarını işleme
+        self.start_work = False
+        logging.info("start_work=False: Login panel açık - sunucu komutları askıya alındı")
+        
         self.login_password_field.clear()
         self.login_error_label.setText("")
+        
+        # Paneli ekranın ortasına konumlandır
+        screen = QApplication.primaryScreen().geometry()
+        panel_w, panel_h = 420, 280
+        panel_x = (screen.width() - panel_w) // 2
+        panel_y = (screen.height() - panel_h) // 2
+        self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
+        
         self.login_panel.show()
         self.login_panel.raise_()
+        self.login_panel.activateWindow()
         self.login_password_field.setFocus()
-        logging.info("Embedded login panel shown")
+        logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
 
     def _login_attempt(self):
         """Gömülü giriş formundan şifre denemesi"""
@@ -2906,6 +2996,8 @@ class FatihClientApp(QMainWindow):
         if self.validate_admin_password(password):
             logging.info("Password validated successfully")
             self.login_panel.hide()
+            # C# stms=true'ya dönüş (başarılı giriş)
+            self.start_work = True
             self.acknowledge_command("tahtaLock", "0")
             self.save_log("Admin şifre ile giriş yapıldı", "login")
             self.unlock_system("Admin şifre ile açıldı")
@@ -2914,11 +3006,14 @@ class FatihClientApp(QMainWindow):
             self.login_error_label.setText("❌ Geçersiz şifre!")
             self.login_password_field.clear()
             self.login_password_field.setFocus()
+            # start_work=False olarak kalıyor (panel hâlâ açık)
 
     def _login_cancel(self):
         """Gömülü giriş panelini kapat"""
         self.login_panel.hide()
-        logging.info("Login panel cancelled")
+        # C# stms=true'ya dönüş (iptal edildi)
+        self.start_work = True
+        logging.info("Login panel cancelled - start_work=True restored")
 
     def validate_admin_password(self, password):
         """
