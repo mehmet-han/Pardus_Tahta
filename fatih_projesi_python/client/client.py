@@ -1384,6 +1384,12 @@ class ChangePasswordDialog(QDialog):
         change_btn.setDefault(True)
         button_layout.addWidget(change_btn)
 
+        # Status label
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: #ff4444; font-size: 13px; font-weight: bold;")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.status_label)
+
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
@@ -1393,25 +1399,30 @@ class ChangePasswordDialog(QDialog):
         confirm = self.confirm_field.text()
 
         if not current or not new or not confirm:
-            QMessageBox.warning(self, "Hata", "Tüm alanları doldurun!")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Hata: Tüm alanları doldurun!")
             return
 
         # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
         if current != config_password:
-            QMessageBox.warning(self, "Hata", "Mevcut şifre yanlış!")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Hata: Mevcut şifre yanlış!")
             return
 
         if new != confirm:
-            QMessageBox.warning(self, "Hata", "Yeni şifreler eşleşmiyor!")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Hata: Yeni şifreler eşleşmiyor!")
             return
 
         if len(new) < 4:
-            QMessageBox.warning(self, "Hata", "Şifre en az 4 karakter olmalı!")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Hata: Şifre en az 4 karakter olmalı!")
             return
 
         if new == 'mebre':
-            QMessageBox.warning(self, "Hata", "Yeni şifre varsayılan şifre ile aynı olamaz!")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Hata: Varsayılan şifre ile aynı olamaz!")
             return
 
         # Update configuration
@@ -1459,15 +1470,19 @@ class ChangePasswordDialog(QDialog):
             SETTINGS['password_changed'] = 'true'
 
             self.parent.save_log("Admin şifresi değiştirildi", "security")
-            QMessageBox.information(self, "Başarılı", "Şifre başarıyla değiştirildi!")
-            self.accept()
+            
+            self.status_label.setStyleSheet("color: #00ff88; font-weight: bold; font-size: 15px;")
+            self.status_label.setText("Şifre başarıyla değiştirildi! Kapatılıyor...")
+            
+            # Use QTimer to close the dialog after short delay to show success
+            QTimer.singleShot(1500, self.accept)
 
         except PermissionError:
-            QMessageBox.critical(self, "İzin Hatası",
-                                 f"Yapılandırma dosyası kaydedilemedi: '{CONFIG_PATH}'.\n"
-                                 "Ayarları değiştirmek için lütfen uygulamayı yönetici olarak çalıştırın (örn. 'sudo').")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText("Yapılandırma yetkisi yok (sudo gerekir)!")
         except Exception as e:
-            QMessageBox.warning(self, "Hata", f"Şifre kaydedilemedi: {e}")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setText(f"Hata: {str(e)[:30]}")
 
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
