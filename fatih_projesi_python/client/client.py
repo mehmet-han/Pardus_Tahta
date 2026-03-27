@@ -2667,7 +2667,7 @@ class FatihClientApp(QMainWindow):
     def poll_server(self):
         def _poll_task():
             response_text = self.network_client.ctrl_post()
-            if response_text:
+            if response_text is not None:
                 logging.info("Successfully polled server.")
                 
                 # --- C# startWork mekanizmasi ---
@@ -2684,14 +2684,20 @@ class FatihClientApp(QMainWindow):
                 commands = response_text.split(',')
                 QTimer.singleShot(0, lambda: self.process_commands(commands))
             else:
-                # İNTERNET KOPTU - KİLİT DURUMUNU KORUMASI İÇİN:
+                # İNTERNET VEYA SUNUCU KOPTU
                 self.last_server_tahta_lock = -1
                 self.server_has_spoken = False
                 
-                if self.is_locked:
-                    QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>'))
-                
-                logging.error("Failed to poll server - lock state preserved, server state reset.")
+                # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
+                has_connection = self.network_client.check_network()
+                if not has_connection:
+                    if self.is_locked:
+                        QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>'))
+                    logging.error("Failed to poll server - No Internet connection detected.")
+                else:
+                    if self.is_locked:
+                        QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 32px; background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px;">Sunucuya Bağlanılamadı (Tekrar Deneniyor)</div>'))
+                    logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
 
         threading.Thread(target=_poll_task, daemon=True).start()
 
