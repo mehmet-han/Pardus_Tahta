@@ -847,8 +847,7 @@ class OnScreenKeyboard(QDialog):
 
     def init_ui(self):
         self.setWindowTitle("Sayısal Tuş Takımı")
-        self.setModal(True)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
 
         layout = QVBoxLayout()
         keyboard_layout = QGridLayout()
@@ -984,15 +983,7 @@ class KeyboardLineEdit(QLineEdit):
                     pos.setY(parent_pos.y() - keyboard_size.height())
                 self._keyboard.move(pos)
             
-            self._keyboard.exec()
-            
-            # Modal (Sanal Klavye) kapanınca arkaplana düşmeyi engelle (Cinnamon X11 Focus Pump)
-            parent_window = self.window()
-            if parent_window:
-                QTimer.singleShot(50, lambda pw=parent_window: (
-                    pw.setWindowState((pw.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
-                    pw.show(), pw.raise_(), pw.activateWindow()
-                ))
+            self._keyboard.show()
             
             # Set a flag to prevent immediate reopening and reset it after a short delay
             self._just_closed = True
@@ -2080,7 +2071,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.25" # Default
+        version_text = "V1.00.26" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -4147,13 +4138,8 @@ ________________________________________________________________________________
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
-        keyboard = OnScreenKeyboard()
-        keyboard.exec()
-        
-        QTimer.singleShot(100, lambda: (
-            self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
-            self.show(), self.raise_(), self.activateWindow()
-        ))
+        self._onscreen_kb = OnScreenKeyboard()
+        self._onscreen_kb.show()
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""
