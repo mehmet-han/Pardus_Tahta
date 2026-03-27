@@ -986,6 +986,14 @@ class KeyboardLineEdit(QLineEdit):
             
             self._keyboard.exec()
             
+            # Modal (Sanal Klavye) kapanınca arkaplana düşmeyi engelle (Cinnamon X11 Focus Pump)
+            parent_window = self.window()
+            if parent_window:
+                QTimer.singleShot(50, lambda pw=parent_window: (
+                    pw.setWindowState((pw.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
+                    pw.show(), pw.raise_(), pw.activateWindow()
+                ))
+            
             # Set a flag to prevent immediate reopening and reset it after a short delay
             self._just_closed = True
             QTimer.singleShot(100, self._reset_flag)
@@ -2072,7 +2080,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.23" # Default
+        version_text = "V1.00.24" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -4141,6 +4149,11 @@ ________________________________________________________________________________
         """Kiosk modunda ekran klavyesi göster"""
         keyboard = OnScreenKeyboard()
         keyboard.exec()
+        
+        QTimer.singleShot(100, lambda: (
+            self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
+            self.show(), self.raise_(), self.activateWindow()
+        ))
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""
