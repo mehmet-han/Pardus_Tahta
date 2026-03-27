@@ -1937,6 +1937,9 @@ class NetworkClient:
 
 # --- Main Application Window ---
 class FatihClientApp(QMainWindow):
+    # Signal emitted from background thread when password validation completes.
+    # Carries (is_valid: bool) so the result is handled safely on the UI thread.
+    _validation_result = pyqtSignal(bool)
     def __init__(self):
         super().__init__()
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
@@ -2863,6 +2866,10 @@ class FatihClientApp(QMainWindow):
                 logging.error(f"Failed to start KeyboardLocker: {e}")
                 self.keyboard_locker = None
     def unlock_system(self, reason=""):
+        # Safety: always hide child login_panel before hiding the parent window
+        # to prevent X11/Cinnamon WM from crashing on orphaned child widget repaints.
+        if hasattr(self, 'login_panel') and self.login_panel.isVisible():
+            self.login_panel.hide()
         logging.info(f"Unlocking system: {reason}")
 
         # Set manual override if this is not a scheduled or server-commanded unlock
@@ -3003,10 +3010,48 @@ class FatihClientApp(QMainWindow):
         logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
 
     def _login_attempt(self):
-        """Gömülü giriş formundan şifre denemesi"""
+        """Gömülü giriş formundan şifre denemesi.
+        
+        Şifre doğrulaması (validate_admin_password) arka planda bir thread'de
+        çalıştırılır; çünkü içindeki get_network_time() bloklu bir NTP soketi
+        açar. Bu soketi Qt'nin ana UI thread'inde çağırmak event loop'u dondurarak
+        PyQt5'in çökmesine neden olur.
+        """
         password = self.login_password_field.text()
+        if not password:
+            return
+
         logging.info(f"Login attempt with password: {'*' * len(password)}")
-        if self.validate_admin_password(password):
+
+        # UI'yı 'bekleniyor' durumuna al — kullanıcıya geri bildirim ver
+        self.login_error_label.setText("🔄 Doğrulanıyor...")
+        self.login_error_label.setStyleSheet("color: #ffaa00; font-size: 14px;")
+
+        # Çift tıklamayı önlemek için butonu geçici olarak devre dışı bırak
+        for btn in self.login_panel.findChildren(QPushButton):
+            btn.setEnabled(False)
+
+        # Signal'ı tek seferliğine bağla (önceki bağlantıları temizle)
+        try:
+            self._validation_result.disconnect()
+        except TypeError:
+            pass
+        self._validation_result.connect(self._on_validation_result)
+
+        # Bloklu NTP çağrısını arka thread'e taşı
+        def _validate_in_thread(pwd):
+            result = self.validate_admin_password(pwd)
+            self._validation_result.emit(result)
+
+        threading.Thread(target=_validate_in_thread, args=(password,), daemon=True).start()
+
+    def _on_validation_result(self, is_valid: bool):
+        """Background thread'den gelen doğrulama sonucunu UI thread'inde işle."""
+        # Buton(lar)ı yeniden etkinleştir
+        for btn in self.login_panel.findChildren(QPushButton):
+            btn.setEnabled(True)
+
+        if is_valid:
             logging.info("Password validated successfully")
             self.login_panel.hide()
             # C# stms=true'ya dönüş (başarılı giriş)
@@ -3016,6 +3061,7 @@ class FatihClientApp(QMainWindow):
             self.unlock_system("Admin şifre ile açıldı")
         else:
             logging.warning("Invalid password entered")
+            self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
             self.login_error_label.setText("❌ Geçersiz şifre!")
             self.login_password_field.clear()
             self.login_password_field.setFocus()
