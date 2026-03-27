@@ -1474,14 +1474,11 @@ class ChangePasswordDialog(QDialog):
             self.status_label.setStyleSheet("color: #00ff88; font-weight: bold; font-size: 15px;")
             self.status_label.setText("Şifre başarıyla değiştirildi! Kapatılıyor...")
             
-            # Ana ekranda yazının görülmesi için yenilemeyi zorluyoruz
+            # Güvenli asenkron kapanış: QTimer ile event loop'u dondurmadan bekle
+            # time.sleep() KULLANMA — ana thread'i bloke eder ve Segfault'a yol açar!
             self.status_label.repaint()
             QApplication.processEvents()
-            
-            # Kapanmayı UI çökmesini (Segmentation Fault) önlemek amaçlı senkron yapıyoruz
-            import time
-            time.sleep(1.5)
-            self.accept()
+            QTimer.singleShot(1500, self.accept)
 
         except PermissionError:
             self.status_label.setStyleSheet("color: #ff4444;")
@@ -2075,7 +2072,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.01" # Default
+        version_text = "V1.00.22" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -3350,6 +3347,39 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
         QMessageBox.about(self, "Hakkında", about_text.strip())
 
+    def _safe_open_dialog(self, dialog_class, **kwargs):
+        """
+        Dialog açmadan önce keyboard locker'ı güvenli şekilde durdurur,
+        dialog kapandıktan sonra tekrar başlatır.
+        time.sleep() KULLANMAZ — QTimer ile asenkron çalışır, Segfault önler.
+        """
+        locker_was_active = False
+        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            locker_was_active = True
+            logging.info("Keyboard locker stopped for dialog")
+
+        def _open():
+            dialog = dialog_class(self, **kwargs)
+            dialog.exec()
+            if locker_was_active:
+                self.keyboard_locker = KeyboardLocker()
+                self.keyboard_locker.start()
+                logging.info("Keyboard locker restarted after dialog")
+            # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
+            QTimer.singleShot(100, lambda: (
+                self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
+                self.show(), self.raise_(), self.activateWindow()
+            ))
+
+        if locker_was_active:
+            # evdev grab release'inin tam tamamlanması için 500ms bekle — BLOKSUZ
+            QTimer.singleShot(500, _open)
+        else:
+            _open()
+
     def show_board_config(self, checked=False):
         """Show board configuration dialog"""
         # Şifre Zorunluluğu Kuralı:
@@ -3365,45 +3395,11 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
             return
 
-        locker_active = False
-        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            locker_active = True
-            import time
-            time.sleep(0.5)
-
-        config_dialog = BoardConfigDialog(self, network_client=self.network_client)
-        config_dialog.exec()
-
-        if locker_active:
-            self.keyboard_locker = KeyboardLocker()
-            self.keyboard_locker.start()
-            
-        # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
-        QTimer.singleShot(100, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+        self._safe_open_dialog(BoardConfigDialog, network_client=self.network_client)
 
     def show_change_password(self, checked=False):
         """Show change password dialog"""
-        locker_active = False
-        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            locker_active = True
-            import time
-            time.sleep(0.5)
-
-        change_dialog = ChangePasswordDialog(self)
-        change_dialog.exec()
-
-        if locker_active:
-            self.keyboard_locker = KeyboardLocker()
-            self.keyboard_locker.start()
-            
-        # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
-        QTimer.singleShot(100, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+        self._safe_open_dialog(ChangePasswordDialog)
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
@@ -3914,9 +3910,12 @@ class FatihKioskMode(QMainWindow):
             self.keyboard_locker.join(timeout=3)  # Thread'in bitmesini bekle
             self.keyboard_locker = None
             logging.info("Kiosk: Keyboard locker stopped and joined for login dialog")
-            # Kısa bekleme - cihaz grab'ın tamamen serbest kalması için
-            import time
-            time.sleep(0.5)
+            # evdev grab release'inin tamamlanması için 500ms bekle — BLOKSUZ
+            QTimer.singleShot(500, self._do_show_login)
+            return
+        self._do_show_login()
+
+    def _do_show_login(self):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Yönetici Girişi")
@@ -4084,6 +4083,39 @@ ________________________________________________________________________________
 """
         QMessageBox.information(self, "Sistem Durumu", status_text.strip())
 
+    def _safe_open_dialog(self, dialog_class, **kwargs):
+        """
+        Kiosk modunda dialog açmadan önce keyboard locker'ı güvenli şekilde durdurur,
+        dialog kapandıktan sonra tekrar başlatır.
+        time.sleep() KULLANMAZ — QTimer ile asenkron çalışır, Segfault önler.
+        """
+        locker_was_active = False
+        if getattr(self, 'keyboard_locker', None):
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            locker_was_active = True
+            logging.info("Kiosk: Keyboard locker stopped for dialog")
+
+        def _open():
+            dialog = dialog_class(self, **kwargs)
+            dialog.exec()
+            # Kiosk modunda keyboard locker her zaman tekrar başlar
+            self.keyboard_locker = KeyboardLocker()
+            self.keyboard_locker.start()
+            logging.info("Kiosk: Keyboard locker restarted after dialog")
+            # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
+            QTimer.singleShot(100, lambda: (
+                self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
+                self.show(), self.raise_(), self.activateWindow()
+            ))
+
+        if locker_was_active:
+            # evdev grab release'inin tam tamamlanması için 500ms bekle — BLOKSUZ
+            QTimer.singleShot(500, _open)
+        else:
+            _open()
+
     def kiosk_show_board_config(self):
         """Kiosk modunda tahta yapılandırması göster"""
         # Şifre Zorunluluğu Kuralı:
@@ -4099,39 +4131,11 @@ ________________________________________________________________________________
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
             return
 
-        if getattr(self, 'keyboard_locker', None):
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            import time
-            time.sleep(0.5)
-
-        config_dialog = BoardConfigDialog(self, network_client=self.network_client)
-        config_dialog.exec()
-
-        self.keyboard_locker = KeyboardLocker()
-        self.keyboard_locker.start()
-        
-        # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
-        QTimer.singleShot(100, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+        self._safe_open_dialog(BoardConfigDialog, network_client=self.network_client)
 
     def kiosk_show_change_password(self):
         """Kiosk modunda şifre değiştir dialog göster"""
-        if getattr(self, 'keyboard_locker', None):
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            import time
-            time.sleep(0.5)
-
-        change_dialog = ChangePasswordDialog(self)
-        change_dialog.exec()
-
-        self.keyboard_locker = KeyboardLocker()
-        self.keyboard_locker.start()
-        
-        # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
-        QTimer.singleShot(100, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+        self._safe_open_dialog(ChangePasswordDialog)
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
