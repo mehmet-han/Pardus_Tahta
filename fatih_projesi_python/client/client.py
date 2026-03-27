@@ -2080,7 +2080,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.24" # Default
+        version_text = "V1.00.25" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -2882,7 +2882,7 @@ class FatihClientApp(QWidget):
             self.message_label.setVisible(True)
 
             # Show, raise, and activate the window.
-            self.showFullScreen()
+            self.show()
             self.raise_()
             self.activateWindow()
             self.login_button.setFocus()
@@ -3556,7 +3556,7 @@ def main_kiosk():
 
         # Create a simplified kiosk window
         kiosk = FatihKioskMode()
-        kiosk.showFullScreen()
+        kiosk.show()
 
         logging.info("Kiosk mode started - waiting for unlock")
         sys.exit(app.exec())
