@@ -3367,6 +3367,11 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         if locker_active:
             self.keyboard_locker = KeyboardLocker()
             self.keyboard_locker.start()
+        
+        # Fokus kaybını önemeye yönelik Linux/WM güvenlik z-index yenilemesi
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def show_change_password(self, checked=False):
         """Show change password dialog"""
@@ -3385,6 +3390,11 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         if locker_active:
             self.keyboard_locker = KeyboardLocker()
             self.keyboard_locker.start()
+        
+        # Fokus kaybını önemeye yönelik Linux/WM güvenlik z-index yenilemesi
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
