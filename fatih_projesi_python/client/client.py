@@ -1042,6 +1042,7 @@ class BoardConfigDialog(QDialog):
         corporate_label = QLabel("Kurum Kodu:")
         corporate_label.setFont(QFont("Arial", 12))
         self.corporate_code_field = KeyboardLineEdit()
+        self.corporate_code_field.set_on_enter_callback(self.fetch_boards)
         self.corporate_code_field.setEchoMode(QLineEdit.EchoMode.Password)  # **** şeklinde görünsün
         self.corporate_code_field.setText(SETTINGS.get('corporate_code', ''))
         self.corporate_code_field.setMinimumWidth(250)
@@ -1053,6 +1054,7 @@ class BoardConfigDialog(QDialog):
         password_label = QLabel("Şifre:")
         password_label.setFont(QFont("Arial", 12))
         self.password_field = KeyboardLineEdit()
+        self.password_field.set_on_enter_callback(self.fetch_boards)
         self.password_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_field.setPlaceholderText("Admin şifresini giriniz")
         self.password_field.setMinimumWidth(250)
@@ -1084,7 +1086,7 @@ class BoardConfigDialog(QDialog):
         layout.addLayout(board_form)
 
         # Embedded Numpad
-        self.numpad = EmbeddedNumpad()
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
         layout.addWidget(self.numpad)
 
         # Buttons
@@ -1283,6 +1285,7 @@ class ChangePasswordDialog(QDialog):
         current_label = QLabel("Mevcut Şifre:")
         current_label.setFont(QFont("Arial", 12))
         self.current_field = KeyboardLineEdit()
+        self.current_field.set_on_enter_callback(self.change_password)
         self.current_field.setMinimumWidth(250)
         self.current_field.setMinimumHeight(35)
         self.current_field.setFont(QFont("Arial", 12))
@@ -1302,6 +1305,7 @@ class ChangePasswordDialog(QDialog):
         new_label = QLabel("Yeni Şifre:")
         new_label.setFont(QFont("Arial", 12))
         self.new_field = KeyboardLineEdit()
+        self.new_field.set_on_enter_callback(self.change_password)
         self.new_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.new_field.setMinimumWidth(250)
         self.new_field.setMinimumHeight(35)
@@ -1312,6 +1316,7 @@ class ChangePasswordDialog(QDialog):
         confirm_label = QLabel("Yeni Şifre (Tekrar):")
         confirm_label.setFont(QFont("Arial", 12))
         self.confirm_field = KeyboardLineEdit()
+        self.confirm_field.set_on_enter_callback(self.change_password)
         self.confirm_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.confirm_field.setMinimumWidth(250)
         self.confirm_field.setMinimumHeight(35)
@@ -1321,7 +1326,7 @@ class ChangePasswordDialog(QDialog):
         layout.addLayout(form_layout)
 
         # Embedded Numpad
-        self.numpad = EmbeddedNumpad()
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.change_password)
         layout.addWidget(self.numpad)
 
         # Buttons
