@@ -2332,7 +2332,6 @@ class FatihClientApp(QMainWindow):
             guide_y = 110  # (i) butonunun altı
             self.help_guide_label.setGeometry(guide_x, guide_y, guide_w, guide_h)
             self.help_guide_label.show()
-            self.help_guide_label.raise_()
             logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
@@ -3000,7 +2999,6 @@ class FatihClientApp(QMainWindow):
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
         
         self.login_panel.show()
-        self.login_panel.raise_()
         self.login_password_field.setFocus()
         logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
 
