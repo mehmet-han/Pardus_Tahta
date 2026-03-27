@@ -2090,7 +2090,7 @@ class FatihClientApp(QWidget):
         self.update_board_id_display()
 
         # Status message label
-        self.message_label = QLabel("Yükleniyor...", self)
+        self.message_label = QLabel("", self)
         # Siyah renk istendi
         self.message_label.setStyleSheet("color: black; font-size: 32px; background-color: transparent;")
         self.message_label.setAlignment(Qt.AlignCenter)
@@ -2694,11 +2694,16 @@ class FatihClientApp(QWidget):
                 # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
                 has_connection = self.network_client.check_network()
                 if not has_connection:
-                    if self.is_locked:
+                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa)
+                    if not self.is_locked and not check_usb_password():
+                        logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
+                        QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
+                        
+                    if getattr(self, 'is_locked', False):
                         QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>'))
                     logging.error("Failed to poll server - No Internet connection detected.")
                 else:
-                    if self.is_locked:
+                    if getattr(self, 'is_locked', False):
                         QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 32px; background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px;">Sunucuya Bağlanılamadı (Tekrar Deneniyor)</div>'))
                     logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
 
@@ -3326,13 +3331,39 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 
     def show_board_config(self, checked=False):
         """Show board configuration dialog"""
+        locker_active = False
+        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            locker_active = True
+            import time
+            time.sleep(0.5)
+
         config_dialog = BoardConfigDialog(self, network_client=self.network_client)
         config_dialog.exec()
 
+        if locker_active:
+            self.keyboard_locker = KeyboardLocker()
+            self.keyboard_locker.start()
+
     def show_change_password(self, checked=False):
         """Show change password dialog"""
+        locker_active = False
+        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            locker_active = True
+            import time
+            time.sleep(0.5)
+
         change_dialog = ChangePasswordDialog(self)
         change_dialog.exec()
+
+        if locker_active:
+            self.keyboard_locker = KeyboardLocker()
+            self.keyboard_locker.start()
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
@@ -4015,13 +4046,33 @@ ________________________________________________________________________________
 
     def kiosk_show_board_config(self):
         """Kiosk modunda tahta yapılandırması göster"""
+        if getattr(self, 'keyboard_locker', None):
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            import time
+            time.sleep(0.5)
+
         config_dialog = BoardConfigDialog(self, network_client=self.network_client)
         config_dialog.exec()
 
+        self.keyboard_locker = KeyboardLocker()
+        self.keyboard_locker.start()
+
     def kiosk_show_change_password(self):
         """Kiosk modunda şifre değiştir dialog göster"""
+        if getattr(self, 'keyboard_locker', None):
+            self.keyboard_locker.stop()
+            self.keyboard_locker.join(timeout=3)
+            self.keyboard_locker = None
+            import time
+            time.sleep(0.5)
+
         change_dialog = ChangePasswordDialog(self)
         change_dialog.exec()
+
+        self.keyboard_locker = KeyboardLocker()
+        self.keyboard_locker.start()
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
