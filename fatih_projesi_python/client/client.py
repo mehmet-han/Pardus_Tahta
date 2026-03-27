@@ -905,17 +905,17 @@ class EmbeddedNumpad(QWidget):
         if w:
             w.insert(char)
 
-    def backspace(self):
+    def backspace(self, checked=False):
         w = self._get_active_field()
         if w:
             w.backspace()
 
-    def clear_text(self):
+    def clear_text(self, checked=False):
         w = self._get_active_field()
         if w:
             w.clear()
 
-    def enter_text(self):
+    def enter_text(self, checked=False):
         if self.on_enter_callback:
             self.on_enter_callback()
         else:
@@ -2029,7 +2029,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.27" # Default
+        version_text = "V1.00.28" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
