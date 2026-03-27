@@ -1936,7 +1936,7 @@ class NetworkClient:
 
 
 # --- Main Application Window ---
-class FatihClientApp(QMainWindow):
+class FatihClientApp(QWidget):
     # Signal emitted from background thread when password validation completes.
     # Carries (is_valid: bool) so the result is handled safely on the UI thread.
     _validation_result = pyqtSignal(bool)
@@ -3006,8 +3006,11 @@ class FatihClientApp(QMainWindow):
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
         
         self.login_panel.show()
-        self.login_password_field.setFocus()
+        # Remove setFocus() which causes ibus/fcitx crashes on Pardus ETAP
+        # self.login_password_field.setFocus()
         logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
 
     def _login_attempt(self):
         """Gömülü giriş formundan şifre denemesi.
