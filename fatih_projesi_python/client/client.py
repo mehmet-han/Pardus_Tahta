@@ -1474,8 +1474,14 @@ class ChangePasswordDialog(QDialog):
             self.status_label.setStyleSheet("color: #00ff88; font-weight: bold; font-size: 15px;")
             self.status_label.setText("Şifre başarıyla değiştirildi! Kapatılıyor...")
             
-            # Use QTimer to close the dialog after short delay to show success
-            QTimer.singleShot(1500, self.accept)
+            # Ana ekranda yazının görülmesi için yenilemeyi zorluyoruz
+            self.status_label.repaint()
+            QApplication.processEvents()
+            
+            # Kapanmayı UI çökmesini (Segmentation Fault) önlemek amaçlı senkron yapıyoruz
+            import time
+            time.sleep(1.5)
+            self.accept()
 
         except PermissionError:
             self.status_label.setStyleSheet("color: #ff4444;")
