@@ -2021,7 +2021,8 @@ class FatihClientApp(QWidget):
     def init_ui(self):
         # NEW: Visible change to confirm new version
         self.setWindowTitle("Fatih Client v1.5 - Scheduling Enabled")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Added Qt.Tool to prevent Cinnamon from hiding the window on focus
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setGeometry(QApplication.primaryScreen().geometry())
 
         # Ensure the window accepts mouse events
@@ -2152,12 +2153,12 @@ class FatihClientApp(QWidget):
         btn_layout = QHBoxLayout()
         cancel_btn = QPushButton("İptal")
         cancel_btn.setStyleSheet("background-color: #555; color: white;")
-        cancel_btn.clicked.connect(self._login_cancel)
+        cancel_btn.pressed.connect(self._login_cancel)
         btn_layout.addWidget(cancel_btn)
 
         login_btn = QPushButton("Giriş")
         login_btn.setStyleSheet("background-color: #0066cc; color: white;")
-        login_btn.clicked.connect(self._login_attempt)
+        login_btn.pressed.connect(self._login_attempt)
         btn_layout.addWidget(login_btn)
         lp_layout.addLayout(btn_layout)
 
@@ -2167,7 +2168,7 @@ class FatihClientApp(QWidget):
         self.login_button = QPushButton("Tahtayı Açın", self)
         self.login_button.setStyleSheet("background-color: #0066cc; color: white; border: 3px solid white; border-radius: 10px;")
         self.login_button.setFont(QFont('DejaVu Sans', 18))
-        self.login_button.clicked.connect(self.show_login_dialog)
+        self.login_button.pressed.connect(self.show_login_dialog)
         # Sabit boyut ayarla
         button_width = 280
         button_height = 60
@@ -2197,7 +2198,7 @@ class FatihClientApp(QWidget):
             }
         """)
         self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
-        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
+        self.help_toggle_button.pressed.connect(self.toggle_help_guide)
         toggle_size = 50
         self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
         # Tahtayı Açın butonunun hemen soluna (15px boşluk)
@@ -3006,6 +3007,13 @@ class FatihClientApp(QWidget):
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
         
         self.login_panel.show()
+        # Force window to stay on top and regain focus if Cinnamon dropped it
+        self.raise_()
+        try:
+            self.activateWindow()
+        except Exception:
+            pass
+        
         # Remove setFocus() which causes ibus/fcitx crashes on Pardus ETAP
         # self.login_password_field.setFocus()
         logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
@@ -3551,7 +3559,7 @@ class FatihKioskMode(QMainWindow):
         self.login_button = QPushButton("TAHTAYI AÇ", self)
         self.login_button.setStyleSheet("background-color: #0066cc; color: white; border: 3px solid white; border-radius: 10px;")
         self.login_button.setFont(QFont('DejaVu Sans', 18))
-        self.login_button.clicked.connect(self.show_login)
+        self.login_button.pressed.connect(self.show_login)
         # Butonu sağ üst köşeye taşı
         button_width = 280
         button_height = 60
@@ -3577,7 +3585,7 @@ class FatihKioskMode(QMainWindow):
             }
         """)
         self.help_toggle_button.setFont(QFont('DejaVu Sans', 24))
-        self.help_toggle_button.clicked.connect(self.toggle_help_guide)
+        self.help_toggle_button.pressed.connect(self.toggle_help_guide)
         toggle_size = 50
         self.help_toggle_button.setFixedSize(toggle_size, toggle_size)
         self.help_toggle_button.setGeometry(self.width() - button_width - 100, padding_top + 5, toggle_size, toggle_size)
@@ -3907,13 +3915,13 @@ class FatihKioskMode(QMainWindow):
         cancel_btn = QPushButton("İptal")
         cancel_btn.setMinimumHeight(50)
         cancel_btn.setStyleSheet("background-color: #555; color: white; font-weight: bold;")
-        cancel_btn.clicked.connect(dialog.reject)
+        cancel_btn.pressed.connect(dialog.reject)
         button_layout.addWidget(cancel_btn)
 
         login_btn = QPushButton("Giriş")
         login_btn.setMinimumHeight(50)
         login_btn.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
-        login_btn.clicked.connect(lambda: self.attempt_unlock(password_field.text(), dialog))
+        login_btn.pressed.connect(lambda: self.attempt_unlock(password_field.text(), dialog))
         login_btn.setDefault(True)
         button_layout.addWidget(login_btn)
 
