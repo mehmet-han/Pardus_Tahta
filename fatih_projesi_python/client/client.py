@@ -1244,6 +1244,9 @@ class BoardConfigPanel(QFrame):
             QTimer.singleShot(1000, self.close_panel)
             
         except PermissionError:
+            self.status_label.setText("Yapılandırma yetkisi yok (sudo gerekir)!")
+        except Exception as e:
+            self.status_label.setText(f"Hata: {str(e)[:30]}")
 
 
 # --- Change Password Dialog ---
