@@ -2072,8 +2072,8 @@ class FatihClientApp(QMainWindow):
         self.message_label.setWordWrap(True)
         self.message_label.setGeometry(50, self.height() // 2 - 100, self.width() - 100, 200)
 
-        # --- GÖMÜLÜ GİRİŞ FORMU (Frameless top-level window - Cinnamon WM z-order fix) ---
-        self.login_panel = QWidget(None)  # None parent = top-level window, not child
+        # --- GÖMÜLÜ GİRİŞ FORMU (Child widget to prevent Cinnamon WM focus loss) ---
+        self.login_panel = QWidget(self)  # Child of main window
         self.login_panel.setStyleSheet("""
             QWidget#loginPanel {
                 background-color: rgba(30, 30, 30, 240);
@@ -2098,11 +2098,7 @@ class FatihClientApp(QMainWindow):
             }
         """)
         self.login_panel.setObjectName("loginPanel")
-        # Top-level pencere özellikleri - Cinnamon WM'de child widget z-order sorununu çözer
-        self.login_panel.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )
-        self.login_panel.setAttribute(Qt.WA_TranslucentBackground, False)
+        # No window flags needed for child widget overlaid on the main window
         panel_w, panel_h = 420, 280
         self.login_panel.setGeometry(
             (self.width() - panel_w) // 2,
@@ -2188,12 +2184,8 @@ class FatihClientApp(QMainWindow):
         self.help_toggle_button.raise_()
         self.help_toggle_button.show()
 
-        # --- Yardım Kılavuzu Paneli (top-level frameless - login_panel ile aynı pattern) ---
-        self.help_guide_label = QWidget(None)  # top-level window
-        self.help_guide_label.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )
-        self.help_guide_label.setAttribute(Qt.WA_TranslucentBackground, False)
+        # --- Yardım Kılavuzu Paneli (Child widget pattern) ---
+        self.help_guide_label = QWidget(self)  # Child widget
         self.help_guide_label.setStyleSheet("""
             QWidget {
                 background-color: rgba(0, 0, 0, 210);
@@ -2314,14 +2306,12 @@ class FatihClientApp(QMainWindow):
             logging.info("Help guide hidden")
         else:
             # Ekran koordinatlarına göre konumlandır (sağ üst köşe)
-            screen = QApplication.primaryScreen().geometry()
             guide_w, guide_h = 400, 320
-            guide_x = screen.width() - guide_w - 30
+            guide_x = self.width() - guide_w - 30
             guide_y = 110  # (i) butonunun altı
             self.help_guide_label.setGeometry(guide_x, guide_y, guide_w, guide_h)
             self.help_guide_label.show()
             self.help_guide_label.raise_()
-            self.help_guide_label.activateWindow()
             logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
@@ -2977,15 +2967,13 @@ class FatihClientApp(QMainWindow):
         self.login_error_label.setText("")
         
         # Paneli ekranın ortasına konumlandır
-        screen = QApplication.primaryScreen().geometry()
         panel_w, panel_h = 420, 280
-        panel_x = (screen.width() - panel_w) // 2
-        panel_y = (screen.height() - panel_h) // 2
+        panel_x = (self.width() - panel_w) // 2
+        panel_y = (self.height() - panel_h) // 2
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
         
         self.login_panel.show()
         self.login_panel.raise_()
-        self.login_panel.activateWindow()
         self.login_password_field.setFocus()
         logging.info(f"Login panel shown at ({panel_x},{panel_y}) size {panel_w}x{panel_h}, visible={self.login_panel.isVisible()}")
 

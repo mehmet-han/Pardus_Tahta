@@ -140,6 +140,12 @@ chmod 644 "$AUTOSTART_FILE"
 echo "[6/6] Arka plan servisleri temizleniyor..."
 pkill -9 -f client.py 2>/dev/null
 
+echo "[7/7] Güvenlik Temizliği Yapılıyor..."
+if [ -d "Fatih_Projesi" ]; then
+    rm -rf "Fatih_Projesi"
+    echo "✅ C# Kaynak kodları (Fatih_Projesi dizini) güvenlik sebebiyle silindi."
+fi
+
 echo "========================================================="
 echo "✅ KURULUM TAMAMLANDI!"
 echo "Sistem başarıyla kuruldu ve kodlar şifrelendi."
