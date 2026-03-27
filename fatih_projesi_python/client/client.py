@@ -2135,10 +2135,10 @@ class FatihClientApp(QMainWindow):
         lp_title.setAlignment(Qt.AlignCenter)
         lp_layout.addWidget(lp_title)
 
-        self.login_password_field = QLineEdit()
+        self.login_password_field = KeyboardLineEdit()
         self.login_password_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
-        self.login_password_field.returnPressed.connect(self._login_attempt)
+        self.login_password_field.set_on_enter_callback(self._login_attempt)
         lp_layout.addWidget(self.login_password_field)
 
         self.login_error_label = QLabel("")
