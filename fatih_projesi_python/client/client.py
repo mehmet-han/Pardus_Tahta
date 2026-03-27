@@ -1060,7 +1060,7 @@ class LoginDialog(QDialog):
 # --- Board Configuration Dialog ---
 class BoardConfigDialog(QDialog):
     def __init__(self, parent=None, network_client=None):
-        super().__init__(None)
+        super().__init__(parent)
         self.parent = parent
         self.network_client = network_client
         self.boards = []
@@ -1069,9 +1069,9 @@ class BoardConfigDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Tahta Yapılandırması")
         self.setModal(True)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(480)
-
+        
         layout = QVBoxLayout()
         layout.setSpacing(12)
         layout.setContentsMargins(25, 20, 25, 20)
@@ -1299,14 +1299,14 @@ class BoardConfigDialog(QDialog):
 # --- Change Password Dialog ---
 class ChangePasswordDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(None)
+        super().__init__(parent)
         self.parent = parent
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("Şifre Değiştir")
         self.setModal(True)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
