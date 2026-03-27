@@ -1058,18 +1058,23 @@ class LoginDialog(QDialog):
             self.password_field.clear()
 
 # --- Board Configuration Dialog ---
-class BoardConfigDialog(QDialog):
+class BoardConfigPanel(QFrame):
     def __init__(self, parent=None, network_client=None):
         super().__init__(parent)
-        self.parent = parent
+        self.parent_client = parent
         self.network_client = network_client
         self.boards = []
+        self.setObjectName("BoardConfigPanel")
+        self.setStyleSheet("#BoardConfigPanel { background-color: white; border-radius: 10px; border: 2px solid #333; }")
+        
+        # Center this panel on its parent
+        if parent:
+            pw, ph = parent.width(), parent.height()
+            self.setGeometry((pw - 500) // 2, (ph - 600) // 2, 500, 600)
+            
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Tahta Yapılandırması")
-        self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(480)
         
         layout = QVBoxLayout()
@@ -1082,152 +1087,100 @@ class BoardConfigDialog(QDialog):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        # Form layout - labellar sağ yaslı, textboxlar hizalı
-        form_layout = QFormLayout()
-        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form_layout.setFormAlignment(Qt.AlignCenter)
-        form_layout.setSpacing(10)
-        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        # Status Label
+        self.status_label = QLabel("Yükleniyor...")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.status_label)
 
-        # Corporate code input - maskelenmiş görünsün (**** şeklinde)
-        corporate_label = QLabel("Kurum Kodu:")
-        corporate_label.setFont(QFont("Arial", 12))
-        self.corporate_code_field = KeyboardLineEdit()
-        self.corporate_code_field.setEchoMode(QLineEdit.EchoMode.Password)  # **** şeklinde görünsün
-        self.corporate_code_field.setText(SETTINGS.get('corporate_code', ''))
-        self.corporate_code_field.setMinimumWidth(250)
-        self.corporate_code_field.setMinimumHeight(35)
-        self.corporate_code_field.setFont(QFont("Arial", 12))
-        form_layout.addRow(corporate_label, self.corporate_code_field)
-
-        # Password input - admin şifresi zorunlu
-        password_label = QLabel("Şifre:")
-        password_label.setFont(QFont("Arial", 12))
-        self.password_field = KeyboardLineEdit()
-        self.password_field.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_field.setPlaceholderText("Admin şifresini giriniz")
-        self.password_field.setMinimumWidth(250)
-        self.password_field.setMinimumHeight(35)
-        self.password_field.setFont(QFont("Arial", 12))
-        form_layout.addRow(password_label, self.password_field)
-
-        layout.addLayout(form_layout)
-
-        # Fetch boards button
-        self.fetch_btn = QPushButton("Tahtaları Getir")
-        self.fetch_btn.setMinimumHeight(40)
-        self.fetch_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        self.fetch_btn.clicked.connect(self.fetch_boards)
-        layout.addWidget(self.fetch_btn)
-
-        # Board selection - form layout ile hizalı
-        board_form = QFormLayout()
-        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        board_form.setSpacing(10)
-        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        board_label = QLabel("Tahta Seçin:")
-        board_label.setFont(QFont("Arial", 12))
-        self.board_combo = QComboBox()
-        self.board_combo.setEnabled(False)
-        self.board_combo.setMinimumHeight(35)
-        self.board_combo.setFont(QFont("Arial", 12))
-        board_form.addRow(board_label, self.board_combo)
-        layout.addLayout(board_form)
+        # List Widget
+        self.board_list = QListWidget()
+        self.board_list.setFont(QFont("Arial", 12))
+        layout.addWidget(self.board_list)
 
         # Buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(15)
-
+        
         cancel_btn = QPushButton("İptal")
-        cancel_btn.setMinimumHeight(45)
-        cancel_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        cancel_btn.clicked.connect(self.reject)
-        cancel_btn.clicked.connect(self.close)
+        cancel_btn.setMinimumHeight(40)
+        cancel_btn.setFont(QFont("Arial", 11))
+        cancel_btn.clicked.connect(self.close_panel)
         button_layout.addWidget(cancel_btn)
 
-        confirm_btn = QPushButton("Onayla")
-        confirm_btn.setMinimumHeight(45)
-        confirm_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        confirm_btn.clicked.connect(self.confirm_selection)
-        confirm_btn.setDefault(True)
-        button_layout.addWidget(confirm_btn)
+        save_btn = QPushButton("Uygula / Kaydet")
+        save_btn.setMinimumHeight(40)
+        save_btn.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        save_btn.clicked.connect(self.save_config)
+        button_layout.addWidget(save_btn)
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
-    def fetch_boards(self):
-        corporate_code = self.corporate_code_field.text().strip()
+        # Load data immediately
+        QTimer.singleShot(100, self.load_boards)
+
+    def close_panel(self):
+        self.hide()
+        self.deleteLater()
+
+    def load_boards(self):
+        corporate_code = SETTINGS.get('corporate_code', '').strip()
         if not corporate_code:
-            QMessageBox.warning(self, "Hata", "Kurum kodu gerekli!")
-            return
-
-        # Şifre zorunlu kontrolü
-        password = self.password_field.text().strip()
-        if not password:
-            QMessageBox.warning(self, "Hata", "Şifre gerekli! Lütfen admin şifrenizi giriniz.")
-            return
-
-        # Şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        if password != config_password:
-            QMessageBox.warning(self, "Hata", "Şifre yanlış!")
-            return
-
-        # İlk kurulumda şifre değiştirilmemiş ise uyarı ver
-        password_changed = SETTINGS.get('password_changed', 'false').lower() == 'true'
-        if not password_changed:
-            QMessageBox.warning(self, "Şifre Değişikliği Gerekli",
-                "İlk kurulumda varsayılan şifre kullanılmaktadır.\n"
-                "Güvenliğiniz için lütfen önce şifrenizi değiştiriniz.\n\n"
-                "Sağ tık menüsünden 'Şifre Değiştir' seçeneğini kullanınız.")
+            self.status_label.setText("Hata: Kurum kodu ayarlanmamış. Lütfen önce ayarlayın.")
             return
 
         if not self.network_client:
-            QMessageBox.critical(self, "Hata", "Network client başlatılamadı!")
+            self.status_label.setText("Hata: Network client başlatılamadı!")
             return
 
-        # Temporarily update the network client's settings for this request
-        original_code = self.network_client.settings.get('corporate_code')
-        self.network_client.settings['corporate_code'] = corporate_code
-        
+        self.status_label.setText("Tahtalar yükleniyor...")
+        QApplication.processEvents() # Update UI
+
         try:
             items = self.network_client.get_values()
-            # Restore original corporate code after request
-            self.network_client.settings['corporate_code'] = original_code
 
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
-                    self.board_combo.clear()
+                    self.board_list.clear()
+                    current_board_id = SETTINGS.get('board_id')
+                    
                     for board in items:
-                        board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}',
-                                               board.get("id"))
-                    self.board_combo.setEnabled(True)
-                    QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulundu.")
-                else:
-                    QMessageBox.warning(self, "Uyarı", "Bu kurum için tahta bulunamadı.")
-            else:
-                QMessageBox.warning(self, "Hata", "Sunucudan tahta listesi alınamadı.")
-        except Exception as e:
-            # Restore original code in case of error
-            self.network_client.settings['corporate_code'] = original_code
-            QMessageBox.warning(self, "Hata", f"Bir hata oluştu: {e}")
+                        board_id = board.get("id", "N/A")
+                        board_name = board.get('Name', f'Tahta {board_id}')
+                        item_text = f'{board_id} - {board_name}'
+                        list_item = QListWidgetItem(item_text)
+                        list_item.setData(Qt.UserRole, board_id) # Store board ID in UserRole
+                        self.board_list.addItem(list_item)
+                        
+                        if str(board_id) == str(current_board_id):
+                            list_item.setSelected(True)
+                            self.board_list.scrollToItem(list_item)
 
-    def confirm_selection(self):
-        if not self.board_combo.isEnabled():
-            QMessageBox.warning(self, "Hata", "Önce tahtaları getirin!")
+                    self.status_label.setText(f"{len(items)} tahta bulundu. Lütfen seçiminizi yapın.")
+                else:
+                    self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
+            else:
+                self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
+        except Exception as e:
+            self.status_label.setText(f"Hata oluştu: {e}")
+
+    def save_config(self):
+        selected_items = self.board_list.selectedItems()
+        if not selected_items:
+            self.status_label.setText("Hata: Lütfen bir tahta seçin!")
             return
 
-        selected_board_id = self.board_combo.currentData()
+        selected_board_id = selected_items[0].data(Qt.UserRole)
         if selected_board_id is None:
-            QMessageBox.warning(self, "Hata", "Tahta seçin!")
+            self.status_label.setText("Hata: Geçersiz tahta seçimi!")
             return
 
         # Update configuration
         config = configparser.ConfigParser()
         config.read(CONFIG_PATH)
-        config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+        
+        corporate_code = SETTINGS.get('corporate_code', '').strip() # Use existing corporate code
+        config.set('settings', 'corporate_code', corporate_code)
         config.set('settings', 'board_id', str(selected_board_id))
 
         # Find board name
@@ -1249,7 +1202,7 @@ class BoardConfigDialog(QDialog):
                 sys_config.read(system_config_path)
                 if 'settings' not in sys_config:
                     sys_config.add_section('settings')
-                sys_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                sys_config.set('settings', 'corporate_code', corporate_code)
                 sys_config.set('settings', 'board_id', str(selected_board_id))
                 sys_config.set('settings', 'board_name', board_name)
                 with open(system_config_path, 'w') as f:
@@ -1266,7 +1219,7 @@ class BoardConfigDialog(QDialog):
                 os.makedirs(kiosk_dir, exist_ok=True)
                 kiosk_config = configparser.ConfigParser()
                 kiosk_config.read(system_config_path)  # Sistem config'ini baz al
-                kiosk_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                kiosk_config.set('settings', 'corporate_code', corporate_code)
                 kiosk_config.set('settings', 'board_id', str(selected_board_id))
                 kiosk_config.set('settings', 'board_name', board_name)
                 with open(kiosk_config_path, 'w') as f:
@@ -1276,37 +1229,39 @@ class BoardConfigDialog(QDialog):
                 logging.warning(f"Could not update kiosk user config: {e}")
 
             # Update current SETTINGS in memory
-            SETTINGS['corporate_code'] = self.corporate_code_field.text().strip()
+            SETTINGS['corporate_code'] = corporate_code
             SETTINGS['board_id'] = str(selected_board_id)
             SETTINGS['board_name'] = board_name
 
-            # Update board ID display on main window
-            if self.parent:
-                self.parent.update_board_id_display()
-
-            QMessageBox.information(self, "Başarılı",
-                                  f"Tahta yapılandırması güncellendi:\nID: {selected_board_id}\nAd: {board_name}")
-            self.accept()
-
+            # Ana ekrandaki tahta id label'ını güncelle
+            if hasattr(self.parent_client, 'update_board_id_display'):
+                self.parent_client.update_board_id_display()
+                
+            self.status_label.setText("Başarıyla kaydedildi.")
+            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+            
+            # Close dialog after delay
+            QTimer.singleShot(1000, self.close_panel)
+            
         except PermissionError:
-            QMessageBox.critical(self, "İzin Hatası",
-                                 f"Yapılandırma dosyası kaydedilemedi: '{CONFIG_PATH}'.\n"
-                                 "Ayarları değiştirmek için lütfen uygulamayı yönetici olarak çalıştırın (örn. 'sudo').")
-        except Exception as e:
-            QMessageBox.warning(self, "Hata", f"Yapılandırma kaydedilemedi: {e}")
 
 
 # --- Change Password Dialog ---
-class ChangePasswordDialog(QDialog):
+class ChangePasswordPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent = parent
+        self.parent_client = parent
+        self.setObjectName("ChangePasswordPanel")
+        self.setStyleSheet("#ChangePasswordPanel { background-color: white; border-radius: 10px; border: 2px solid #333; }")
+        
+        # Center this panel on its parent
+        if parent:
+            pw, ph = parent.width(), parent.height()
+            self.setGeometry((pw - 450) // 2, (ph - 350) // 2, 450, 350)
+            
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Şifre Değiştir")
-        self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
@@ -1374,7 +1329,7 @@ class ChangePasswordDialog(QDialog):
         cancel_btn = QPushButton("İptal")
         cancel_btn.setMinimumHeight(40)
         cancel_btn.setFont(QFont("Arial", 11))
-        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.clicked.connect(self.close_panel)
         button_layout.addWidget(cancel_btn)
 
         change_btn = QPushButton("Değiştir")
@@ -1469,7 +1424,7 @@ class ChangePasswordDialog(QDialog):
             SETTINGS['admin_password'] = new
             SETTINGS['password_changed'] = 'true'
 
-            self.parent.save_log("Admin şifresi değiştirildi", "security")
+            self.parent_client.save_log("Admin şifresi değiştirildi", "security")
             
             self.status_label.setStyleSheet("color: #00ff88; font-weight: bold; font-size: 15px;")
             self.status_label.setText("Şifre başarıyla değiştirildi! Kapatılıyor...")
@@ -1481,7 +1436,7 @@ class ChangePasswordDialog(QDialog):
             # Kapanmayı UI çökmesini (Segmentation Fault) önlemek amaçlı senkron yapıyoruz
             import time
             time.sleep(1.5)
-            self.accept()
+            self.close_panel()
 
         except PermissionError:
             self.status_label.setStyleSheet("color: #ff4444;")
@@ -1489,6 +1444,10 @@ class ChangePasswordDialog(QDialog):
         except Exception as e:
             self.status_label.setStyleSheet("color: #ff4444;")
             self.status_label.setText(f"Hata: {str(e)[:30]}")
+
+    def close_panel(self):
+        self.hide()
+        self.deleteLater()
 
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
@@ -3155,15 +3114,15 @@ class FatihClientApp(QWidget):
 
         context_menu.addSeparator()
 
-        # Board configuration
-        board_config_action = QAction("Tahta Yapılandırması", self)
-        board_config_action.triggered.connect(self.show_board_config)
-        context_menu.addAction(board_config_action)
-
         # Change password
         change_pass_action = QAction("Şifre Değiştir", self)
         change_pass_action.triggered.connect(self.show_change_password)
         context_menu.addAction(change_pass_action)
+
+        # Board configuration
+        board_config_action = QAction("Tahta Yapılandırması", self)
+        board_config_action.triggered.connect(self.show_board_config)
+        context_menu.addAction(board_config_action)
 
         # Giriş/Çıkış Saatleri (C# FormGirisCikisSaatleri karşılığı)
         schedule_action = QAction("Giriş/Çıkış Saatleri", self)
@@ -3351,50 +3310,42 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         QMessageBox.about(self, "Hakkında", about_text.strip())
 
     def show_board_config(self, checked=False):
-        """Show board configuration dialog"""
-        locker_active = False
-        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            locker_active = True
-            import time
-            time.sleep(0.5)
+        """Show board configuration widget overlay"""
+        # Tahta Yapılandırması güvenlik kontrolü
+        if SETTINGS.get('admin_password', '803580') == '803580':
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Uyarı")
+            msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.exec()
+            
+            # Popup kapandiktan sonra ekrani geri toparla
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
 
-        config_dialog = BoardConfigDialog(self, network_client=self.network_client)
-        config_dialog.exec()
-
-        if locker_active:
-            self.keyboard_locker = KeyboardLocker()
-            self.keyboard_locker.start()
-        
-        # Fokus kaybını önemeye yönelik Linux/WM güvenlik z-index yenilemesi
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        if getattr(self, 'active_custom_panel', None):
+            self.active_custom_panel.hide()
+            self.active_custom_panel.deleteLater()
+            self.active_custom_panel = None
+            
+        self.active_custom_panel = BoardConfigPanel(self, network_client=self.network_client)
+        self.active_custom_panel.show()
+        self.active_custom_panel.raise_()
 
     def show_change_password(self, checked=False):
-        """Show change password dialog"""
-        locker_active = False
-        if hasattr(self, 'keyboard_locker') and self.keyboard_locker:
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            locker_active = True
-            import time
-            time.sleep(0.5)
-
-        change_dialog = ChangePasswordDialog(self)
-        change_dialog.exec()
-
-        if locker_active:
-            self.keyboard_locker = KeyboardLocker()
-            self.keyboard_locker.start()
-        
-        # Fokus kaybını önemeye yönelik Linux/WM güvenlik z-index yenilemesi
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        """Show change password widget overlay"""
+        if getattr(self, 'active_custom_panel', None):
+            self.active_custom_panel.hide()
+            self.active_custom_panel.deleteLater()
+            self.active_custom_panel = None
+            
+        self.active_custom_panel = ChangePasswordPanel(self)
+        self.active_custom_panel.show()
+        self.active_custom_panel.raise_()
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
@@ -4076,34 +4027,42 @@ ________________________________________________________________________________
         QMessageBox.information(self, "Sistem Durumu", status_text.strip())
 
     def kiosk_show_board_config(self):
-        """Kiosk modunda tahta yapılandırması göster"""
-        if getattr(self, 'keyboard_locker', None):
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            import time
-            time.sleep(0.5)
+        """Kiosk modunda tahta yapılandırması widget overlay"""
+        # Tahta Yapılandırması güvenlik kontrolü
+        if SETTINGS.get('admin_password', '803580') == '803580':
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Uyarı")
+            msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.exec()
+            
+            # Popup kapandiktan sonra ekrani geri toparla
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
 
-        config_dialog = BoardConfigDialog(self, network_client=self.network_client)
-        config_dialog.exec()
-
-        self.keyboard_locker = KeyboardLocker()
-        self.keyboard_locker.start()
+        if getattr(self, 'active_custom_panel', None):
+            self.active_custom_panel.hide()
+            self.active_custom_panel.deleteLater()
+            self.active_custom_panel = None
+            
+        self.active_custom_panel = BoardConfigPanel(self, network_client=self.network_client)
+        self.active_custom_panel.show()
+        self.active_custom_panel.raise_()
 
     def kiosk_show_change_password(self):
-        """Kiosk modunda şifre değiştir dialog göster"""
-        if getattr(self, 'keyboard_locker', None):
-            self.keyboard_locker.stop()
-            self.keyboard_locker.join(timeout=3)
-            self.keyboard_locker = None
-            import time
-            time.sleep(0.5)
-
-        change_dialog = ChangePasswordDialog(self)
-        change_dialog.exec()
-
-        self.keyboard_locker = KeyboardLocker()
-        self.keyboard_locker.start()
+        """Kiosk modunda şifre değiştir widget overlay"""
+        if getattr(self, 'active_custom_panel', None):
+            self.active_custom_panel.hide()
+            self.active_custom_panel.deleteLater()
+            self.active_custom_panel = None
+            
+        self.active_custom_panel = ChangePasswordPanel(self)
+        self.active_custom_panel.show()
+        self.active_custom_panel.raise_()
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
