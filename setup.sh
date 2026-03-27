@@ -23,17 +23,23 @@ echo "[2/6] Python kodları şifreleniyor (Obfuscation)..."
 # Ana projenin olduğu dizine geç
 cd "$(dirname "$0")"
 
-# Eski derlemeleri temizle
-rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so 2>/dev/null
+# Git'ten en son sürümü çek (Eğer çalıştırılan dizin git reposu ise)
+if [ -d ".git" ]; then
+    echo "Git reposu algılandı, güncellemeler çekiliyor..."
+    git pull origin main || echo "Uyarı: git pull başarısız, yerel dosyalarla devam edilecek."
+fi
+
+# Eski derlemeleri kök dizinde ve client klasöründe tamamen temizle
+rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
 
 # Cython ile client.py'yi C uzantısına (.so) derle
 python3 compile_client.py build_ext --inplace
 
-# Dosyayı bul ve ana dizine (.so olarak) al
-COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+# Sadece hedef klasördeki .so dosyasını al (kök dizindeki olası artıkları ignore et)
+COMPILED_FILE=$(find fatih_projesi_python/client -name "client*.so" -print -quit)
 
 if [ -z "$COMPILED_FILE" ]; then
-    echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
+    echo "❌ HATA: Kod şifreleme başarısız oldu! fatih_projesi_python/client/ içinde .so dosyası bulunamadı."
     exit 1
 fi
 
