@@ -80,6 +80,9 @@ EOF
 # Kaynak dosyaları (görseller, ikonlar) kopyala
 cp -r fatih_projesi_python/client/resources/* "$INSTALL_DIR/resources/" 2>/dev/null
 
+# Versiyon dosyasını kopyala
+cp fatih_projesi_python/client/version.txt "$INSTALL_DIR/version.txt" 2>/dev/null
+
 # Varsayılan yapılandırma dosyasını kopyala
 cp config.ini "$INSTALL_DIR/config.ini" 2>/dev/null
 
@@ -138,6 +141,7 @@ EOF
 chmod 644 "$AUTOSTART_FILE"
 
 echo "[6/6] Arka plan servisleri temizleniyor..."
+pkill -9 -f main.py 2>/dev/null
 pkill -9 -f client.py 2>/dev/null
 
 echo "[7/7] Güvenlik Temizliği Yapılıyor..."

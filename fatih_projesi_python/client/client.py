@@ -2043,6 +2043,27 @@ class FatihClientApp(QMainWindow):
         self.time_label.setAlignment(Qt.AlignRight)
         self.time_label.setGeometry(self.width() - 250, self.height() - 50, 240, 40)
 
+        # Version display (bottom-left corner)
+        self.version_label = QLabel("", self)
+        self.version_label.setStyleSheet("color: white; font-size: 18px; background-color: rgba(0,0,0,0.7); padding: 5px; border-radius: 5px;")
+        self.version_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.version_label.setGeometry(10, self.height() - 50, 200, 40)
+        
+        # Read version
+        version_text = "V1.00.01" # Default
+        try:
+            version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
+            if os.path.exists(version_path):
+                with open(version_path, 'r', encoding='utf-8') as f:
+                    version_text = f.read().strip()
+            # Kiosk/Kurulum yolu
+            elif os.path.exists("/opt/fatih-client/version.txt"):
+                with open("/opt/fatih-client/version.txt", 'r', encoding='utf-8') as f:
+                    version_text = f.read().strip()
+        except:
+            pass
+        self.version_label.setText(f"Sürüm: {version_text}")
+
         # Board Name display (top-center) - TAHTA ADI üst ortada
         self.board_id_label = QLabel("", self)
         # Qt 5.11 uyumlu stylesheet - çok büyük padding
