@@ -35,11 +35,11 @@ rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*
 # Cython ile client.py'yi C uzantısına (.so) derle
 python3 compile_client.py build_ext --inplace
 
-# Sadece hedef klasördeki .so dosyasını al (kök dizindeki olası artıkları ignore et)
-COMPILED_FILE=$(find fatih_projesi_python/client -name "client*.so" -print -quit)
+# Derlenen .so dosyasını bul (önceki adımda eski .so dosyaları zaten silindiği için güvenlidir)
+COMPILED_FILE=$(find . -name "client*.so" -print -quit)
 
 if [ -z "$COMPILED_FILE" ]; then
-    echo "❌ HATA: Kod şifreleme başarısız oldu! fatih_projesi_python/client/ içinde .so dosyası bulunamadı."
+    echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
     exit 1
 fi
 
