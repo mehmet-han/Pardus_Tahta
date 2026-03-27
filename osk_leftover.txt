@@ -1,0 +1,60 @@
+﻿
+  fatih_projesi_python\client\client.py:3189:
+"""
+  fatih_projesi_python\client\client.py:3190:
+        QMessageBox.information(self, "Ayarla
+r", settings_text.strip())
+  fatih_projesi_python\client\client.py:3191:
+  fatih_projesi_python\client\client.py:3192:
+    def show_on_screen_keyboard(self, checked
+=False):
+  fatih_projesi_python\client\client.py:3193:
+        """Show on-screen keyboard"""
+> fatih_projesi_python\client\client.py:3194:
+        keyboard = OnScreenKeyboard()
+  fatih_projesi_python\client\client.py:3195:
+        keyboard.exec()
+  fatih_projesi_python\client\client.py:3196:
+  fatih_projesi_python\client\client.py:3197:
+    def show_logs(self, checked=False):
+  fatih_projesi_python\client\client.py:3198:
+        """Show recent logs"""
+  fatih_projesi_python\client\client.py:3199:
+        log_file = os.path.expanduser("~/fati
+h_client.log")
+  fatih_projesi_python\client\client.py:3200:
+        if os.path.exists(log_file):
+  fatih_projesi_python\client\client.py:3201:
+            try:
+  fatih_projesi_python\client\client.py:3202:
+                with open(log_file, 'r') as f
+:
+  fatih_projesi_python\client\client.py:3203:
+                    logs = f.read()
+  fatih_projesi_python\client\client.py:3204:
+                log_dialog = QDialog(self)
+  fatih_projesi_python\client\client.py:3205:
+                log_dialog.setWindowTitle("Si
+stem Kayıtları")
+  fatih_projesi_python\client\client.py:3206:
+                log_dialog.setModal(True)
+  fatih_projesi_python\client\client.py:3207:
+                layout = QVBoxLayout()
+  fatih_projesi_python\client\client.py:3208:
+                log_text = QTextEdit()
+  fatih_projesi_python\client\client.py:3209:
+                log_text.setPlainText(logs)
+  fatih_projesi_python\client\client.py:3210:
+                log_text.setReadOnly(True)
+  fatih_projesi_python\client\client.py:3211:
+                layout.addWidget(log_text)
+  fatih_projesi_python\client\client.py:3212:
+                close_btn = QPushButton("Kapa
+t")
+  fatih_projesi_python\client\client.py:3213:
+                close_btn.clicked.connect(log
+_dialog.accept)
+  fatih_projesi_python\client\client.py:3214:
+                layout.addWidget(close_btn)
+
+

@@ -1,0 +1,755 @@
+﻿
+> fatih_projesi_python\client\client.py:927:c
+lass KeyboardLineEdit(QLineEdit):
+  fatih_projesi_python\client\client.py:928: 
+   def __init__(self, parent=None, on_enter_c
+allback=None):
+  fatih_projesi_python\client\client.py:929: 
+       super().__init__(parent)
+  fatih_projesi_python\client\client.py:930: 
+       self._on_enter_callback = on_enter_cal
+lback
+  fatih_projesi_python\client\client.py:931:
+  fatih_projesi_python\client\client.py:932: 
+   def set_on_enter_callback(self, callback):
+  fatih_projesi_python\client\client.py:933: 
+       self._on_enter_callback = callback
+  fatih_projesi_python\client\client.py:934: 
+       
+  fatih_projesi_python\client\client.py:935: 
+   def keyPressEvent(self, event):
+  fatih_projesi_python\client\client.py:936: 
+       super().keyPressEvent(event)
+  fatih_projesi_python\client\client.py:937: 
+       if event.key() == Qt.Key_Return or eve
+nt.key() == Qt.Key_Enter:
+  fatih_projesi_python\client\client.py:938: 
+           if self._on_enter_callback:
+  fatih_projesi_python\client\client.py:939: 
+               self._on_enter_callback()
+  fatih_projesi_python\client\client.py:940:
+  fatih_projesi_python\client\client.py:941:#
+ --- Login Dialog ---
+  fatih_projesi_python\client\client.py:942:c
+lass LoginDialog(QDialog):
+  fatih_projesi_python\client\client.py:943: 
+   def __init__(self, parent=None):
+  fatih_projesi_python\client\client.py:944: 
+       super().__init__(parent)
+  fatih_projesi_python\client\client.py:945: 
+       self.parent = parent
+  fatih_projesi_python\client\client.py:946: 
+       self.init_ui()
+  fatih_projesi_python\client\client.py:947:
+  fatih_projesi_python\client\client.py:948: 
+   def init_ui(self):
+  fatih_projesi_python\client\client.py:949: 
+       self.setWindowTitle("Sistem Girişi")
+  fatih_projesi_python\client\client.py:950: 
+       self.setModal(True)
+  fatih_projesi_python\client\client.py:951: 
+       self.setWindowFlags(Qt.WindowStaysOnTo
+pHint | Qt.Tool)
+  fatih_projesi_python\client\client.py:952: 
+       logging.info("LoginDialog UI initializ
+ed")
+  fatih_projesi_python\client\client.py:953:
+  fatih_projesi_python\client\client.py:954: 
+       layout = QVBoxLayout()
+  fatih_projesi_python\client\client.py:955:
+  fatih_projesi_python\client\client.py:956: 
+       # Title
+  fatih_projesi_python\client\client.py:957: 
+       title = QLabel("Yönetici Girişi")
+  fatih_projesi_python\client\client.py:958: 
+       title.setFont(QFont("Arial", 16, QFont
+.Weight.Bold))
+  fatih_projesi_python\client\client.py:959: 
+       title.setAlignment(Qt.AlignCenter)
+  fatih_projesi_python\client\client.py:960: 
+       layout.addWidget(title)
+  fatih_projesi_python\client\client.py:961:
+  fatih_projesi_python\client\client.py:962: 
+       # Password field
+> fatih_projesi_python\client\client.py:963: 
+       self.password_field = KeyboardLineEdit
+()
+  fatih_projesi_python\client\client.py:964: 
+       self.password_field.setEchoMode(QLineE
+dit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:965: 
+       self.password_field.setPlaceholderText
+("Mebrecep den şifre yazınız")
+  fatih_projesi_python\client\client.py:966: 
+       self.password_field.setFont(QFont("Ari
+al", 14))
+  fatih_projesi_python\client\client.py:967: 
+       self.password_field.set_on_enter_callb
+ack(self.attempt_login)
+  fatih_projesi_python\client\client.py:968: 
+       layout.addWidget(self.password_field)
+  fatih_projesi_python\client\client.py:969:
+  fatih_projesi_python\client\client.py:970: 
+       # Embedded Numpad
+  fatih_projesi_python\client\client.py:971: 
+       self.numpad = EmbeddedNumpad(on_enter_
+callback=self.attempt_login)
+  fatih_projesi_python\client\client.py:972: 
+       layout.addWidget(self.numpad)
+  fatih_projesi_python\client\client.py:973:
+  fatih_projesi_python\client\client.py:974: 
+       # Buttons
+  fatih_projesi_python\client\client.py:975: 
+       button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:976:
+  fatih_projesi_python\client\client.py:977: 
+       cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:978: 
+       cancel_btn.clicked.connect(self.reject
+)
+  fatih_projesi_python\client\client.py:979: 
+       button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:980:
+  fatih_projesi_python\client\client.py:981: 
+       login_btn = QPushButton("Giriş")
+  fatih_projesi_python\client\client.py:982: 
+       login_btn.clicked.connect(self.attempt
+_login)
+  fatih_projesi_python\client\client.py:983: 
+       login_btn.setDefault(True)
+  fatih_projesi_python\client\client.py:984: 
+       button_layout.addWidget(login_btn)
+  fatih_projesi_python\client\client.py:985:
+  fatih_projesi_python\client\client.py:986: 
+       layout.addLayout(button_layout)
+  fatih_projesi_python\client\client.py:987: 
+       self.setLayout(layout)
+  fatih_projesi_python\client\client.py:988: 
+       
+  fatih_projesi_python\client\client.py:989: 
+       # Ensure the focus is actually placed 
+on the password field
+  fatih_projesi_python\client\client.py:990: 
+       # so the onscreen keyboard logic or ph
+ysical typing fires
+  fatih_projesi_python\client\client.py:991: 
+       QTimer.singleShot(100, self.password_f
+ield.setFocus)
+  fatih_projesi_python\client\client.py:992:
+  fatih_projesi_python\client\client.py:993: 
+   def attempt_login(self):
+  fatih_projesi_python\client\client.py:994: 
+       password = self.password_field.text()
+  fatih_projesi_python\client\client.py:995: 
+       logging.info(f"Login attempt with pass
+word: {'*' * len(password)}")
+  fatih_projesi_python\client\client.py:996: 
+       
+  fatih_projesi_python\client\client.py:997: 
+       if self.parent.validate_admin_password
+(password):
+  fatih_projesi_python\client\client.py:998: 
+           logging.info("Password validated s
+uccessfully")
+  fatih_projesi_python\client\client.py:999: 
+           # NEW: Immediately notify the serv
+er that the board is unlocked
+  fatih_projesi_python\client\client.py:1000:
+            self.parent.acknowledge_command("
+tahtaLock", "0")
+  fatih_projesi_python\client\client.py:1001:
+            self.parent.save_log("Admin şifre
+ ile giriş yapıldı", "login")
+  fatih_projesi_python\client\client.py:1002:
+            self.parent.unlock_system("Admin 
+şifre ile açıldı")
+  fatih_projesi_python\client\client.py:1003:
+            self.accept()
+  fatih_projesi_python\client\client.py:1004:
+        else:
+  fatih_projesi_python\client\client.py:1005:
+            logging.warning("Invalid password
+ entered")
+  fatih_projesi_python\client\client.py:1006:
+            QMessageBox.warning(self, "Hata",
+ "Geçersiz şifre!")
+  fatih_projesi_python\client\client.py:1007:
+            self.password_field.clear()
+  fatih_projesi_python\client\client.py:1008:
+  fatih_projesi_python\client\client.py:1009:
+# --- Board Configuration Dialog ---
+  fatih_projesi_python\client\client.py:1010:
+class BoardConfigDialog(QDialog):
+  fatih_projesi_python\client\client.py:1011:
+    def __init__(self, parent=None, network_c
+lient=None):
+  fatih_projesi_python\client\client.py:1012:
+        super().__init__(parent)
+  fatih_projesi_python\client\client.py:1013:
+        self.parent = parent
+> fatih_projesi_python\client\client.py:1044:
+        self.corporate_code_field = KeyboardL
+ineEdit()
+  fatih_projesi_python\client\client.py:1045:
+        self.corporate_code_field.setEchoMode
+(QLineEdit.EchoMode.Password)  # **** şeklind
+e görünsün
+  fatih_projesi_python\client\client.py:1046:
+        self.corporate_code_field.setText(SET
+TINGS.get('corporate_code', ''))
+  fatih_projesi_python\client\client.py:1047:
+        self.corporate_code_field.setMinimumW
+idth(250)
+  fatih_projesi_python\client\client.py:1048:
+        self.corporate_code_field.setMinimumH
+eight(35)
+  fatih_projesi_python\client\client.py:1049:
+        self.corporate_code_field.setFont(QFo
+nt("Arial", 12))
+  fatih_projesi_python\client\client.py:1050:
+        form_layout.addRow(corporate_label, s
+elf.corporate_code_field)
+  fatih_projesi_python\client\client.py:1051:
+  fatih_projesi_python\client\client.py:1052:
+        # Password input - admin şifresi zoru
+nlu
+  fatih_projesi_python\client\client.py:1053:
+        password_label = QLabel("Şifre:")
+  fatih_projesi_python\client\client.py:1054:
+        password_label.setFont(QFont("Arial",
+ 12))
+> fatih_projesi_python\client\client.py:1055:
+        self.password_field = KeyboardLineEdi
+t()
+  fatih_projesi_python\client\client.py:1056:
+        self.password_field.setEchoMode(QLine
+Edit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:1057:
+        self.password_field.setPlaceholderTex
+t("Admin şifresini giriniz")
+  fatih_projesi_python\client\client.py:1058:
+        self.password_field.setMinimumWidth(2
+50)
+  fatih_projesi_python\client\client.py:1059:
+        self.password_field.setMinimumHeight(
+35)
+  fatih_projesi_python\client\client.py:1060:
+        self.password_field.setFont(QFont("Ar
+ial", 12))
+  fatih_projesi_python\client\client.py:1061:
+        form_layout.addRow(password_label, se
+lf.password_field)
+  fatih_projesi_python\client\client.py:1062:
+  fatih_projesi_python\client\client.py:1063:
+        layout.addLayout(form_layout)
+  fatih_projesi_python\client\client.py:1064:
+  fatih_projesi_python\client\client.py:1065:
+        # Fetch boards button
+  fatih_projesi_python\client\client.py:1066:
+        self.fetch_btn = QPushButton("Tahtala
+rı Getir")
+  fatih_projesi_python\client\client.py:1067:
+        self.fetch_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:1068:
+        self.fetch_btn.setFont(QFont("Arial",
+ 11, QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:1069:
+        self.fetch_btn.clicked.connect(self.f
+etch_boards)
+  fatih_projesi_python\client\client.py:1070:
+        layout.addWidget(self.fetch_btn)
+  fatih_projesi_python\client\client.py:1071:
+  fatih_projesi_python\client\client.py:1072:
+        # Board selection - form layout ile h
+izalı
+  fatih_projesi_python\client\client.py:1073:
+        board_form = QFormLayout()
+  fatih_projesi_python\client\client.py:1074:
+        board_form.setLabelAlignment(Qt.Align
+Right | Qt.AlignVCenter)
+  fatih_projesi_python\client\client.py:1075:
+        board_form.setSpacing(10)
+  fatih_projesi_python\client\client.py:1076:
+        board_form.setFieldGrowthPolicy(QForm
+Layout.FieldGrowthPolicy.ExpandingFieldsGrow)
+  fatih_projesi_python\client\client.py:1077:
+        board_label = QLabel("Tahta Seçin:")
+  fatih_projesi_python\client\client.py:1078:
+        board_label.setFont(QFont("Arial", 12
+))
+  fatih_projesi_python\client\client.py:1079:
+        self.board_combo = QComboBox()
+  fatih_projesi_python\client\client.py:1080:
+        self.board_combo.setEnabled(False)
+  fatih_projesi_python\client\client.py:1081:
+        self.board_combo.setMinimumHeight(35)
+  fatih_projesi_python\client\client.py:1082:
+        self.board_combo.setFont(QFont("Arial
+", 12))
+  fatih_projesi_python\client\client.py:1083:
+        board_form.addRow(board_label, self.b
+oard_combo)
+  fatih_projesi_python\client\client.py:1084:
+        layout.addLayout(board_form)
+  fatih_projesi_python\client\client.py:1085:
+  fatih_projesi_python\client\client.py:1086:
+        # Embedded Numpad
+  fatih_projesi_python\client\client.py:1087:
+        self.numpad = EmbeddedNumpad()
+  fatih_projesi_python\client\client.py:1088:
+        layout.addWidget(self.numpad)
+  fatih_projesi_python\client\client.py:1089:
+  fatih_projesi_python\client\client.py:1090:
+        # Buttons
+  fatih_projesi_python\client\client.py:1091:
+        button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:1092:
+        button_layout.setSpacing(15)
+  fatih_projesi_python\client\client.py:1093:
+  fatih_projesi_python\client\client.py:1094:
+        cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:1095:
+        cancel_btn.setMinimumHeight(45)
+  fatih_projesi_python\client\client.py:1096:
+        cancel_btn.setFont(QFont("Arial", 12,
+ QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:1097:
+        cancel_btn.clicked.connect(self.rejec
+t)
+  fatih_projesi_python\client\client.py:1098:
+        cancel_btn.clicked.connect(self.close
+)
+  fatih_projesi_python\client\client.py:1099:
+        button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:1100:
+  fatih_projesi_python\client\client.py:1101:
+        confirm_btn = QPushButton("Onayla")
+  fatih_projesi_python\client\client.py:1102:
+        confirm_btn.setMinimumHeight(45)
+  fatih_projesi_python\client\client.py:1103:
+        confirm_btn.setFont(QFont("Arial", 12
+, QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:1104:
+        confirm_btn.clicked.connect(self.conf
+irm_selection)
+  fatih_projesi_python\client\client.py:1105:
+        confirm_btn.setDefault(True)
+> fatih_projesi_python\client\client.py:1285:
+        self.current_field = KeyboardLineEdit
+()
+  fatih_projesi_python\client\client.py:1286:
+        self.current_field.setMinimumWidth(25
+0)
+  fatih_projesi_python\client\client.py:1287:
+        self.current_field.setMinimumHeight(3
+5)
+  fatih_projesi_python\client\client.py:1288:
+        self.current_field.setFont(QFont("Ari
+al", 12))
+  fatih_projesi_python\client\client.py:1289:
+        
+  fatih_projesi_python\client\client.py:1290:
+        # Mevcut şifre gösterimi mantığı (Oku
+l şifreyi değiştirdiyse gizle)
+  fatih_projesi_python\client\client.py:1291:
+        config_password = SETTINGS.get('admin
+_password', '803580')
+  fatih_projesi_python\client\client.py:1292:
+        if config_password == '803580':
+  fatih_projesi_python\client\client.py:1293:
+            self.current_field.setEchoMode(QL
+ineEdit.EchoMode.Normal)
+  fatih_projesi_python\client\client.py:1294:
+            self.current_field.setText(config
+_password)
+  fatih_projesi_python\client\client.py:1295:
+        else:
+  fatih_projesi_python\client\client.py:1296:
+            self.current_field.setEchoMode(QL
+ineEdit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:1297:
+            self.current_field.setText('')
+  fatih_projesi_python\client\client.py:1298:
+            
+  fatih_projesi_python\client\client.py:1299:
+        form_layout.addRow(current_label, sel
+f.current_field)
+  fatih_projesi_python\client\client.py:1300:
+  fatih_projesi_python\client\client.py:1301:
+        # New password
+  fatih_projesi_python\client\client.py:1302:
+        new_label = QLabel("Yeni Şifre:")
+  fatih_projesi_python\client\client.py:1303:
+        new_label.setFont(QFont("Arial", 12))
+> fatih_projesi_python\client\client.py:1304:
+        self.new_field = KeyboardLineEdit()
+  fatih_projesi_python\client\client.py:1305:
+        self.new_field.setEchoMode(QLineEdit.
+EchoMode.Password)
+  fatih_projesi_python\client\client.py:1306:
+        self.new_field.setMinimumWidth(250)
+  fatih_projesi_python\client\client.py:1307:
+        self.new_field.setMinimumHeight(35)
+  fatih_projesi_python\client\client.py:1308:
+        self.new_field.setFont(QFont("Arial",
+ 12))
+  fatih_projesi_python\client\client.py:1309:
+        form_layout.addRow(new_label, self.ne
+w_field)
+  fatih_projesi_python\client\client.py:1310:
+  fatih_projesi_python\client\client.py:1311:
+        # Confirm password
+  fatih_projesi_python\client\client.py:1312:
+        confirm_label = QLabel("Yeni Şifre (T
+ekrar):")
+  fatih_projesi_python\client\client.py:1313:
+        confirm_label.setFont(QFont("Arial", 
+12))
+> fatih_projesi_python\client\client.py:1314:
+        self.confirm_field = KeyboardLineEdit
+()
+  fatih_projesi_python\client\client.py:1315:
+        self.confirm_field.setEchoMode(QLineE
+dit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:1316:
+        self.confirm_field.setMinimumWidth(25
+0)
+  fatih_projesi_python\client\client.py:1317:
+        self.confirm_field.setMinimumHeight(3
+5)
+  fatih_projesi_python\client\client.py:1318:
+        self.confirm_field.setFont(QFont("Ari
+al", 12))
+  fatih_projesi_python\client\client.py:1319:
+        form_layout.addRow(confirm_label, sel
+f.confirm_field)
+  fatih_projesi_python\client\client.py:1320:
+  fatih_projesi_python\client\client.py:1321:
+        layout.addLayout(form_layout)
+  fatih_projesi_python\client\client.py:1322:
+  fatih_projesi_python\client\client.py:1323:
+        # Embedded Numpad
+  fatih_projesi_python\client\client.py:1324:
+        self.numpad = EmbeddedNumpad()
+  fatih_projesi_python\client\client.py:1325:
+        layout.addWidget(self.numpad)
+  fatih_projesi_python\client\client.py:1326:
+  fatih_projesi_python\client\client.py:1327:
+        # Buttons
+  fatih_projesi_python\client\client.py:1328:
+        button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:1329:
+        button_layout.setSpacing(15)
+  fatih_projesi_python\client\client.py:1330:
+  fatih_projesi_python\client\client.py:1331:
+        cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:1332:
+        cancel_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:1333:
+        cancel_btn.setFont(QFont("Arial", 11)
+)
+  fatih_projesi_python\client\client.py:1334:
+        cancel_btn.clicked.connect(self.rejec
+t)
+  fatih_projesi_python\client\client.py:1335:
+        button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:1336:
+  fatih_projesi_python\client\client.py:1337:
+        change_btn = QPushButton("Değiştir")
+  fatih_projesi_python\client\client.py:1338:
+        change_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:1339:
+        change_btn.setFont(QFont("Arial", 11,
+ QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:1340:
+        change_btn.clicked.connect(self.chang
+e_password)
+  fatih_projesi_python\client\client.py:1341:
+        change_btn.setDefault(True)
+  fatih_projesi_python\client\client.py:1342:
+        button_layout.addWidget(change_btn)
+  fatih_projesi_python\client\client.py:1343:
+  fatih_projesi_python\client\client.py:1344:
+        # Status label
+  fatih_projesi_python\client\client.py:1345:
+        self.status_label = QLabel("")
+  fatih_projesi_python\client\client.py:1346:
+        self.status_label.setStyleSheet("colo
+r: #ff4444; font-size: 13px; font-weight: bol
+d;")
+  fatih_projesi_python\client\client.py:1347:
+        self.status_label.setAlignment(Qt.Ali
+gnCenter)
+  fatih_projesi_python\client\client.py:1348:
+        layout.addWidget(self.status_label)
+  fatih_projesi_python\client\client.py:1349:
+  fatih_projesi_python\client\client.py:1350:
+        layout.addLayout(button_layout)
+  fatih_projesi_python\client\client.py:1351:
+        self.setLayout(layout)
+  fatih_projesi_python\client\client.py:1352:
+  fatih_projesi_python\client\client.py:1353:
+    def change_password(self):
+  fatih_projesi_python\client\client.py:1354:
+        current = self.current_field.text()
+  fatih_projesi_python\client\client.py:1355:
+        new = self.new_field.text()
+  fatih_projesi_python\client\client.py:1356:
+        confirm = self.confirm_field.text()
+  fatih_projesi_python\client\client.py:1357:
+  fatih_projesi_python\client\client.py:1358:
+        if not current or not new or not conf
+irm:
+  fatih_projesi_python\client\client.py:1359:
+            self.status_label.setStyleSheet("
+color: #ff4444;")
+  fatih_projesi_python\client\client.py:1360:
+            self.status_label.setText("Hata: 
+Tüm alanları doldurun!")
+  fatih_projesi_python\client\client.py:1361:
+            return
+  fatih_projesi_python\client\client.py:1362:
+  fatih_projesi_python\client\client.py:1363:
+        # Mevcut şifre doğrulama - config'dek
+i admin_password ile kontrol et
+  fatih_projesi_python\client\client.py:1364:
+        config_password = SETTINGS.get('admin
+_password', '803580')
+> fatih_projesi_python\client\client.py:2117:
+        self.login_password_field = KeyboardL
+ineEdit()
+  fatih_projesi_python\client\client.py:2118:
+        self.login_password_field.setEchoMode
+(QLineEdit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:2119:
+        self.login_password_field.setPlacehol
+derText("Mebrecep şifresini yazınız")
+  fatih_projesi_python\client\client.py:2120:
+        self.login_password_field.set_on_ente
+r_callback(self._login_attempt)
+  fatih_projesi_python\client\client.py:2121:
+        lp_layout.addWidget(self.login_passwo
+rd_field)
+  fatih_projesi_python\client\client.py:2122:
+  fatih_projesi_python\client\client.py:2123:
+        self.login_error_label = QLabel("")
+  fatih_projesi_python\client\client.py:2124:
+        self.login_error_label.setStyleSheet(
+"color: #ff4444; font-size: 14px;")
+  fatih_projesi_python\client\client.py:2125:
+        self.login_error_label.setAlignment(Q
+t.AlignCenter)
+  fatih_projesi_python\client\client.py:2126:
+        lp_layout.addWidget(self.login_error_
+label)
+  fatih_projesi_python\client\client.py:2127:
+  fatih_projesi_python\client\client.py:2128:
+        btn_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:2129:
+        cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:2130:
+        cancel_btn.setStyleSheet("background-
+color: #555; color: white;")
+  fatih_projesi_python\client\client.py:2131:
+        cancel_btn.pressed.connect(self._logi
+n_cancel)
+  fatih_projesi_python\client\client.py:2132:
+        btn_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:2133:
+  fatih_projesi_python\client\client.py:2134:
+        login_btn = QPushButton("Giriş")
+  fatih_projesi_python\client\client.py:2135:
+        login_btn.setStyleSheet("background-c
+olor: #0066cc; color: white;")
+  fatih_projesi_python\client\client.py:2136:
+        login_btn.pressed.connect(self._login
+_attempt)
+  fatih_projesi_python\client\client.py:2137:
+        btn_layout.addWidget(login_btn)
+  fatih_projesi_python\client\client.py:2138:
+        lp_layout.addLayout(btn_layout)
+  fatih_projesi_python\client\client.py:2139:
+  fatih_projesi_python\client\client.py:2140:
+        self.login_panel.hide()  # Başlangıçt
+a gizli
+  fatih_projesi_python\client\client.py:2141:
+  fatih_projesi_python\client\client.py:2142:
+        # Login button - Tahtayı Açın butonu
+  fatih_projesi_python\client\client.py:2143:
+        self.login_button = QPushButton("Taht
+ayı Açın", self)
+  fatih_projesi_python\client\client.py:2144:
+        self.login_button.setStyleSheet("back
+ground-color: #0066cc; color: white; border: 
+3px solid white; border-radius: 10px;")
+  fatih_projesi_python\client\client.py:2145:
+        self.login_button.setFont(QFont('Deja
+Vu Sans', 18))
+  fatih_projesi_python\client\client.py:2146:
+        self.login_button.pressed.connect(sel
+f.show_login_dialog)
+  fatih_projesi_python\client\client.py:2147:
+        # Sabit boyut ayarla
+  fatih_projesi_python\client\client.py:2148:
+        button_width = 280
+  fatih_projesi_python\client\client.py:2149:
+        button_height = 60
+  fatih_projesi_python\client\client.py:2150:
+        self.login_button.setFixedSize(button
+_width, button_height)
+  fatih_projesi_python\client\client.py:2151:
+        
+  fatih_projesi_python\client\client.py:2152:
+        # Butonu sağ üst köşeye taşı (üstten 
+ve sağdan boşluk bırakarak)
+  fatih_projesi_python\client\client.py:2153:
+        padding_top = 30
+  fatih_projesi_python\client\client.py:2154:
+        padding_right = 30
+  fatih_projesi_python\client\client.py:2155:
+        screen_width = QApplication.primarySc
+reen().geometry().width()
+  fatih_projesi_python\client\client.py:2156:
+        self.login_button.move(screen_width -
+ button_width - padding_right, padding_top)
+  fatih_projesi_python\client\client.py:2157:
+        
+  fatih_projesi_python\client\client.py:2158:
+        self.login_button.raise_()
+  fatih_projesi_python\client\client.py:2159:
+        self.login_button.setVisible(True)
+  fatih_projesi_python\client\client.py:2160:
+        self.login_button.show()
+  fatih_projesi_python\client\client.py:2161:
+  fatih_projesi_python\client\client.py:2162:
+        # --- (i) Yardım Kılavuzu Butonu ---
+  fatih_projesi_python\client\client.py:2163:
+        self.help_toggle_button = QPushButton
+("ℹ", self)
+  fatih_projesi_python\client\client.py:2164:
+        self.help_toggle_button.setStyleSheet
+("""
+  fatih_projesi_python\client\client.py:2165:
+            QPushButton {
+  fatih_projesi_python\client\client.py:2166:
+                background-color: rgba(0, 0, 
+0, 150);
+  fatih_projesi_python\client\client.py:2167:
+                color: #00ff88;
+> fatih_projesi_python\client\client.py:3930:
+        password_field = KeyboardLineEdit()
+  fatih_projesi_python\client\client.py:3931:
+        password_field.setEchoMode(QLineEdit.
+Password)
+  fatih_projesi_python\client\client.py:3932:
+        password_field.setPlaceholderText("Me
+brecep'ten şifre yazınız")
+  fatih_projesi_python\client\client.py:3933:
+        password_field.setFont(QFont("Arial",
+ 16))
+  fatih_projesi_python\client\client.py:3934:
+        password_field.setMinimumHeight(50)
+  fatih_projesi_python\client\client.py:3935:
+        # Klavyeden Enter'a basıldığında doğr
+udan giriş yapsın
+  fatih_projesi_python\client\client.py:3936:
+        password_field.set_on_enter_callback(
+lambda: self.attempt_unlock(password_field.te
+xt(), dialog))
+  fatih_projesi_python\client\client.py:3937:
+        layout.addWidget(password_field)
+  fatih_projesi_python\client\client.py:3938:
+  fatih_projesi_python\client\client.py:3939:
+        button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:3940:
+        button_layout.setSpacing(15)
+  fatih_projesi_python\client\client.py:3941:
+  fatih_projesi_python\client\client.py:3942:
+        cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:3943:
+        cancel_btn.setMinimumHeight(50)
+  fatih_projesi_python\client\client.py:3944:
+        cancel_btn.setStyleSheet("background-
+color: #555; color: white; font-weight: bold;
+")
+  fatih_projesi_python\client\client.py:3945:
+        cancel_btn.pressed.connect(dialog.rej
+ect)
+  fatih_projesi_python\client\client.py:3946:
+        button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:3947:
+  fatih_projesi_python\client\client.py:3948:
+        login_btn = QPushButton("Giriş")
+  fatih_projesi_python\client\client.py:3949:
+        login_btn.setMinimumHeight(50)
+  fatih_projesi_python\client\client.py:3950:
+        login_btn.setStyleSheet("background-c
+olor: #0066cc; color: white; font-weight: bol
+d;")
+  fatih_projesi_python\client\client.py:3951:
+        login_btn.pressed.connect(lambda: sel
+f.attempt_unlock(password_field.text(), dialo
+g))
+  fatih_projesi_python\client\client.py:3952:
+        login_btn.setDefault(True)
+  fatih_projesi_python\client\client.py:3953:
+        button_layout.addWidget(login_btn)
+  fatih_projesi_python\client\client.py:3954:
+  fatih_projesi_python\client\client.py:3955:
+        layout.addLayout(button_layout)
+  fatih_projesi_python\client\client.py:3956:
+        dialog.setLayout(layout)
+  fatih_projesi_python\client\client.py:3957:
+  fatih_projesi_python\client\client.py:3958:
+        # Boyut ve konum ayarları
+  fatih_projesi_python\client\client.py:3959:
+        dialog.setFixedSize(450, 320)
+  fatih_projesi_python\client\client.py:3960:
+        # Ekranın ortasına yerleştir
+  fatih_projesi_python\client\client.py:3961:
+        screen = QApplication.primaryScreen()
+.geometry()
+  fatih_projesi_python\client\client.py:3962:
+        dialog.move(
+  fatih_projesi_python\client\client.py:3963:
+            (screen.width() - 450) // 2,
+  fatih_projesi_python\client\client.py:3964:
+            (screen.height() - 320) // 2
+  fatih_projesi_python\client\client.py:3965:
+        )
+  fatih_projesi_python\client\client.py:3966:
+  fatih_projesi_python\client\client.py:3967:
+        logging.info("Kiosk: Login dialog sho
+wn")
+  fatih_projesi_python\client\client.py:3968:
+        result = dialog.exec()
+  fatih_projesi_python\client\client.py:3969:
+        logging.info(f"Kiosk: Login dialog cl
+osed with result={result}")
+  fatih_projesi_python\client\client.py:3970:
+  fatih_projesi_python\client\client.py:3971:
+        # Dialog kapandıysa ve kilit açılmadı
+ysa keyboard locker'ı tekrar başlat
+  fatih_projesi_python\client\client.py:3972:
+        if result != QDialog.Accepted:
+  fatih_projesi_python\client\client.py:3973:
+            self.keyboard_locker = KeyboardLo
+cker()
+  fatih_projesi_python\client\client.py:3974:
+            self.keyboard_locker.start()
+  fatih_projesi_python\client\client.py:3975:
+            logging.info("Kiosk: Keyboard loc
+ker restarted after cancelled login")
+  fatih_projesi_python\client\client.py:3976:
+  fatih_projesi_python\client\client.py:3977:
+    def attempt_unlock(self, password, dialog
+):
+  fatih_projesi_python\client\client.py:3978:
+        """
+  fatih_projesi_python\client\client.py:3979:
+        Kiosk modunda şifre ile kilit açma
+  fatih_projesi_python\client\client.py:3980:
+        Mebrecep'ten alınan dinamik şifre ile
+ çalışır
+
+

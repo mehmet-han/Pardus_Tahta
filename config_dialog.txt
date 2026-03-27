@@ -1,0 +1,130 @@
+﻿
+> fatih_projesi_python\client\client.py:1010:
+class BoardConfigDialog(QDialog):
+  fatih_projesi_python\client\client.py:1011:
+    def __init__(self, parent=None, network_c
+lient=None):
+  fatih_projesi_python\client\client.py:1012:
+        super().__init__(parent)
+  fatih_projesi_python\client\client.py:1013:
+        self.parent = parent
+  fatih_projesi_python\client\client.py:1014:
+        self.network_client = network_client
+  fatih_projesi_python\client\client.py:1015:
+        self.boards = []
+  fatih_projesi_python\client\client.py:1016:
+        self.init_ui()
+  fatih_projesi_python\client\client.py:1017:
+  fatih_projesi_python\client\client.py:1018:
+    def init_ui(self):
+  fatih_projesi_python\client\client.py:1019:
+        self.setWindowTitle("Tahta Yapılandır
+ması")
+  fatih_projesi_python\client\client.py:1020:
+        self.setModal(True)
+  fatih_projesi_python\client\client.py:1021:
+        self.setWindowFlags(Qt.Tool | Qt.Wind
+owStaysOnTopHint)
+  fatih_projesi_python\client\client.py:1022:
+        self.setMinimumWidth(480)
+  fatih_projesi_python\client\client.py:1023:
+        
+  fatih_projesi_python\client\client.py:1024:
+        layout = QVBoxLayout()
+  fatih_projesi_python\client\client.py:1025:
+        layout.setSpacing(12)
+  fatih_projesi_python\client\client.py:1026:
+        layout.setContentsMargins(25, 20, 25,
+ 20)
+  fatih_projesi_python\client\client.py:1027:
+  fatih_projesi_python\client\client.py:1028:
+        # Title
+  fatih_projesi_python\client\client.py:1029:
+        title = QLabel("Tahta Yapılandırması"
+)
+  fatih_projesi_python\client\client.py:1030:
+        title.setFont(QFont("Arial", 18, QFon
+t.Weight.Bold))
+  fatih_projesi_python\client\client.py:1031:
+        title.setAlignment(Qt.AlignCenter)
+  fatih_projesi_python\client\client.py:1032:
+        layout.addWidget(title)
+  fatih_projesi_python\client\client.py:1033:
+  fatih_projesi_python\client\client.py:1034:
+        # Form layout - labellar sağ yaslı, t
+extboxlar hizalı
+  fatih_projesi_python\client\client.py:1035:
+        form_layout = QFormLayout()
+  fatih_projesi_python\client\client.py:1036:
+        form_layout.setLabelAlignment(Qt.Alig
+nRight | Qt.AlignVCenter)
+  fatih_projesi_python\client\client.py:1037:
+        form_layout.setFormAlignment(Qt.Align
+Center)
+  fatih_projesi_python\client\client.py:1038:
+        form_layout.setSpacing(10)
+  fatih_projesi_python\client\client.py:1039:
+        form_layout.setFieldGrowthPolicy(QFor
+mLayout.FieldGrowthPolicy.ExpandingFieldsGrow
+)
+  fatih_projesi_python\client\client.py:1040:
+  fatih_projesi_python\client\client.py:1041:
+        # Corporate code input - maskelenmiş 
+görünsün (**** şeklinde)
+  fatih_projesi_python\client\client.py:1042:
+        corporate_label = QLabel("Kurum Kodu:
+")
+  fatih_projesi_python\client\client.py:1043:
+        corporate_label.setFont(QFont("Arial"
+, 12))
+  fatih_projesi_python\client\client.py:1044:
+        self.corporate_code_field = KeyboardL
+ineEdit()
+  fatih_projesi_python\client\client.py:1045:
+        self.corporate_code_field.setEchoMode
+(QLineEdit.EchoMode.Password)  # **** şeklind
+e görünsün
+  fatih_projesi_python\client\client.py:1046:
+        self.corporate_code_field.setText(SET
+TINGS.get('corporate_code', ''))
+  fatih_projesi_python\client\client.py:1047:
+        self.corporate_code_field.setMinimumW
+idth(250)
+  fatih_projesi_python\client\client.py:1048:
+        self.corporate_code_field.setMinimumH
+eight(35)
+  fatih_projesi_python\client\client.py:1049:
+        self.corporate_code_field.setFont(QFo
+nt("Arial", 12))
+  fatih_projesi_python\client\client.py:1050:
+        form_layout.addRow(corporate_label, s
+elf.corporate_code_field)
+  fatih_projesi_python\client\client.py:1051:
+  fatih_projesi_python\client\client.py:1052:
+        # Password input - admin şifresi zoru
+nlu
+  fatih_projesi_python\client\client.py:1053:
+        password_label = QLabel("Şifre:")
+  fatih_projesi_python\client\client.py:1054:
+        password_label.setFont(QFont("Arial",
+ 12))
+  fatih_projesi_python\client\client.py:1055:
+        self.password_field = KeyboardLineEdi
+t()
+  fatih_projesi_python\client\client.py:1056:
+        self.password_field.setEchoMode(QLine
+Edit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:1057:
+        self.password_field.setPlaceholderTex
+t("Admin şifresini giriniz")
+  fatih_projesi_python\client\client.py:1058:
+        self.password_field.setMinimumWidth(2
+50)
+  fatih_projesi_python\client\client.py:1059:
+        self.password_field.setMinimumHeight(
+35)
+  fatih_projesi_python\client\client.py:1060:
+        self.password_field.setFont(QFont("Ar
+ial", 12))
+
+

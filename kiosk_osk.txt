@@ -1,0 +1,27 @@
+﻿
+> fatih_projesi_python\client\client.py:4103:
+    def kiosk_show_on_screen_keyboard(self):
+  fatih_projesi_python\client\client.py:4104:
+        """Kiosk modunda ekran klavyesi göste
+r"""
+  fatih_projesi_python\client\client.py:4105:
+        self._onscreen_kb = OnScreenKeyboard(
+)
+  fatih_projesi_python\client\client.py:4106:
+        self._onscreen_kb.show()
+  fatih_projesi_python\client\client.py:4107:
+  fatih_projesi_python\client\client.py:4108:
+    def kiosk_show_about(self):
+  fatih_projesi_python\client\client.py:4109:
+        """Kiosk modunda hakkında dialog göst
+er"""
+  fatih_projesi_python\client\client.py:4110:
+        about_text = f"""
+  fatih_projesi_python\client\client.py:4111:
+Fatih Akıllı Tahta İstemcisi
+  fatih_projesi_python\client\client.py:4112:
+  fatih_projesi_python\client\client.py:4113:
+Versiyon: {SETTINGS.get('version')}.{SETTINGS
+.get('sub_version')}
+
+

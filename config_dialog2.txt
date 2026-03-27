@@ -1,0 +1,136 @@
+﻿
+> fatih_projesi_python\client\client.py:966: 
+       self.password_field.setFont(QFont("Ari
+al", 14))
+  fatih_projesi_python\client\client.py:967: 
+       self.password_field.set_on_enter_callb
+ack(self.attempt_login)
+  fatih_projesi_python\client\client.py:968: 
+       layout.addWidget(self.password_field)
+  fatih_projesi_python\client\client.py:969:
+  fatih_projesi_python\client\client.py:970: 
+       # Embedded Numpad
+  fatih_projesi_python\client\client.py:971: 
+       self.numpad = EmbeddedNumpad(on_enter_
+callback=self.attempt_login)
+  fatih_projesi_python\client\client.py:972: 
+       layout.addWidget(self.numpad)
+  fatih_projesi_python\client\client.py:973:
+  fatih_projesi_python\client\client.py:974: 
+       # Buttons
+  fatih_projesi_python\client\client.py:975: 
+       button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:976:
+  fatih_projesi_python\client\client.py:977: 
+       cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:978: 
+       cancel_btn.clicked.connect(self.reject
+)
+  fatih_projesi_python\client\client.py:979: 
+       button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:980:
+  fatih_projesi_python\client\client.py:981: 
+       login_btn = QPushButton("Giriş")
+  fatih_projesi_python\client\client.py:982: 
+       login_btn.clicked.connect(self.attempt
+_login)
+  fatih_projesi_python\client\client.py:983: 
+       login_btn.setDefault(True)
+  fatih_projesi_python\client\client.py:984: 
+       button_layout.addWidget(login_btn)
+  fatih_projesi_python\client\client.py:985:
+  fatih_projesi_python\client\client.py:986: 
+       layout.addLayout(button_layout)
+  fatih_projesi_python\client\client.py:987: 
+       self.setLayout(layout)
+  fatih_projesi_python\client\client.py:988: 
+       
+  fatih_projesi_python\client\client.py:989: 
+       # Ensure the focus is actually placed 
+on the password field
+  fatih_projesi_python\client\client.py:990: 
+       # so the onscreen keyboard logic or ph
+ysical typing fires
+  fatih_projesi_python\client\client.py:991: 
+       QTimer.singleShot(100, self.password_f
+ield.setFocus)
+  fatih_projesi_python\client\client.py:992:
+  fatih_projesi_python\client\client.py:993: 
+   def attempt_login(self):
+  fatih_projesi_python\client\client.py:994: 
+       password = self.password_field.text()
+  fatih_projesi_python\client\client.py:995: 
+       logging.info(f"Login attempt with pass
+word: {'*' * len(password)}")
+  fatih_projesi_python\client\client.py:996: 
+       
+> fatih_projesi_python\client\client.py:1060:
+        self.password_field.setFont(QFont("Ar
+ial", 12))
+  fatih_projesi_python\client\client.py:1061:
+        form_layout.addRow(password_label, se
+lf.password_field)
+  fatih_projesi_python\client\client.py:1062:
+  fatih_projesi_python\client\client.py:1063:
+        layout.addLayout(form_layout)
+  fatih_projesi_python\client\client.py:1064:
+  fatih_projesi_python\client\client.py:1065:
+        # Fetch boards button
+  fatih_projesi_python\client\client.py:1066:
+        self.fetch_btn = QPushButton("Tahtala
+rı Getir")
+  fatih_projesi_python\client\client.py:1067:
+        self.fetch_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:1068:
+        self.fetch_btn.setFont(QFont("Arial",
+ 11, QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:1069:
+        self.fetch_btn.clicked.connect(self.f
+etch_boards)
+  fatih_projesi_python\client\client.py:1070:
+        layout.addWidget(self.fetch_btn)
+  fatih_projesi_python\client\client.py:1071:
+  fatih_projesi_python\client\client.py:1072:
+        # Board selection - form layout ile h
+izalı
+  fatih_projesi_python\client\client.py:1073:
+        board_form = QFormLayout()
+  fatih_projesi_python\client\client.py:1074:
+        board_form.setLabelAlignment(Qt.Align
+Right | Qt.AlignVCenter)
+  fatih_projesi_python\client\client.py:1075:
+        board_form.setSpacing(10)
+  fatih_projesi_python\client\client.py:1076:
+        board_form.setFieldGrowthPolicy(QForm
+Layout.FieldGrowthPolicy.ExpandingFieldsGrow)
+  fatih_projesi_python\client\client.py:1077:
+        board_label = QLabel("Tahta Seçin:")
+  fatih_projesi_python\client\client.py:1078:
+        board_label.setFont(QFont("Arial", 12
+))
+  fatih_projesi_python\client\client.py:1079:
+        self.board_combo = QComboBox()
+  fatih_projesi_python\client\client.py:1080:
+        self.board_combo.setEnabled(False)
+  fatih_projesi_python\client\client.py:1081:
+        self.board_combo.setMinimumHeight(35)
+  fatih_projesi_python\client\client.py:1082:
+        self.board_combo.setFont(QFont("Arial
+", 12))
+  fatih_projesi_python\client\client.py:1083:
+        board_form.addRow(board_label, self.b
+oard_combo)
+  fatih_projesi_python\client\client.py:1084:
+        layout.addLayout(board_form)
+  fatih_projesi_python\client\client.py:1085:
+  fatih_projesi_python\client\client.py:1086:
+        # Buttons
+  fatih_projesi_python\client\client.py:1087:
+        button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:1088:
+        button_layout.setSpacing(15)
+  fatih_projesi_python\client\client.py:1089:
+  fatih_projesi_python\client\client.py:1090:
+        cancel_btn = QPushButton("İptal")
+
+

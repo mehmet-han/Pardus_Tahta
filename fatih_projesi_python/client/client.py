@@ -835,21 +835,16 @@ def kill_all_browsers():
     logging.info("All browsers and monitors killed")
 
 
-# --- On-Screen Keyboard Dialog (equivalent to C# FormEkranKlavyesi) ---
-class OnScreenKeyboard(QDialog):
-    def __init__(self, target_field=None, on_enter_callback=None):
-        parent = target_field.window() if target_field else None
+# --- Embedded Numpad Widget ---
+class EmbeddedNumpad(QWidget):
+    def __init__(self, parent=None, on_enter_callback=None):
         super().__init__(parent)
-        self.target_field = target_field
         self.on_enter_callback = on_enter_callback
-        self.shift_pressed = False
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Sayısal Tuş Takımı")
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 10, 0, 0)
         keyboard_layout = QGridLayout()
 
         # Numpad layout
@@ -861,136 +856,87 @@ class OnScreenKeyboard(QDialog):
 
         for char, row, col in buttons:
             btn = QPushButton(char)
-            btn.setMinimumSize(80, 80)
-            btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+            btn.setMinimumSize(60, 60)
+            btn.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.clicked.connect(lambda checked, c=char: self.add_char(c))
             keyboard_layout.addWidget(btn, row, col)
 
-        # Bottom row
         backspace_btn = QPushButton("⌫")
-        backspace_btn.setMinimumSize(80, 80)
-        backspace_btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        backspace_btn.setMinimumSize(60, 60)
+        backspace_btn.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        backspace_btn.setFocusPolicy(Qt.NoFocus)
         backspace_btn.clicked.connect(self.backspace)
         keyboard_layout.addWidget(backspace_btn, 3, 0)
 
         zero_btn = QPushButton("0")
-        zero_btn.setMinimumSize(80, 80)
-        zero_btn.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        zero_btn.setMinimumSize(60, 60)
+        zero_btn.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        zero_btn.setFocusPolicy(Qt.NoFocus)
         zero_btn.clicked.connect(lambda checked, c="0": self.add_char(c))
         keyboard_layout.addWidget(zero_btn, 3, 1)
 
         enter_btn = QPushButton("Enter")
-        enter_btn.setMinimumSize(80, 80)
-        enter_btn.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        enter_btn.setMinimumSize(60, 60)
+        enter_btn.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         enter_btn.setStyleSheet("background-color: #0066cc; color: white;")
+        enter_btn.setFocusPolicy(Qt.NoFocus)
         enter_btn.clicked.connect(self.enter_text)
         keyboard_layout.addWidget(enter_btn, 3, 2)
 
         layout.addLayout(keyboard_layout)
-
-        # Control buttons
+        
         control_layout = QHBoxLayout()
         clear_btn = QPushButton("Temizle")
         clear_btn.setMinimumHeight(40)
+        clear_btn.setFocusPolicy(Qt.NoFocus)
         clear_btn.clicked.connect(self.clear_text)
         control_layout.addWidget(clear_btn)
-
-        close_btn = QPushButton("Kapat")
-        close_btn.setMinimumHeight(40)
-        close_btn.clicked.connect(self.accept)
-        control_layout.addWidget(close_btn)
-
         layout.addLayout(control_layout)
-        self.setLayout(layout)
+
+    def _get_active_field(self):
+        focus_w = QApplication.focusWidget()
+        if isinstance(focus_w, QLineEdit):
+            return focus_w
+        return None
 
     def add_char(self, char):
-        if not self.target_field: return
-        current = self.target_field.text()
-        if self.shift_pressed:
-            char = char.upper()
-        self.target_field.setText(current + char)
-        if self.shift_pressed:
-            self.shift_pressed = False
-            self.update_keyboard_case()
-
-    def press_tab(self):
-        """NEW: Move focus to the next input field."""
-        if not self.target_field: return
-        # Find the parent window and ask it to move focus to the next widget
-        parent = self.target_field.parentWidget()
-        if parent:
-            parent.focusNextChild()
-
-    def toggle_shift(self):
-        self.shift_pressed = not self.shift_pressed
-        self.update_keyboard_case()
-
-    def update_keyboard_case(self):
-        # Update all letter buttons
-        for btn in self.findChildren(QPushButton):
-            text = btn.text()
-            if len(text) == 1 and text.isalpha():
-                if self.shift_pressed:
-                    btn.setText(text.upper())
-                else:
-                    btn.setText(text.lower())
+        w = self._get_active_field()
+        if w:
+            w.insert(char)
 
     def backspace(self):
-        if not self.target_field: return
-        current = self.target_field.text()
-        self.target_field.setText(current[:-1])
+        w = self._get_active_field()
+        if w:
+            w.backspace()
 
     def clear_text(self):
-        if not self.target_field: return
-        self.target_field.clear()
+        w = self._get_active_field()
+        if w:
+            w.clear()
 
     def enter_text(self):
-        if self.target_field:
-            self.accept()
-            # Klavyeden Enter'a basıldığında üst formun giriş işlemini tetikle
-            if self.on_enter_callback:
-                self.on_enter_callback()
+        if self.on_enter_callback:
+            self.on_enter_callback()
+        else:
+            w = self._get_active_field()
+            if w and hasattr(w, '_on_enter_callback') and w._on_enter_callback:
+                w._on_enter_callback()
 
-# --- NEW: LineEdit that opens the keyboard on click ---
+# --- Simplified LineEdit ---
 class KeyboardLineEdit(QLineEdit):
     def __init__(self, parent=None, on_enter_callback=None):
         super().__init__(parent)
-        self._keyboard = None
-        self._just_closed = False
         self._on_enter_callback = on_enter_callback
 
     def set_on_enter_callback(self, callback):
-        """Enter callback'ini sonradan ayarlamak için."""
         self._on_enter_callback = callback
-
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
         
-        if self._just_closed:
-            return
-
-        if self._keyboard is None or not self._keyboard.isVisible():
-            self._keyboard = OnScreenKeyboard(target_field=self, on_enter_callback=self._on_enter_callback)
-            
-            if self.parent():
-                parent_pos = self.parent().mapToGlobal(QPoint(0,0))
-                pos = self.mapToGlobal(QPoint(0, self.height()))
-                screen_geometry = QApplication.primaryScreen().geometry()
-                keyboard_size = self._keyboard.sizeHint()
-                if pos.x() + keyboard_size.width() > screen_geometry.width():
-                    pos.setX(screen_geometry.width() - keyboard_size.width())
-                if pos.y() + keyboard_size.height() > screen_geometry.height():
-                    pos.setY(parent_pos.y() - keyboard_size.height())
-                self._keyboard.move(pos)
-            
-            self._keyboard.show()
-            
-            # Set a flag to prevent immediate reopening and reset it after a short delay
-            self._just_closed = True
-            QTimer.singleShot(100, self._reset_flag)
-
-    def _reset_flag(self):
-        self._just_closed = False
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if self._on_enter_callback:
+                self._on_enter_callback()
 
 # --- Login Dialog ---
 class LoginDialog(QDialog):
@@ -1020,6 +966,10 @@ class LoginDialog(QDialog):
         self.password_field.setFont(QFont("Arial", 14))
         self.password_field.set_on_enter_callback(self.attempt_login)
         layout.addWidget(self.password_field)
+
+        # Embedded Numpad
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.attempt_login)
+        layout.addWidget(self.numpad)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1132,6 +1082,10 @@ class BoardConfigDialog(QDialog):
         self.board_combo.setFont(QFont("Arial", 12))
         board_form.addRow(board_label, self.board_combo)
         layout.addLayout(board_form)
+
+        # Embedded Numpad
+        self.numpad = EmbeddedNumpad()
+        layout.addWidget(self.numpad)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1365,6 +1319,10 @@ class ChangePasswordDialog(QDialog):
         form_layout.addRow(confirm_label, self.confirm_field)
 
         layout.addLayout(form_layout)
+
+        # Embedded Numpad
+        self.numpad = EmbeddedNumpad()
+        layout.addWidget(self.numpad)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -2071,7 +2029,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.26" # Default
+        version_text = "V1.00.27" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -2161,6 +2119,9 @@ class FatihClientApp(QWidget):
         self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
         self.login_password_field.set_on_enter_callback(self._login_attempt)
         lp_layout.addWidget(self.login_password_field)
+
+        self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
+        lp_layout.addWidget(self.numpad)
 
         self.login_error_label = QLabel("")
         self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
@@ -3230,8 +3191,17 @@ ________________________________________________________________________________
 
     def show_on_screen_keyboard(self, checked=False):
         """Show on-screen keyboard"""
-        keyboard = OnScreenKeyboard()
-        keyboard.exec()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sayısal Tuş Takımı")
+        dialog.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        layout = QVBoxLayout(dialog)
+        numpad = EmbeddedNumpad()
+        layout.addWidget(numpad)
+        close_btn = QPushButton("Kapat")
+        close_btn.setMinimumHeight(40)
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
     def show_logs(self, checked=False):
         """Show recent logs"""
@@ -3978,6 +3948,9 @@ class FatihKioskMode(QMainWindow):
         password_field.set_on_enter_callback(lambda: self.attempt_unlock(password_field.text(), dialog))
         layout.addWidget(password_field)
 
+        numpad = EmbeddedNumpad(on_enter_callback=lambda: self.attempt_unlock(password_field.text(), dialog))
+        layout.addWidget(numpad)
+
         button_layout = QHBoxLayout()
         button_layout.setSpacing(15)
 
@@ -3998,12 +3971,12 @@ class FatihKioskMode(QMainWindow):
         dialog.setLayout(layout)
 
         # Boyut ve konum ayarları
-        dialog.setFixedSize(450, 320)
+        dialog.setFixedSize(450, 650)
         # Ekranın ortasına yerleştir
         screen = QApplication.primaryScreen().geometry()
         dialog.move(
             (screen.width() - 450) // 2,
-            (screen.height() - 320) // 2
+            (screen.height() - 650) // 2
         )
 
         logging.info("Kiosk: Login dialog shown")
@@ -4138,8 +4111,21 @@ ________________________________________________________________________________
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
-        self._onscreen_kb = OnScreenKeyboard()
-        self._onscreen_kb.show()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sayısal Tuş Takımı")
+        dialog.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        layout = QVBoxLayout(dialog)
+        
+        numpad = EmbeddedNumpad()
+        layout.addWidget(numpad)
+        
+        close_btn = QPushButton("Kapat")
+        close_btn.setMinimumHeight(40)
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.show()
+        self._onscreen_kb = dialog
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""

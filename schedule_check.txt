@@ -1,0 +1,21 @@
+﻿
+fatih_projesi_python\client\client.py:1017:  
+      self.password_field = KeyboardLineEdit(
+)
+fatih_projesi_python\client\client.py:1094:  
+      self.corporate_code_field = KeyboardLin
+eEdit()
+fatih_projesi_python\client\client.py:1105:  
+      self.password_field = KeyboardLineEdit(
+)
+fatih_projesi_python\client\client.py:1331:  
+      self.current_field = KeyboardLineEdit()
+fatih_projesi_python\client\client.py:1350:  
+      self.new_field = KeyboardLineEdit()
+fatih_projesi_python\client\client.py:1360:  
+      self.confirm_field = KeyboardLineEdit()
+fatih_projesi_python\client\client.py:2159:  
+      self.login_password_field = KeyboardLin
+eEdit()
+
+

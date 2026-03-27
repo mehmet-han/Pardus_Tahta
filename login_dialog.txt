@@ -1,0 +1,110 @@
+﻿
+> fatih_projesi_python\client\client.py:942:c
+lass LoginDialog(QDialog):
+  fatih_projesi_python\client\client.py:943: 
+   def __init__(self, parent=None):
+  fatih_projesi_python\client\client.py:944: 
+       super().__init__(parent)
+  fatih_projesi_python\client\client.py:945: 
+       self.parent = parent
+  fatih_projesi_python\client\client.py:946: 
+       self.init_ui()
+  fatih_projesi_python\client\client.py:947:
+  fatih_projesi_python\client\client.py:948: 
+   def init_ui(self):
+  fatih_projesi_python\client\client.py:949: 
+       self.setWindowTitle("Sistem Girişi")
+  fatih_projesi_python\client\client.py:950: 
+       self.setModal(True)
+  fatih_projesi_python\client\client.py:951: 
+       self.setWindowFlags(Qt.WindowStaysOnTo
+pHint | Qt.Tool)
+  fatih_projesi_python\client\client.py:952: 
+       logging.info("LoginDialog UI initializ
+ed")
+  fatih_projesi_python\client\client.py:953:
+  fatih_projesi_python\client\client.py:954: 
+       layout = QVBoxLayout()
+  fatih_projesi_python\client\client.py:955:
+  fatih_projesi_python\client\client.py:956: 
+       # Title
+  fatih_projesi_python\client\client.py:957: 
+       title = QLabel("Yönetici Girişi")
+  fatih_projesi_python\client\client.py:958: 
+       title.setFont(QFont("Arial", 16, QFont
+.Weight.Bold))
+  fatih_projesi_python\client\client.py:959: 
+       title.setAlignment(Qt.AlignCenter)
+  fatih_projesi_python\client\client.py:960: 
+       layout.addWidget(title)
+  fatih_projesi_python\client\client.py:961:
+  fatih_projesi_python\client\client.py:962: 
+       # Password field
+  fatih_projesi_python\client\client.py:963: 
+       self.password_field = KeyboardLineEdit
+()
+  fatih_projesi_python\client\client.py:964: 
+       self.password_field.setEchoMode(QLineE
+dit.EchoMode.Password)
+  fatih_projesi_python\client\client.py:965: 
+       self.password_field.setPlaceholderText
+("Mebrecep den şifre yazınız")
+  fatih_projesi_python\client\client.py:966: 
+       self.password_field.setFont(QFont("Ari
+al", 14))
+  fatih_projesi_python\client\client.py:967: 
+       self.password_field.set_on_enter_callb
+ack(self.attempt_login)
+  fatih_projesi_python\client\client.py:968: 
+       layout.addWidget(self.password_field)
+  fatih_projesi_python\client\client.py:969:
+  fatih_projesi_python\client\client.py:970: 
+       # Buttons
+  fatih_projesi_python\client\client.py:971: 
+       button_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:972:
+  fatih_projesi_python\client\client.py:973: 
+       cancel_btn = QPushButton("İptal")
+  fatih_projesi_python\client\client.py:974: 
+       cancel_btn.clicked.connect(self.reject
+)
+  fatih_projesi_python\client\client.py:975: 
+       button_layout.addWidget(cancel_btn)
+  fatih_projesi_python\client\client.py:976:
+  fatih_projesi_python\client\client.py:977: 
+       login_btn = QPushButton("Giriş")
+  fatih_projesi_python\client\client.py:978: 
+       login_btn.clicked.connect(self.attempt
+_login)
+  fatih_projesi_python\client\client.py:979: 
+       login_btn.setDefault(True)
+  fatih_projesi_python\client\client.py:980: 
+       button_layout.addWidget(login_btn)
+  fatih_projesi_python\client\client.py:981:
+  fatih_projesi_python\client\client.py:982: 
+       layout.addLayout(button_layout)
+  fatih_projesi_python\client\client.py:983: 
+       self.setLayout(layout)
+  fatih_projesi_python\client\client.py:984: 
+       
+  fatih_projesi_python\client\client.py:985: 
+       # Ensure the focus is actually placed 
+on the password field
+  fatih_projesi_python\client\client.py:986: 
+       # so the onscreen keyboard logic or ph
+ysical typing fires
+  fatih_projesi_python\client\client.py:987: 
+       QTimer.singleShot(100, self.password_f
+ield.setFocus)
+  fatih_projesi_python\client\client.py:988:
+  fatih_projesi_python\client\client.py:989: 
+   def attempt_login(self):
+  fatih_projesi_python\client\client.py:990: 
+       password = self.password_field.text()
+  fatih_projesi_python\client\client.py:991: 
+       logging.info(f"Login attempt with pass
+word: {'*' * len(password)}")
+  fatih_projesi_python\client\client.py:992: 
+       
+
+

@@ -1,0 +1,218 @@
+﻿
+> fatih_projesi_python\client\client.py:839:c
+lass OnScreenKeyboard(QDialog):
+  fatih_projesi_python\client\client.py:840: 
+   def __init__(self, target_field=None, on_e
+nter_callback=None):
+  fatih_projesi_python\client\client.py:841: 
+       parent = target_field.window() if targ
+et_field else None
+  fatih_projesi_python\client\client.py:842: 
+       super().__init__(parent)
+  fatih_projesi_python\client\client.py:843: 
+       self.target_field = target_field
+  fatih_projesi_python\client\client.py:844: 
+       self.on_enter_callback = on_enter_call
+back
+  fatih_projesi_python\client\client.py:845: 
+       self.shift_pressed = False
+  fatih_projesi_python\client\client.py:846: 
+       self.init_ui()
+  fatih_projesi_python\client\client.py:847:
+  fatih_projesi_python\client\client.py:848: 
+   def init_ui(self):
+  fatih_projesi_python\client\client.py:849: 
+       self.setWindowTitle("Sayısal Tuş Takım
+ı")
+  fatih_projesi_python\client\client.py:850: 
+       self.setWindowFlags(Qt.Popup | Qt.Fram
+elessWindowHint)
+  fatih_projesi_python\client\client.py:851:
+  fatih_projesi_python\client\client.py:852: 
+       layout = QVBoxLayout()
+  fatih_projesi_python\client\client.py:853: 
+       keyboard_layout = QGridLayout()
+  fatih_projesi_python\client\client.py:854:
+  fatih_projesi_python\client\client.py:855: 
+       # Numpad layout
+  fatih_projesi_python\client\client.py:856: 
+       buttons = [
+  fatih_projesi_python\client\client.py:857: 
+           ('1', 0, 0), ('2', 0, 1), ('3', 0,
+ 2),
+  fatih_projesi_python\client\client.py:858: 
+           ('4', 1, 0), ('5', 1, 1), ('6', 1,
+ 2),
+  fatih_projesi_python\client\client.py:859: 
+           ('7', 2, 0), ('8', 2, 1), ('9', 2,
+ 2)
+  fatih_projesi_python\client\client.py:860: 
+       ]
+  fatih_projesi_python\client\client.py:861:
+  fatih_projesi_python\client\client.py:862: 
+       for char, row, col in buttons:
+  fatih_projesi_python\client\client.py:863: 
+           btn = QPushButton(char)
+  fatih_projesi_python\client\client.py:864: 
+           btn.setMinimumSize(80, 80)
+  fatih_projesi_python\client\client.py:865: 
+           btn.setFont(QFont("Arial", 20, QFo
+nt.Weight.Bold))
+  fatih_projesi_python\client\client.py:866: 
+           btn.clicked.connect(lambda checked
+, c=char: self.add_char(c))
+  fatih_projesi_python\client\client.py:867: 
+           keyboard_layout.addWidget(btn, row
+, col)
+  fatih_projesi_python\client\client.py:868:
+  fatih_projesi_python\client\client.py:869: 
+       # Bottom row
+  fatih_projesi_python\client\client.py:870: 
+       backspace_btn = QPushButton("⌫")
+  fatih_projesi_python\client\client.py:871: 
+       backspace_btn.setMinimumSize(80, 80)
+  fatih_projesi_python\client\client.py:872: 
+       backspace_btn.setFont(QFont("Arial", 2
+0, QFont.Weight.Bold))
+  fatih_projesi_python\client\client.py:873: 
+       backspace_btn.clicked.connect(self.bac
+kspace)
+  fatih_projesi_python\client\client.py:874: 
+       keyboard_layout.addWidget(backspace_bt
+n, 3, 0)
+  fatih_projesi_python\client\client.py:875:
+  fatih_projesi_python\client\client.py:876: 
+       zero_btn = QPushButton("0")
+  fatih_projesi_python\client\client.py:877: 
+       zero_btn.setMinimumSize(80, 80)
+  fatih_projesi_python\client\client.py:878: 
+       zero_btn.setFont(QFont("Arial", 20, QF
+ont.Weight.Bold))
+  fatih_projesi_python\client\client.py:879: 
+       zero_btn.clicked.connect(lambda checke
+d, c="0": self.add_char(c))
+  fatih_projesi_python\client\client.py:880: 
+       keyboard_layout.addWidget(zero_btn, 3,
+ 1)
+  fatih_projesi_python\client\client.py:881:
+  fatih_projesi_python\client\client.py:882: 
+       enter_btn = QPushButton("Enter")
+  fatih_projesi_python\client\client.py:883: 
+       enter_btn.setMinimumSize(80, 80)
+  fatih_projesi_python\client\client.py:884: 
+       enter_btn.setFont(QFont("Arial", 16, Q
+Font.Weight.Bold))
+  fatih_projesi_python\client\client.py:885: 
+       enter_btn.setStyleSheet("background-co
+lor: #0066cc; color: white;")
+  fatih_projesi_python\client\client.py:886: 
+       enter_btn.clicked.connect(self.enter_t
+ext)
+  fatih_projesi_python\client\client.py:887: 
+       keyboard_layout.addWidget(enter_btn, 3
+, 2)
+  fatih_projesi_python\client\client.py:888:
+  fatih_projesi_python\client\client.py:889: 
+       layout.addLayout(keyboard_layout)
+  fatih_projesi_python\client\client.py:890:
+  fatih_projesi_python\client\client.py:891: 
+       # Control buttons
+  fatih_projesi_python\client\client.py:892: 
+       control_layout = QHBoxLayout()
+  fatih_projesi_python\client\client.py:893: 
+       clear_btn = QPushButton("Temizle")
+  fatih_projesi_python\client\client.py:894: 
+       clear_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:895: 
+       clear_btn.clicked.connect(self.clear_t
+ext)
+  fatih_projesi_python\client\client.py:896: 
+       control_layout.addWidget(clear_btn)
+  fatih_projesi_python\client\client.py:897:
+  fatih_projesi_python\client\client.py:898: 
+       close_btn = QPushButton("Kapat")
+  fatih_projesi_python\client\client.py:899: 
+       close_btn.setMinimumHeight(40)
+  fatih_projesi_python\client\client.py:900: 
+       close_btn.clicked.connect(self.accept)
+  fatih_projesi_python\client\client.py:901: 
+       control_layout.addWidget(close_btn)
+  fatih_projesi_python\client\client.py:902:
+  fatih_projesi_python\client\client.py:903: 
+       layout.addLayout(control_layout)
+  fatih_projesi_python\client\client.py:904: 
+       self.setLayout(layout)
+  fatih_projesi_python\client\client.py:905:
+  fatih_projesi_python\client\client.py:906: 
+   def add_char(self, char):
+  fatih_projesi_python\client\client.py:907: 
+       if not self.target_field: return
+  fatih_projesi_python\client\client.py:908: 
+       current = self.target_field.text()
+  fatih_projesi_python\client\client.py:909: 
+       if self.shift_pressed:
+  fatih_projesi_python\client\client.py:910: 
+           char = char.upper()
+  fatih_projesi_python\client\client.py:911: 
+       self.target_field.setText(current + ch
+ar)
+  fatih_projesi_python\client\client.py:912: 
+       if self.shift_pressed:
+  fatih_projesi_python\client\client.py:913: 
+           self.shift_pressed = False
+  fatih_projesi_python\client\client.py:914: 
+           self.update_keyboard_case()
+  fatih_projesi_python\client\client.py:915:
+  fatih_projesi_python\client\client.py:916: 
+   def press_tab(self):
+  fatih_projesi_python\client\client.py:917: 
+       """NEW: Move focus to the next input f
+ield."""
+  fatih_projesi_python\client\client.py:918: 
+       if not self.target_field: return
+  fatih_projesi_python\client\client.py:919: 
+       # Find the parent window and ask it to
+ move focus to the next widget
+  fatih_projesi_python\client\client.py:920: 
+       parent = self.target_field.parentWidge
+t()
+  fatih_projesi_python\client\client.py:921: 
+       if parent:
+  fatih_projesi_python\client\client.py:922: 
+           parent.focusNextChild()
+  fatih_projesi_python\client\client.py:923:
+  fatih_projesi_python\client\client.py:924: 
+   def toggle_shift(self):
+  fatih_projesi_python\client\client.py:925: 
+       self.shift_pressed = not self.shift_pr
+essed
+  fatih_projesi_python\client\client.py:926: 
+       self.update_keyboard_case()
+  fatih_projesi_python\client\client.py:927:
+  fatih_projesi_python\client\client.py:928: 
+   def update_keyboard_case(self):
+  fatih_projesi_python\client\client.py:929: 
+       # Update all letter buttons
+  fatih_projesi_python\client\client.py:930: 
+       for btn in self.findChildren(QPushButt
+on):
+  fatih_projesi_python\client\client.py:931: 
+           text = btn.text()
+  fatih_projesi_python\client\client.py:932: 
+           if len(text) == 1 and text.isalpha
+():
+  fatih_projesi_python\client\client.py:933: 
+               if self.shift_pressed:
+  fatih_projesi_python\client\client.py:934: 
+                   btn.setText(text.upper())
+  fatih_projesi_python\client\client.py:935: 
+               else:
+  fatih_projesi_python\client\client.py:936: 
+                   btn.setText(text.lower())
+  fatih_projesi_python\client\client.py:937:
+  fatih_projesi_python\client\client.py:938: 
+   def backspace(self):
+  fatih_projesi_python\client\client.py:939: 
+       if not self.target_field: return
+
+
