@@ -1,0 +1,50 @@
+﻿        self.setWindowTitle("SayÄ±sal TuÅŸ TakÄ±mÄ±")
+        self.setModal(True)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+
+        layout = QVBoxLayout()
+        self.setWindowTitle("Sistem GiriÅŸi")
+        self.setModal(True)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        logging.info("LoginDialog UI initialized")
+
+        self.setWindowTitle("Tahta YapÄ±landÄ±rmasÄ±")
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setMinimumWidth(480)
+        
+        self.setWindowTitle("Åifre DeÄŸiÅŸtir")
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setMinimumWidth(450)
+
+    def init_ui(self):
+        self.setWindowTitle("GiriÅŸ/Ã‡Ä±kÄ±ÅŸ Saatleri")
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.setModal(True)
+        self.setMinimumSize(500, 600)
+        self.setWindowTitle("Fatih Client v1.5 - Scheduling Enabled")
+        # Added Qt.Tool to prevent Cinnamon from hiding the window on focus
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setGeometry(QApplication.primaryScreen().geometry())
+
+            msg.setText("Tahta yapÄ±landÄ±rmasÄ±nÄ± deÄŸiÅŸtirmeden Ã¶nce gÃ¼venlik gereÄŸi cihazÄ±n varsayÄ±lan yÃ¶netim ÅŸifresini 'Åifre DeÄŸiÅŸtir' menÃ¼sÃ¼nden deÄŸiÅŸtirmelisiniz.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.exec()
+            
+        super().__init__()
+        self.setWindowTitle("Fatih Sistem Kilidi")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setGeometry(QApplication.primaryScreen().geometry())
+
+        dialog.setWindowTitle("YÃ¶netici GiriÅŸi")
+        dialog.setModal(True)
+        dialog.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
+
+        # Dialog stil ve boyut ayarlarÄ± - kiosk fullscreen'de dÃ¼zgÃ¼n gÃ¶rÃ¼nsÃ¼n
+            msg.setText("Tahta yapÄ±landÄ±rmasÄ±nÄ± deÄŸiÅŸtirmeden Ã¶nce gÃ¼venlik gereÄŸi cihazÄ±n varsayÄ±lan yÃ¶netim ÅŸifresini 'Åifre DeÄŸiÅŸtir' menÃ¼sÃ¼nden deÄŸiÅŸtirmelisiniz.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.exec()
+            

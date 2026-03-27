@@ -848,7 +848,7 @@ class OnScreenKeyboard(QDialog):
     def init_ui(self):
         self.setWindowTitle("Sayısal Tuş Takımı")
         self.setModal(True)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Tool)
 
         layout = QVBoxLayout()
         keyboard_layout = QGridLayout()
@@ -1003,7 +1003,7 @@ class LoginDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Sistem Girişi")
         self.setModal(True)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Tool)
         logging.info("LoginDialog UI initialized")
 
         layout = QVBoxLayout()
@@ -1069,7 +1069,7 @@ class BoardConfigDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Tahta Yapılandırması")
         self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(480)
         
         layout = QVBoxLayout()
@@ -1306,7 +1306,7 @@ class ChangePasswordDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Şifre Değiştir")
         self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
@@ -1501,7 +1501,7 @@ class ScheduleDialog(QDialog):
 
     def init_ui(self):
         self.setWindowTitle("Giriş/Çıkış Saatleri")
-        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         self.setModal(True)
         self.setMinimumSize(500, 600)
 
@@ -2072,7 +2072,7 @@ class FatihClientApp(QWidget):
         self.version_label.setGeometry(10, self.height() - 50, 200, 40)
         
         # Read version
-        version_text = "V1.00.22" # Default
+        version_text = "V1.00.23" # Default
         try:
             version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
             if os.path.exists(version_path):
@@ -3389,7 +3389,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             msg.setWindowTitle("Uyarı")
             msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
             msg.exec()
             
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
@@ -3567,7 +3567,7 @@ class FatihKioskMode(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Fatih Sistem Kilidi")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setGeometry(QApplication.primaryScreen().geometry())
 
         # Mouse tracking ve right-click desteği
@@ -3920,7 +3920,7 @@ class FatihKioskMode(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Yönetici Girişi")
         dialog.setModal(True)
-        dialog.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
+        dialog.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Tool)
 
         # Dialog stil ve boyut ayarları - kiosk fullscreen'de düzgün görünsün
         dialog.setStyleSheet("""
@@ -4125,7 +4125,7 @@ ________________________________________________________________________________
             msg.setWindowTitle("Uyarı")
             msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
             msg.exec()
             
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
