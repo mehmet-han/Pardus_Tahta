@@ -10,7 +10,8 @@ import shutil
 import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
-                           QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction)
+                           QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction,
+                           QFrame, QListWidget, QListWidgetItem)
 from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
