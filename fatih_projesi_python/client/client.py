@@ -1549,7 +1549,6 @@ class LockScreenOverlay(QFrame):
         self.setMinimumWidth(480)
         self.adjustSize()
         self._reposition()
-        self.raise_()
         self.show()
 
     def _reposition(self):
@@ -1563,10 +1562,10 @@ class LockScreenOverlay(QFrame):
     def close_overlay(self):
         self.hide()
         self.deleteLater()
-        # Kilit ekranının odağını geri al
-        p = self.parent()
-        if p:
-            QTimer.singleShot(50, lambda: (p.raise_(), p.activateWindow()))
+        # X11'de parent üzerinde raise_() veya activateWindow() çağırmak, Cinnamon WM'nin 
+        # BypassWindow olarak ayarlanmış pencereyi tamamen un-map etmesine (gizlemesine) neden oluyor.
+        # Overlay sadece bir QFrame olduğu için parent hiçbir zaman gerçek bir X11 focus'u kaybetmiş olmadığından
+        # odak geri alma koduna gerek yoktur.
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
