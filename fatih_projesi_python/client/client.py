@@ -1733,7 +1733,8 @@ class NetworkClient:
     def _get_headers(self, core_code: str) -> dict:
         """Generates the required headers for an API request."""
         def cFnc_original(code_str: str) -> str:
-            timestamp = str(time.time())
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
             s = f"{code_str}?{timestamp}"
             replacements = {
                 "0":"!g", "1":"gt", "2":"_a", "3":"me", "4":"?b", 
@@ -1918,10 +1919,16 @@ class NetworkClient:
 # --- Main Application Window ---
 class FatihClientApp(QWidget):
     # Signal emitted from background thread when password validation completes.
-    # Carries (is_valid: bool) so the result is handled safely on the UI thread.
     _validation_result = pyqtSignal(bool)
+    
+    # NEW: Signal to safely execute server commands on the main UI thread
+    command_signal = pyqtSignal(list)
+
     def __init__(self):
         super().__init__()
+        # Connect the command signal to process_commands
+        self.command_signal.connect(self.process_commands)
+        
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
         self.keyboard_locker = None
         self.usb_check_timer = None
@@ -2104,7 +2111,8 @@ class FatihClientApp(QWidget):
         """)
         self.login_panel.setObjectName("loginPanel")
         # No window flags needed for child widget overlaid on the main window
-        panel_w, panel_h = 420, 280
+        # Fix height to 480 to properly fit EmbeddedNumpad
+        panel_w, panel_h = 450, 480
         self.login_panel.setGeometry(
             (self.width() - panel_w) // 2,
             (self.height() - panel_h) // 2,
@@ -2124,6 +2132,13 @@ class FatihClientApp(QWidget):
         self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
         self.login_password_field.set_on_enter_callback(self._login_attempt)
         lp_layout.addWidget(self.login_password_field)
+
+        # Geri getirilen Gömülü Numpad (UI ezilmesin diye minimum yükseklik)
+        from utils.ui_components import EmbeddedNumpad
+        self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
+        self.numpad.set_target(self.login_password_field)
+        self.numpad.setMinimumHeight(200)
+        lp_layout.addWidget(self.numpad)
 
         self.login_error_label = QLabel("")
         self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
@@ -2665,7 +2680,8 @@ class FatihClientApp(QWidget):
                         return
                 
                 commands = response_text.split(',')
-                QTimer.singleShot(0, lambda: self.process_commands(commands))
+                # Safely emit to main thread instead of lambda QTimer which gets garbage collected
+                self.command_signal.emit(commands)
             else:
                 # İNTERNET VEYA SUNUCU KOPTU
                 self.last_server_tahta_lock = -1
@@ -2991,7 +3007,7 @@ class FatihClientApp(QWidget):
         self.login_error_label.setText("")
         
         # Paneli ekranın ortasına konumlandır
-        panel_w, panel_h = 420, 280
+        panel_w, panel_h = 450, 480
         panel_x = (self.width() - panel_w) // 2
         panel_y = (self.height() - panel_h) // 2
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
