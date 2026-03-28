@@ -1124,6 +1124,40 @@ class BoardConfigWidget(QWidget):
         self.board_combo.setEnabled(False)
         self.board_combo.setMinimumHeight(35)
         self.board_combo.setFont(QFont("Arial", 12))
+        self.board_combo.setMaxVisibleItems(15)
+        # Açılır liste (popup) koyu arkaplan üzerinde görünür olsun
+        self.board_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #3c3c3c;
+                color: white;
+                border: 2px solid #555;
+                border-radius: 5px;
+                padding: 5px 10px;
+            }
+            QComboBox:enabled {
+                border-color: #0066cc;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid white;
+                margin-right: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2b2b2b;
+                color: white;
+                selection-background-color: #0066cc;
+                selection-color: white;
+                border: 2px solid #0066cc;
+                font-size: 12px;
+                padding: 4px;
+            }
+        """)
         board_form.addRow(board_label, self.board_combo)
         layout.addLayout(board_form)
 
@@ -2135,11 +2169,12 @@ class NetworkClient:
         """
         Retrieves board configurations/schedules.
         Equivalent to C# GetValues().
+        C# kodu t_n göndermez - sunucu tüm tahtaları döndürür.
+        Filtreleme client-side yapılır (tg flag'ine göre).
         """
         data = {
             "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id', '0')
+            "fnc": "3480"
         }
         response = self._make_request("5563", data)
         if response:
@@ -3590,79 +3625,73 @@ ________________________________________________________________________________
             QMessageBox.information(self, "Bilgi", "Henüz kayıt dosyası oluşturulmamış.")
 
     def restart_system(self, checked=False):
-        """Restart the system"""
-        reply = QMessageBox.question(
-            self, "Yeniden Başlat",
-            "Sistemi yeniden başlatmak istediğinizden emin misiniz?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.save_log("Sistem yeniden başlatıldı", "system")
-            import subprocess
-            # Birden fazla yöntem dene (hangisi sistemde mevcutsa)
-            reboot_commands = [
-                ['sudo', 'reboot'],
-                ['sudo', 'systemctl', 'reboot'],
-                ['sudo', '/sbin/reboot'],
-                ['systemctl', 'reboot'],
-                ['reboot'],
-            ]
-            for cmd in reboot_commands:
-                try:
-                    logging.info(f"Trying reboot command: {' '.join(cmd)}")
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        logging.info(f"Reboot initiated with: {' '.join(cmd)}")
-                        return
-                except FileNotFoundError:
-                    continue
-                except subprocess.TimeoutExpired:
-                    # Komut çalıştı, sistem kapanıyor olabilir
+        """Restart the system - C# bilgisayarıYenidenBaşlatToolStripMenuItem1_Click karşılığı
+        C# kodu: cls = true; Process.Start("cmd", "/C shutdown -f -r -t 0")
+        Onay diyalogu YOK - doğrudan çalıştırılır."""
+        logging.info("Bilgisayar yeniden başlatılıyor (context menu)")
+        self.save_log("Bilgisayar Yeniden Başlatıldı", "system")
+        import subprocess
+        # C# karşılığı: cmd /C shutdown -f -r -t 0
+        reboot_commands = [
+            ['sudo', 'reboot'],
+            ['sudo', 'systemctl', 'reboot'],
+            ['sudo', '/sbin/reboot'],
+            ['systemctl', 'reboot'],
+            ['reboot'],
+        ]
+        for cmd in reboot_commands:
+            try:
+                logging.info(f"Trying reboot command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    logging.info(f"Reboot initiated with: {' '.join(cmd)}")
                     return
-                except Exception as e:
-                    logging.warning(f"Reboot command {cmd} failed: {e}")
-                    continue
-            # Son çare: os.system ile dene
-            logging.warning("All reboot methods failed, trying os.system")
-            os.system("sudo reboot || reboot")
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                # Komut çalıştı, sistem kapanıyor olabilir
+                return
+            except Exception as e:
+                logging.warning(f"Reboot command {cmd} failed: {e}")
+                continue
+        # Son çare: os.system ile dene
+        logging.warning("All reboot methods failed, trying os.system")
+        os.system("sudo reboot || reboot")
 
     def shutdown_system(self, checked=False):
-        """Shutdown the system"""
-        reply = QMessageBox.question(
-            self, "Kapat",
-            "Sistemi kapatmak istediğinizden emin misiniz?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.save_log("Sistem kapatıldı", "system")
-            import subprocess
-            # Birden fazla yöntem dene (hangisi sistemde mevcutsa)
-            shutdown_commands = [
-                ['sudo', 'poweroff'],
-                ['sudo', 'systemctl', 'poweroff'],
-                ['sudo', '/sbin/poweroff'],
-                ['sudo', 'shutdown', '-h', 'now'],
-                ['systemctl', 'poweroff'],
-                ['poweroff'],
-            ]
-            for cmd in shutdown_commands:
-                try:
-                    logging.info(f"Trying shutdown command: {' '.join(cmd)}")
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        logging.info(f"Shutdown initiated with: {' '.join(cmd)}")
-                        return
-                except FileNotFoundError:
-                    continue
-                except subprocess.TimeoutExpired:
-                    # Komut çalıştı, sistem kapanıyor olabilir
+        """Shutdown the system - C# bilgisayarıYenidenBaşlatToolStripMenuItem_Click karşılığı
+        C# kodu: cls = true; Process.Start("shutdown", "/s /f /t 0")
+        Onay diyalogu YOK - doğrudan çalıştırılır."""
+        logging.info("Bilgisayar kapatılıyor (context menu)")
+        self.save_log("Bilgisayar Kapatıldı", "system")
+        import subprocess
+        # C# karşılığı: shutdown /s /f /t 0
+        shutdown_commands = [
+            ['sudo', 'poweroff'],
+            ['sudo', 'systemctl', 'poweroff'],
+            ['sudo', '/sbin/poweroff'],
+            ['sudo', 'shutdown', '-h', 'now'],
+            ['systemctl', 'poweroff'],
+            ['poweroff'],
+        ]
+        for cmd in shutdown_commands:
+            try:
+                logging.info(f"Trying shutdown command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    logging.info(f"Shutdown initiated with: {' '.join(cmd)}")
                     return
-                except Exception as e:
-                    logging.warning(f"Shutdown command {cmd} failed: {e}")
-                    continue
-            # Son çare: os.system ile dene
-            logging.warning("All shutdown methods failed, trying os.system")
-            os.system("sudo poweroff || poweroff")
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                # Komut çalıştı, sistem kapanıyor olabilir
+                return
+            except Exception as e:
+                logging.warning(f"Shutdown command {cmd} failed: {e}")
+                continue
+        # Son çare: os.system ile dene
+        logging.warning("All shutdown methods failed, trying os.system")
+        os.system("sudo poweroff || poweroff")
 
     def show_about(self, checked=False):
         """Show about dialog"""
