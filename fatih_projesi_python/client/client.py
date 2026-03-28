@@ -1114,47 +1114,46 @@ class BoardConfigWidget(QWidget):
         self.fetch_btn.clicked.connect(self.fetch_boards)
         layout.addWidget(self.fetch_btn)
 
-        # QStackedWidget to swap between Numpad and Board List without resizing the window
-        self.stacked_widget = QStackedWidget()
-        
-        # Page 0: Numpad
-        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
-        self.numpad.set_target(self.corporate_code_field)
-        self.stacked_widget.addWidget(self.numpad)
-        
-        # Page 1: Board List Widget (replaces QComboBox to avoid X11 popup bugs)
-        self.board_page = QWidget()
-        board_page_layout = QVBoxLayout(self.board_page)
-        board_page_layout.setContentsMargins(0, 0, 0, 0)
-        
-        board_list_label = QLabel("Aşağıdaki Listeden Tahtanızı Seçin:")
-        board_list_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        board_page_layout.addWidget(board_list_label)
-        
-        self.board_list_widget = QListWidget()
-        self.board_list_widget.setFont(QFont("Arial", 12))
-        self.board_list_widget.setStyleSheet("""
-            QListWidget {
+        # Geri Bildirim mesajları için QMessageBox yerine inline etiket kullanacağız (X11 kilitlenme hatasını çözer!)
+        self.status_label = QLabel("")
+        self.status_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setMinimumHeight(30)
+        self.status_label.setStyleSheet("color: #ffaa00;")
+        layout.addWidget(self.status_label)
+
+        # Board selection - form layout ile hizalı
+        board_form = QFormLayout()
+        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        board_form.setSpacing(10)
+        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        board_label = QLabel("Tahta Seçin:")
+        board_label.setFont(QFont("Arial", 12))
+        self.board_combo = QComboBox()
+        self.board_combo.setEnabled(False)
+        self.board_combo.setMinimumHeight(40)
+        self.board_combo.setFont(QFont("Arial", 12))
+        self.board_combo.setStyleSheet("""
+            QComboBox {
                 background-color: #ffffff;
                 color: #000000;
                 border: 2px solid #555;
                 border-radius: 5px;
-                padding: 4px;
+                padding: 5px 10px;
             }
-            QListWidget::item {
-                padding: 10px 12px;
-                border-bottom: 1px solid #ddd;
-            }
-            QListWidget::item:selected {
-                background-color: #0066cc;
-                color: white;
-                font-weight: bold;
+            QComboBox:disabled {
+                background-color: #555555;
+                color: #aaaaaa;
             }
         """)
-        board_page_layout.addWidget(self.board_list_widget)
-        self.stacked_widget.addWidget(self.board_page)
-        
-        layout.addWidget(self.stacked_widget)
+        board_form.addRow(board_label, self.board_combo)
+        layout.addLayout(board_form)
+
+        # Embedded Numpad
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
+        layout.addWidget(self.numpad)
+        # İlk alan varsayılan hedef olsun
+        self.numpad.set_target(self.corporate_code_field)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1182,10 +1181,10 @@ class BoardConfigWidget(QWidget):
             field.installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """QLineEdit focus olduğunda numpad hedefini güncelle ve sayfayı Numpad sayfasına getir"""
+        """QLineEdit focus olduğunda numpad hedefini güncelle"""
         if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
-            self.stacked_widget.setCurrentIndex(0)
             self.numpad.set_target(obj)
+            self.status_label.setText("") # Mesajı temizle
         return super().eventFilter(obj, event)
 
     def close_widget(self, *args, **kwargs):
@@ -1194,35 +1193,42 @@ class BoardConfigWidget(QWidget):
 
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
+        self.status_label.setText("")
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
-            QMessageBox.warning(self, "Hata", "Kurum kodu gerekli!")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Kurum kodu gerekli!")
             return
 
         # Şifre zorunlu kontrolü
         password = self.password_field.text().strip()
         if not password:
-            QMessageBox.warning(self, "Hata", "Şifre gerekli! Lütfen admin şifrenizi giriniz.")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Şifre gerekli!")
             return
 
         # Şifre doğrulama - config'deki admin_password ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
         if password != config_password:
-            QMessageBox.warning(self, "Hata", "Şifre yanlış!")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Şifre yanlış!")
             return
 
         # İlk kurulumda şifre değiştirilmemiş ise uyarı ver
         password_changed = SETTINGS.get('password_changed', 'false').lower() == 'true'
         if not password_changed:
-            QMessageBox.warning(self, "Şifre Değişikliği Gerekli",
-                "İlk kurulumda varsayılan şifre kullanılmaktadır.\n"
-                "Güvenliğiniz için lütfen önce şifrenizi değiştiriniz.\n\n"
-                "Sağ tık menüsünden 'Şifre Değiştir' seçeneğini kullanınız.")
+            self.status_label.setStyleSheet("color: #ffaa00;")
+            self.status_label.setText("Önce sağ tıklayıp şifrenizi değiştiriniz!")
             return
 
         if not self.network_client:
-            QMessageBox.critical(self, "Hata", "Network client başlatılamadı!")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Ağ modülü başlatılamadı!")
             return
+
+        self.status_label.setStyleSheet("color: #00aaff;")
+        self.status_label.setText("Sunucuya bağlanılıyor, lütfen bekleyin...")
+        QApplication.processEvents() # UI'ı güncelle
 
         # Temporarily update the network client's settings for this request
         original_code = self.network_client.settings.get('corporate_code')
@@ -1236,39 +1242,39 @@ class BoardConfigWidget(QWidget):
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
-                    self.board_list_widget.clear()
+                    self.board_combo.clear()
                     for board in items:
                         board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
-                        item.setData(Qt.UserRole, board.get("id"))
-                        self.board_list_widget.addItem(item)
+                        self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}', board.get("id"))
                     
-                    self.board_list_widget.setCurrentRow(0)
-                    self.stacked_widget.setCurrentIndex(1)  # Swap to board list
-                    QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulunda. \nLütfen aşağıdan tahtanızı seçip Onayla'ya basınız.")
+                    self.board_combo.setEnabled(True)
+                    self.numpad.hide() # Combo box rahat açılsın diye gizle
+                    
+                    self.status_label.setStyleSheet("color: #55ff55;")
+                    self.status_label.setText(f"Başarılı! {len(items)} tahta bulundu. Lütfen seçin.")
                 else:
-                    QMessageBox.warning(self, "Uyarı", "Bu kurum için tahta bulunamadı.")
+                    self.status_label.setStyleSheet("color: #ffaa00;")
+                    self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
             else:
-                QMessageBox.warning(self, "Hata", "Sunucudan tahta listesi alınamadı.")
+                self.status_label.setStyleSheet("color: #ff5555;")
+                self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
         except Exception as e:
             # Restore original code in case of error
             self.network_client.settings['corporate_code'] = original_code
-            QMessageBox.warning(self, "Hata", f"Bir hata oluştu: {e}")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Ağ hatası oluştu.")
 
     def confirm_selection(self, checked=False):
         logging.info("[BoardConfig] confirm_selection called")
-        if self.stacked_widget.currentIndex() != 1:
-            QMessageBox.warning(self, "Hata", "Önce 'Tahtaları Getir' tuşuna basarak listeyi yükleyin!")
+        if not self.board_combo.isEnabled():
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Önce 'Tahtaları Getir' tuşuna basın.")
             return
 
-        selected_item = self.board_list_widget.currentItem()
-        if not selected_item:
-            QMessageBox.warning(self, "Hata", "Listeden bir tahta seçiniz!")
-            return
-
-        selected_board_id = selected_item.data(Qt.UserRole)
+        selected_board_id = self.board_combo.currentData()
         if selected_board_id is None:
-            QMessageBox.warning(self, "Hata", "Listeden geçerli bir tahta seçiniz!")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Listeden bir tahta seçiniz!")
             return
 
         # Update configuration
