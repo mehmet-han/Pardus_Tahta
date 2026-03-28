@@ -4421,11 +4421,15 @@ ________________________________________________________________________________
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
             return
 
-        self._safe_open_dialog(BoardConfigDialog, network_client=self.network_client)
+        widget = BoardConfigWidget(self, network_client=self.network_client)
+        overlay = LockScreenOverlay(self, title="Tahta Yapılandırması", content_widget=widget)
+        widget.close_callback = overlay.close_overlay
 
     def kiosk_show_change_password(self):
         """Kiosk modunda şifre değiştir dialog göster"""
-        self._safe_open_dialog(ChangePasswordDialog)
+        widget = ChangePasswordWidget(self)
+        overlay = LockScreenOverlay(self, title="Şifre Değiştir", content_widget=widget)
+        widget.close_callback = overlay.close_overlay
 
     def kiosk_show_schedule(self):
         """Kiosk modunda giriş/çıkış saatleri dialog göster"""
