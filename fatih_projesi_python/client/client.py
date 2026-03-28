@@ -10,7 +10,7 @@ import shutil
 import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
-                           QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction)
+                           QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction, QFrame)
 from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
@@ -3463,7 +3463,7 @@ class FatihClientApp(QWidget):
             # Giriş/Çıkış Saatleri için özel miçro widget
             content = ScheduleWidget(schedule_data)
             LockScreenOverlay(self, title="Giriş/Çıkış Saatleri", content_widget=content)
-        elif dialog_class.__name__ == 'OnScreenKeyboardDialog':
+        elif getattr(dialog_class, '__name__', str(dialog_class)) == 'OnScreenKeyboardDialog':
             numpad = EmbeddedNumpad()
             LockScreenOverlay(self, title="Ekran Klavyesi", content_widget=numpad)
         else:
@@ -3482,7 +3482,7 @@ USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        self._show_info_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
+        self._show_info_dialog('SystemMessageBox', title="Sistem Durumu", text=status_text.strip())
 
     def show_settings(self, checked=False):
         """Show settings dialog"""
@@ -3501,7 +3501,7 @@ ________________________________________________________________________________
 
     def show_on_screen_keyboard(self, checked=False):
         """Show on-screen keyboard"""
-        self._show_info_dialog(OnScreenKeyboardDialog)
+        self._show_info_dialog('OnScreenKeyboardDialog')
 
     def show_logs(self, checked=False):
         """Show recent logs"""
@@ -3614,7 +3614,7 @@ Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Bu yazılım Fatih Projesi kapsamında geliştirilmiştir.
 Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
-        self._safe_open_dialog(SystemMessageBox, title="Hakkında", text=about_text.strip())
+        LockScreenOverlay(self, title="Hakkında", text=about_text.strip())
 
     def _safe_open_dialog(self, dialog_class, **kwargs):
         """
@@ -3685,7 +3685,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
         if self.schedule:
-            self._show_info_dialog(ScheduleDialog, schedule_data=self.schedule)
+            self._show_info_dialog('ScheduleDialog', schedule_data=self.schedule)
         # The original instruction had an 'else:f process_admin_command(self):' here,
         # which is syntactically incorrect and seems like a copy-paste error.
         # Assuming the intent was to add a conditional check for self.schedule
@@ -4370,7 +4370,7 @@ class FatihKioskMode(QMainWindow):
         if schedule_data is not None:
             content = ScheduleWidget(schedule_data)
             LockScreenOverlay(self, title="Giriş/Çıkış Saatleri", content_widget=content)
-        elif dialog_class.__name__ == 'OnScreenKeyboardDialog':
+        elif getattr(dialog_class, '__name__', str(dialog_class)) == 'OnScreenKeyboardDialog':
             numpad = EmbeddedNumpad()
             LockScreenOverlay(self, title="Ekran Klavyesi", content_widget=numpad)
         else:
@@ -4456,11 +4456,11 @@ ________________________________________________________________________________
                     schedule_data = json.load(f)
             except Exception as e:
                 logging.error(f"Kiosk schedule load error: {e}")
-        self._show_info_dialog(ScheduleDialog, schedule_data=schedule_data)
+        self._show_info_dialog('ScheduleDialog', schedule_data=schedule_data)
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
-        self._show_info_dialog(OnScreenKeyboardDialog)
+        self._show_info_dialog('OnScreenKeyboardDialog')
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""
@@ -4472,7 +4472,7 @@ Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Bu yazılım Fatih Projesi kapsamında geliştirilmiştir.
 Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
-        self._safe_open_dialog(SystemMessageBox, title="Hakkında", text=about_text.strip())
+        LockScreenOverlay(self, title="Hakkında", text=about_text.strip())
 
     def resizeEvent(self, event):
         """Handle window resize to reposition UI elements"""
