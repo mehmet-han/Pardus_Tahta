@@ -2145,11 +2145,15 @@ class FatihClientApp(QWidget):
     
     # NEW: Signal to safely execute server commands on the main UI thread
     command_signal = pyqtSignal(list)
+    
+    # NEW: Signal to trigger UI updates for network status changes
+    network_status_signal = pyqtSignal(bool)
 
     def __init__(self):
         super().__init__()
         # Connect the command signal to process_commands
         self.command_signal.connect(self.process_commands)
+        self.network_status_signal.connect(self.update_network_status_ui)
         
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
         self.keyboard_locker = None
@@ -2894,6 +2898,7 @@ class FatihClientApp(QWidget):
             response_text = self.network_client.ctrl_post()
             if response_text is not None:
                 logging.info("Successfully polled server.")
+                self.network_status_signal.emit(True)
                 
                 # --- C# startWork mekanizmasi ---
                 if not self.start_work:
@@ -2916,18 +2921,16 @@ class FatihClientApp(QWidget):
                 
                 # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
                 has_connection = self.network_client.check_network()
+                self.network_status_signal.emit(has_connection)
+                
                 if not has_connection:
                     # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa)
                     if not self.is_locked and not check_usb_password():
                         logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
                         QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
                         
-                    if getattr(self, 'is_locked', False):
-                        QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 64px; font-weight: bold; background-color: rgba(255,255,255,0.8); padding: 15px; border-radius: 10px;">İNTERNET YOK!!!</div>'))
                     logging.error("Failed to poll server - No Internet connection detected.")
                 else:
-                    if getattr(self, 'is_locked', False):
-                        QTimer.singleShot(0, lambda: self.message_label.setText('<div style="color: black; font-size: 32px; background-color: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px;">Sunucuya Bağlanılamadı (Tekrar Deneniyor)</div>'))
                     logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
 
         threading.Thread(target=_poll_task, daemon=True).start()
@@ -3262,6 +3265,30 @@ class FatihClientApp(QWidget):
         """Update the board name display in top-center - Sadece TAHTA ADI görünür"""
         board_name = SETTINGS.get('board_name', 'Akıllı Tahta')
         self.board_id_label.setText(board_name)
+
+    def update_network_status_ui(self, has_internet):
+        """C# Uyumluluğu: İnternet koptuğunda versiyon/isim etiketini İNTERNET YOK!!! yapar"""
+        current_text = self.version_label.text()
+        
+        if not has_internet:
+            self.version_label.setText("İNTERNET YOK!!!")
+            self.version_label.setStyleSheet("color: #ff3333; font-size: 18px; font-weight: bold; background-color: rgba(0,0,0,0.8); padding: 5px; border-radius: 5px;")
+        else:
+            if current_text == "İNTERNET YOK!!!":
+                # Restore original formatting
+                version_text = "V1.00.00"
+                try:
+                    version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
+                    if os.path.exists(version_path):
+                        with open(version_path, 'r', encoding='utf-8') as f:
+                            version_text = f.read().strip()
+                    elif os.path.exists("/opt/fatih-client/version.txt"):
+                        with open("/opt/fatih-client/version.txt", 'r', encoding='utf-8') as f:
+                            version_text = f.read().strip()
+                except:
+                    pass
+                self.version_label.setText(f"Sürüm: {version_text}")
+                self.version_label.setStyleSheet("color: white; font-size: 18px; background-color: rgba(0,0,0,0.7); padding: 5px; border-radius: 5px;")
 
     def show_login_dialog(self):
         """Giriş panelini göster (top-level frameless window - Cinnamon WM fix)"""
