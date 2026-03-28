@@ -1169,6 +1169,7 @@ class BoardConfigWidget(QWidget):
             self.close_callback()
 
     def fetch_boards(self, checked=False):
+        logging.info("[BoardConfig] fetch_boards called")
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
             QMessageBox.warning(self, "Hata", "Kurum kodu gerekli!")
@@ -1228,6 +1229,7 @@ class BoardConfigWidget(QWidget):
             QMessageBox.warning(self, "Hata", f"Bir hata oluştu: {e}")
 
     def confirm_selection(self, checked=False):
+        logging.info("[BoardConfig] confirm_selection called")
         if not self.board_combo.isEnabled():
             QMessageBox.warning(self, "Hata", "Önce tahtaları getirin!")
             return

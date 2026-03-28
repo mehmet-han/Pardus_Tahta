@@ -172,11 +172,59 @@ echo "[6/6] Arka plan servisleri temizleniyor..."
 pkill -9 -f main.py 2>/dev/null
 pkill -9 -f client.py 2>/dev/null
 
-echo "[7/7] Güvenlik Temizliği Yapılıyor..."
+echo "[7/7] Güvenlik Temizliği ve Kullanıcı Ayarları Yapılıyor..."
 if [ -d "Fatih_Projesi" ]; then
     rm -rf "Fatih_Projesi"
     echo "✅ C# Kaynak kodları (Fatih_Projesi dizini) güvenlik sebebiyle silindi."
 fi
+
+# --- Pardus Kullanıcı Şifrelerini Kaldır ---
+# Fatih Client kendi kilit ekranını sağladığı için işletim sistemi şifrelerine gerek yok.
+# Bu sayede uzaktan kilit açıldığında kullanıcı ikinci bir şifre ekranıyla karşılaşmaz.
+echo "Kullanıcı şifreleri kaldırılıyor (Fatih kilit ekranı aktif)..."
+
+# etapadmin (yönetici) şifresini kaldır
+if id "etapadmin" &>/dev/null; then
+    passwd -d etapadmin 2>/dev/null && echo "  ✅ etapadmin şifresi kaldırıldı" || echo "  ⚠ etapadmin şifresi kaldırılamadı"
+fi
+
+# ogretmen (öğretmen) şifresini kaldır
+if id "ogretmen" &>/dev/null; then
+    passwd -d ogretmen 2>/dev/null && echo "  ✅ ogretmen şifresi kaldırıldı" || echo "  ⚠ ogretmen şifresi kaldırılamadı"
+fi
+
+# ogrenci (öğrenci) şifresini kaldır
+if id "ogrenci" &>/dev/null; then
+    passwd -d ogrenci 2>/dev/null && echo "  ✅ ogrenci şifresi kaldırıldı" || echo "  ⚠ ogrenci şifresi kaldırılamadı"
+fi
+
+# --- LightDM Otomatik Giriş Ayarı ---
+# Bilgisayar açıldığında şifre sormadan doğrudan masaüstüne girsin
+LIGHTDM_CONF="/etc/lightdm/lightdm.conf"
+if [ -f "$LIGHTDM_CONF" ] || [ -d "/etc/lightdm" ]; then
+    # Mevcut autologin ayarını kontrol et ve güncelle
+    if grep -q "autologin-user" "$LIGHTDM_CONF" 2>/dev/null; then
+        sed -i 's/^#*autologin-user=.*/autologin-user=etapadmin/' "$LIGHTDM_CONF"
+    else
+        # [Seat:*] bölümüne ekle
+        if grep -q "\[Seat:\*\]" "$LIGHTDM_CONF" 2>/dev/null; then
+            sed -i '/\[Seat:\*\]/a autologin-user=etapadmin' "$LIGHTDM_CONF"
+        else
+            mkdir -p /etc/lightdm
+            cat <<LIGHTDM_EOF >> "$LIGHTDM_CONF"
+
+[Seat:*]
+autologin-user=etapadmin
+LIGHTDM_EOF
+        fi
+    fi
+    echo "  ✅ LightDM otomatik giriş ayarlandı (etapadmin)"
+fi
+
+# Cinnamon screensaver'ı devre dışı bırak (kilit ekranını engellemek için)
+sudo -u etapadmin dbus-launch gsettings set org.cinnamon.desktop.screensaver lock-enabled false 2>/dev/null
+sudo -u etapadmin dbus-launch gsettings set org.cinnamon.desktop.screensaver idle-activation-enabled false 2>/dev/null
+echo "  ✅ Cinnamon ekran kilidi devre dışı bırakıldı"
 
 echo "========================================================="
 echo "✅ KURULUM TAMAMLANDI!"
