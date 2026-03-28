@@ -1123,42 +1123,26 @@ class BoardConfigWidget(QWidget):
         board_label.setFont(QFont("Arial", 12))
         self.board_combo = QComboBox()
         self.board_combo.setEnabled(False)
-        self.board_combo.setMinimumHeight(35)
+        self.board_combo.setMinimumHeight(40)
         self.board_combo.setFont(QFont("Arial", 12))
-        self.board_combo.setMaxVisibleItems(15)
-        # Açılır liste (popup) koyu arkaplan üzerinde görünür olsun
+        
+        # Sadece ana düğmenin görünümünü ayarlıyoruz. 
+        # Liste görünümü (drop-down) için QAbstractItemView CSS yazmıyoruz,
+        # böylece işletim sistemi (X11) kendi yerel, sorunsuz açılır pop-up'ını kullanır.
         self.board_combo.setStyleSheet("""
             QComboBox {
-                background-color: #3c3c3c;
-                color: white;
+                background-color: #ffffff;
+                color: #000000;
                 border: 2px solid #555;
                 border-radius: 5px;
                 padding: 5px 10px;
             }
-            QComboBox:enabled {
-                border-color: #0066cc;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 30px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 8px solid white;
-                margin-right: 10px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2b2b2b;
-                color: white;
-                selection-background-color: #0066cc;
-                selection-color: white;
-                border: 2px solid #0066cc;
-                font-size: 12px;
-                padding: 4px;
+            QComboBox:disabled {
+                background-color: #555555;
+                color: #aaaaaa;
             }
         """)
+        
         board_form.addRow(board_label, self.board_combo)
         layout.addLayout(board_form)
 
@@ -1196,6 +1180,7 @@ class BoardConfigWidget(QWidget):
     def eventFilter(self, obj, event):
         """QLineEdit focus olduğunda numpad hedefini güncelle"""
         if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
+            self.numpad.show()
             self.numpad.set_target(obj)
         return super().eventFilter(obj, event)
 
@@ -1252,6 +1237,7 @@ class BoardConfigWidget(QWidget):
                         board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
                         self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}', board.get("id"))
                     self.board_combo.setEnabled(True)
+                    self.numpad.hide()  # Tuş takımını gizle ki liste aşağı rahat açılabilsin
                     QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulundu.")
                 else:
                     QMessageBox.warning(self, "Uyarı", "Bu kurum için tahta bulunamadı.")
