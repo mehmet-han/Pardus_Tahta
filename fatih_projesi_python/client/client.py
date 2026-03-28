@@ -2104,8 +2104,7 @@ class FatihClientApp(QWidget):
         """)
         self.login_panel.setObjectName("loginPanel")
         # No window flags needed for child widget overlaid on the main window
-        # Increase panel height to fit the EmbeddedNumpad properly
-        panel_w, panel_h = 450, 480
+        panel_w, panel_h = 420, 280
         self.login_panel.setGeometry(
             (self.width() - panel_w) // 2,
             (self.height() - panel_h) // 2,
@@ -2125,9 +2124,6 @@ class FatihClientApp(QWidget):
         self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
         self.login_password_field.set_on_enter_callback(self._login_attempt)
         lp_layout.addWidget(self.login_password_field)
-
-        self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
-        lp_layout.addWidget(self.numpad)
 
         self.login_error_label = QLabel("")
         self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
@@ -2628,9 +2624,9 @@ class FatihClientApp(QWidget):
         def cFnc_original(code_str: str) -> str:
             """
             A direct Python port of the original C# cFnc function.
-            It includes the problematic '?' and a timestamp.
+            It includes the problematic '?' and a formatted timestamp.
             """
-            timestamp = str(time.time())
+            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
             s = f"{code_str}?{timestamp}"
             
             # the original replacement map.
@@ -2696,6 +2692,7 @@ class FatihClientApp(QWidget):
     def process_commands(self, commands):
         if len(commands) < 4:
             # Server returns at least 4 items (Lock status, message, shutdown, system remove).
+            logging.warning(f"Sunucudan eksik/hatalı komut formatı geldi (len < 4): {commands}")
             self.tahta_lock = -5
             self.shutDown = -5
             self.system_remove = -5
