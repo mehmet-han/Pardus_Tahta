@@ -1493,28 +1493,86 @@ class ChangePasswordDialog(QDialog):
             self.status_label.setText(f"Hata: {str(e)[:30]}")
 
 
-# --- YENİ: Kilit Ekranı Üzerinde Gösterilen Mesaj Kutusu ---
-class SystemMessageBox(QMessageBox):
-    def __init__(self, parent=None, title="", text="", icon=QMessageBox.Information):
+# --- YENİ: Kilit Ekranı İçinde Çalışan Overlay (HİÇ yeni pencere açmıyor) ---
+class LockScreenOverlay(QFrame):
+    """
+    Kilit ekranının kendi üzerine yerleştirilen bir child widget.
+    QDialog/QMessageBox gibi ayrı bir pencere OLMADIĞI için
+    lockscreen hiç kapanmıyor, hiç titresmiyor.
+    """
+    def __init__(self, parent, title="", content_widget=None, text=""):
         super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setText(text)
-        self.setIcon(icon)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-
-# --- YENİ: Kilit Ekranı Üzerinde Gösterilen Ekran Klavyesi ---
-class OnScreenKeyboardDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Sayısal Tuş Takımı")
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.setStyleSheet("""
+            LockScreenOverlay {
+                background-color: rgba(20, 20, 35, 240);
+                border: 2px solid #0066cc;
+                border-radius: 15px;
+            }
+            QLabel { color: white; background: transparent; }
+            QPushButton {
+                background-color: #0066cc; color: white;
+                border-radius: 6px; padding: 8px 20px;
+                font-size: 14px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #0052aa; }
+        """)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         layout = QVBoxLayout(self)
-        numpad = EmbeddedNumpad()
-        layout.addWidget(numpad)
+        layout.setContentsMargins(25, 20, 25, 20)
+        layout.setSpacing(12)
+
+        # Başlık
+        title_lbl = QLabel(title)
+        title_lbl.setFont(QFont('DejaVu Sans', 16, QFont.Bold))
+        title_lbl.setAlignment(Qt.AlignCenter)
+        title_lbl.setStyleSheet("color: #00ccff; margin-bottom: 5px;")
+        layout.addWidget(title_lbl)
+
+        # İçerik (metin ya da widget)
+        if content_widget:
+            layout.addWidget(content_widget)
+        elif text:
+            text_lbl = QLabel(text)
+            text_lbl.setWordWrap(True)
+            text_lbl.setFont(QFont('DejaVu Sans', 12))
+            text_lbl.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            text_lbl.setStyleSheet("color: #e0e0e0; font-size: 13px;")
+            layout.addWidget(text_lbl)
+
+        # Kapat butonu
         close_btn = QPushButton("Kapat")
         close_btn.setMinimumHeight(40)
-        close_btn.clicked.connect(self.accept)
+        close_btn.clicked.connect(self.close_overlay)
         layout.addWidget(close_btn)
+
+        # Boyut ve konum — ekran ortasına yerleştir
+        self.setMinimumWidth(480)
+        self.adjustSize()
+        self._reposition()
+        self.raise_()
+        self.show()
+
+    def _reposition(self):
+        p = self.parent()
+        if p:
+            self.adjustSize()
+            x = (p.width() - self.width()) // 2
+            y = (p.height() - self.height()) // 2
+            self.move(x, y)
+
+    def close_overlay(self):
+        self.hide()
+        self.deleteLater()
+        # Kilit ekranının odağını geri al
+        p = self.parent()
+        if p:
+            QTimer.singleShot(50, lambda: (p.raise_(), p.activateWindow()))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close_overlay()
+        else:
+            super().keyPressEvent(event)
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
 class ScheduleDialog(QDialog):
@@ -1632,6 +1690,102 @@ class ScheduleDialog(QDialog):
                             self.rows[k - 1][1].setText(end)
         except Exception as e:
             logging.warning(f"Error displaying schedule: {e}")
+
+
+# --- Giriş/Çıkış Saatleri — Overlay İçin Saf Widget (pencere açmaz) ---
+class ScheduleWidget(QWidget):
+    """ScheduleDialog ile aynı içerik, ama LockScreenOverlay içinde kullanılmak üzere 
+    bağımsız bir QWidget. Yeni pencere açmaz."""
+    DAYS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+
+    def __init__(self, schedule_data=None, parent=None):
+        super().__init__(parent)
+        self.schedule_data = schedule_data
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Gün seçim butonları
+        day_layout = QHBoxLayout()
+        self.day_buttons = []
+        today = datetime.now().isoweekday()
+        for i in range(1, 8):
+            btn = QPushButton(self.DAYS[i][:3])
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton { padding: 6px 10px; border: 1px solid #555; border-radius: 4px;
+                              background: #2a2a3e; color: white; font-size: 12px; }
+                QPushButton:checked { background: #0066cc; border-color: #0088ff; font-weight: bold; }
+            """)
+            btn.clicked.connect(lambda checked, day=i: self._select_day(day))
+            day_layout.addWidget(btn)
+            self.day_buttons.append(btn)
+        layout.addLayout(day_layout)
+
+        # Başlık satırı
+        header = QHBoxLayout()
+        for text in ['Ders', 'Giriş', 'Çıkış']:
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: bold; font-size: 13px; padding: 3px; color: #aaddff;")
+            lbl.setAlignment(Qt.AlignCenter)
+            header.addWidget(lbl)
+        layout.addLayout(header)
+
+        # 18 ders satırı
+        self.rows = []
+        for i in range(1, 19):
+            row = QHBoxLayout()
+            d = QLabel(f"{i}.")
+            d.setAlignment(Qt.AlignCenter)
+            d.setStyleSheet("color: #ccc; font-size: 11px;")
+            g = QLabel("—")
+            g.setAlignment(Qt.AlignCenter)
+            g.setStyleSheet("color: #00cc66; font-size: 11px;")
+            c = QLabel("—")
+            c.setAlignment(Qt.AlignCenter)
+            c.setStyleSheet("color: #ff6644; font-size: 11px;")
+            row.addWidget(d)
+            row.addWidget(g)
+            row.addWidget(c)
+            layout.addLayout(row)
+            self.rows.append((g, c))
+
+        self._select_day(today)
+
+    def _select_day(self, day_index):
+        for i, btn in enumerate(self.day_buttons):
+            btn.setChecked(i + 1 == day_index)
+        for giris, cikis in self.rows:
+            giris.setText("—")
+            cikis.setText("—")
+        if not self.schedule_data or 'hours' not in self.schedule_data:
+            return
+        hours_data = self.schedule_data.get('hours')
+        try:
+            if isinstance(hours_data, list):
+                if day_index < len(hours_data):
+                    day_schedule = hours_data[day_index]
+                    for period in range(1, min(19, len(day_schedule))):
+                        period_data = day_schedule[period]
+                        if isinstance(period_data, list) and len(period_data) >= 3:
+                            start = period_data[1] if period_data[1] and period_data[1] != '0' else ''
+                            end = period_data[2] if period_data[2] and period_data[2] != '0' else ''
+                            if start: self.rows[period - 1][0].setText(start)
+                            if end:   self.rows[period - 1][1].setText(end)
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(day_index), {})
+                for k in range(1, 19):
+                    slot = day_schedule.get(str(k))
+                    if slot and isinstance(slot, dict):
+                        start = slot.get('1', '')
+                        end = slot.get('2', '')
+                        if start and start != '0': self.rows[k - 1][0].setText(start)
+                        if end and end != '0':     self.rows[k - 1][1].setText(end)
+        except Exception as e:
+            logging.warning(f"ScheduleWidget error: {e}")
 
 
 # --- Keyboard Locker Thread (More Aggressive) ---
@@ -2916,6 +3070,9 @@ class FatihClientApp(QWidget):
             # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
+            # expected_server_tahta_lock'u 30sn sonra sıfırla;
+            # böylece MebreCep'ten kısa süre sonra gelen kilit/açma komutları yutulmaz.
+            QTimer.singleShot(30000, self._reset_expected_lock)
 
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
             PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
@@ -2947,6 +3104,11 @@ class FatihClientApp(QWidget):
             except Exception as e:
                 logging.error(f"Failed to start KeyboardLocker: {e}")
                 self.keyboard_locker = None
+
+    def _reset_expected_lock(self):
+        """30 saniye sonra expected_server_tahta_lock'u sıfırla — sunucu senkronize olmuştur."""
+        self.expected_server_tahta_lock = -1
+        logging.info("[LOCK] expected_server_tahta_lock reset to -1 (30s timer)")
     def _force_on_top(self):
         """Cinnamon'da kilit ekranını taskbar'ın üstüne zorla al"""
         try:
@@ -3006,6 +3168,9 @@ class FatihClientApp(QWidget):
                 self.usb_monitor.reset_usb_unlock_flag()
             
         self.acknowledge_command("tahtaLock", "0")
+        # expected_server_tahta_lock'u 30sn sonra sıfırla;
+        # böylece MebreCep'ten kısa süre sonra gelen kilitleme komutu yutulmaz.
+        QTimer.singleShot(30000, self._reset_expected_lock)
         
         # Fatih kilidi açıldıktan sonra Pardus/GNOME ekran kilidini aktif et
         # Böylece kullanıcı Pardus şifresiyle giriş yapabilir
@@ -3287,19 +3452,22 @@ class FatihClientApp(QWidget):
 
     def _show_info_dialog(self, dialog_class, **kwargs):
         """
-        Bilgi amaçlı (read-only) dialogları kilit ekranını HİÇ kapatmadan gösterir.
-        Ana pencerenin flag'ini DEĞİŞTİRMEZ, keyboard locker'ı DURDURMAZ.
-        Sadece dialog'u Qt.WindowStaysOnTopHint ile en üstte açar.
+        Bilgi amaçlı içerikleri kilit ekranı üzerine CHILD WIDGET olarak yerleştirir.
+        Ayrı pencere OLMADIĞI için lockscreen hiç titresmiyor, hiç kapanmıyor.
         """
-        try:
-            dialog = dialog_class(self, **kwargs)
-            dialog.exec()
-        except Exception as e:
-            logging.error(f"Info dialog error: {e}")
-        # Kilit ekranının odağını geri al
-        QTimer.singleShot(100, lambda: (
-            self.raise_(), self.activateWindow()
-        ))
+        title = kwargs.get('title', '')
+        text = kwargs.get('text', '')
+        schedule_data = kwargs.get('schedule_data', None)
+
+        if schedule_data is not None:
+            # Giriş/Çıkış Saatleri için özel miçro widget
+            content = ScheduleWidget(schedule_data)
+            LockScreenOverlay(self, title="Giriş/Çıkış Saatleri", content_widget=content)
+        elif dialog_class.__name__ == 'OnScreenKeyboardDialog':
+            numpad = EmbeddedNumpad()
+            LockScreenOverlay(self, title="Ekran Klavyesi", content_widget=numpad)
+        else:
+            LockScreenOverlay(self, title=title, text=text)
 
     def show_system_status(self, checked=False):
         """Show system status dialog - Kurum kodu kaldırıldı"""
@@ -4192,19 +4360,21 @@ class FatihKioskMode(QMainWindow):
 
     def _show_info_dialog(self, dialog_class, **kwargs):
         """
-        Bilgi amaçlı (read-only) dialogları kilit ekranını HİÇ kapatmadan gösterir.
-        Ana pencerenin flag'ini DEĞİŞTİRMEZ, keyboard locker'ı DURDURMAZ.
-        Sadece dialog'u Qt.WindowStaysOnTopHint ile en üstte açar.
+        Bilgi amaçlı içerikleri kilit ekranı üzerine CHILD WIDGET olarak yerleştirir.
+        Ayrı pencere OLMADIĞi için lockscreen hiç titresmiyor, hiç kapanmıyor.
         """
-        try:
-            dialog = dialog_class(self, **kwargs)
-            dialog.exec()
-        except Exception as e:
-            logging.error(f"Kiosk info dialog error: {e}")
-        # Kilit ekranının odağını geri al
-        QTimer.singleShot(100, lambda: (
-            self.raise_(), self.activateWindow()
-        ))
+        title = kwargs.get('title', '')
+        text = kwargs.get('text', '')
+        schedule_data = kwargs.get('schedule_data', None)
+
+        if schedule_data is not None:
+            content = ScheduleWidget(schedule_data)
+            LockScreenOverlay(self, title="Giriş/Çıkış Saatleri", content_widget=content)
+        elif dialog_class.__name__ == 'OnScreenKeyboardDialog':
+            numpad = EmbeddedNumpad()
+            LockScreenOverlay(self, title="Ekran Klavyesi", content_widget=numpad)
+        else:
+            LockScreenOverlay(self, title=title, text=text)
 
     def kiosk_show_system_status(self):
         """Kiosk modunda sistem durumu göster"""
@@ -4219,7 +4389,7 @@ USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        self._show_info_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
+        LockScreenOverlay(self, title="Sistem Durumu", text=status_text.strip())
 
     def _safe_open_dialog(self, dialog_class, **kwargs):
         """
