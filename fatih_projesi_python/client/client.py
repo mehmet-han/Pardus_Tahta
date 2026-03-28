@@ -1430,35 +1430,42 @@ class ChangePasswordWidget(QWidget):
             self.close_callback()
 
     def change_password(self, checked=False):
+        logging.info("[ChangePassword] change_password called")
         current = self.current_field.text()
         new = self.new_field.text()
         confirm = self.confirm_field.text()
+        logging.info(f"[ChangePassword] fields: current_len={len(current)}, new_len={len(new)}, confirm_len={len(confirm)}")
 
         if not current or not new or not confirm:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Tüm alanları doldurun!")
+            logging.warning("[ChangePassword] Empty fields detected")
             return
 
         # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
         if current != config_password:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Mevcut şifre yanlış!")
+            logging.warning("[ChangePassword] Wrong current password")
             return
 
         if new != confirm:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Yeni şifreler eşleşmiyor!")
+            logging.warning("[ChangePassword] Password mismatch")
             return
 
         if len(new) < 4:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Şifre en az 4 karakter olmalı!")
+            logging.warning("[ChangePassword] Password too short")
             return
 
         if new == 'mebre':
-            self.status_label.setStyleSheet("color: #ff4444;")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Varsayılan şifre ile aynı olamaz!")
+            logging.warning("[ChangePassword] Default password rejected")
             return
 
         # Update configuration
@@ -1470,6 +1477,7 @@ class ChangePasswordWidget(QWidget):
         try:
             with open(CONFIG_PATH, 'w') as configfile:
                 config.write(configfile)
+            logging.info(f"[ChangePassword] Config saved to {CONFIG_PATH}")
 
             # Sistem geneline de yaz (kiosk mode için)
             system_config_path = "/opt/fatih-client/config.ini"
@@ -1482,9 +1490,9 @@ class ChangePasswordWidget(QWidget):
                 sys_config.set('settings', 'password_changed', 'true')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
-                logging.info(f"System-wide config password updated at {system_config_path}")
+                logging.info(f"[ChangePassword] System-wide config updated at {system_config_path}")
             except Exception as e:
-                logging.warning(f"Could not update system-wide config password: {e}")
+                logging.warning(f"[ChangePassword] Could not update system-wide config: {e}")
 
             # Kiosk kullanıcısının config'ini de güncelle
             kiosk_config_path = "/home/fatih-kiosk/.config/fatih-client/config.ini"
@@ -1497,30 +1505,35 @@ class ChangePasswordWidget(QWidget):
                 kiosk_config.set('settings', 'password_changed', 'true')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
-                logging.info(f"Kiosk config password updated at {kiosk_config_path}")
+                logging.info(f"[ChangePassword] Kiosk config updated at {kiosk_config_path}")
             except Exception as e:
-                logging.warning(f"Could not update kiosk config password: {e}")
+                logging.warning(f"[ChangePassword] Could not update kiosk config: {e}")
 
             # Update current SETTINGS
             SETTINGS['admin_password'] = new
             SETTINGS['password_changed'] = 'true'
 
-            self.parent.save_log("Admin şifresi değiştirildi", "security")
+            # Log kaydet - parent üzerinden güvenli erişim
+            try:
+                if hasattr(self.parent, 'save_log'):
+                    self.parent.save_log("Admin şifresi değiştirildi", "security")
+            except Exception as e:
+                logging.warning(f"[ChangePassword] save_log failed: {e}")
             
+            logging.info("[ChangePassword] Password changed successfully!")
             self.status_label.setStyleSheet("color: #00ff88; font-weight: bold; font-size: 15px;")
-            self.status_label.setText("Şifre başarıyla değiştirildi! Kapatılıyor...")
+            self.status_label.setText("✓ Şifre başarıyla değiştirildi!")
             
-            # Güvenli asenkron kapanış: QTimer ile event loop'u dondurmadan bekle
-            # time.sleep() KULLANMA — ana thread'i bloke eder ve Segfault'a yol açar!
-            self.status_label.repaint()
-            QApplication.processEvents()
-            QTimer.singleShot(1500, self.accept)
+            # 1.5 saniye sonra overlay'i kapat
+            QTimer.singleShot(1500, self.close_widget)
 
         except PermissionError:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            logging.error("[ChangePassword] PermissionError writing config")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Yapılandırma yetkisi yok (sudo gerekir)!")
         except Exception as e:
-            self.status_label.setStyleSheet("color: #ff4444;")
+            logging.error(f"[ChangePassword] Exception: {e}")
+            self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText(f"Hata: {str(e)[:30]}")
 
 
