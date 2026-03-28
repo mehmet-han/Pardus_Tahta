@@ -521,7 +521,7 @@ class PanelManager:
     
     @staticmethod
     def hide():
-        """Panel/taskbar'ı gizle"""
+        """Panel/taskbar'ı gizle - Cinnamon'da agresif xdotool + gsettings yöntemi"""
         if NO_LOCK_MODE:
             logging.info("[NO-LOCK] PanelManager.hide() skipped")
             return
@@ -539,7 +539,6 @@ class PanelManager:
                         _subprocess.run(cmd, capture_output=True, timeout=3)
                     except Exception:
                         pass
-                # GNOME top bar gizleme denemesi
                 try:
                     _subprocess.run(['gdbus', 'call', '--session',
                                      '--dest', 'org.gnome.Shell',
@@ -550,7 +549,6 @@ class PanelManager:
                 except Exception:
                     pass
             elif de == 'XFCE':
-                # XFCE: Panel autohide = always
                 try:
                     _subprocess.run(['xfconf-query', '-c', 'xfce4-panel',
                                      '-p', '/panels/panel-1/autohide-behavior', '-s', '2'],
@@ -558,10 +556,30 @@ class PanelManager:
                 except Exception:
                     pass
             elif de == 'CINNAMON':
+                # Yöntem 1: gsettings ile panel'i gizle
                 try:
                     _subprocess.run(['gsettings', 'set', 'org.cinnamon',
                                      'panels-autohide', "['1:true']"],
                                     capture_output=True, timeout=3)
+                except Exception:
+                    pass
+                # Yöntem 2: xdotool ile cinnamon-panel penceresini ikonlaştır/gizle
+                try:
+                    result = _subprocess.run(
+                        ['xdotool', 'search', '--name', 'Cinnamon'],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    for wid in result.stdout.strip().split():
+                        _subprocess.run(['xdotool', 'windowminimize', wid],
+                                       capture_output=True, timeout=2)
+                except Exception:
+                    pass
+                # Yöntem 3: wmctrl ile cinnamon-panel'i en alta göm
+                try:
+                    _subprocess.run(
+                        ['wmctrl', '-r', ':ACTIVE:', '-b', 'add,below'],
+                        capture_output=True, timeout=2
+                    )
                 except Exception:
                     pass
             logging.info(f"Panel hidden ({de})")
@@ -2022,10 +2040,16 @@ class FatihClientApp(QWidget):
         QTimer.singleShot(5000, self.poll_server)
 
     def init_ui(self):
-        # NEW: Visible change to confirm new version
         self.setWindowTitle("Fatih Client v1.5 - Scheduling Enabled")
-        # Added Qt.Tool to prevent Cinnamon from hiding the window on focus
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Qt.Tool kaldırıldı: Taskbar'ın üstüne geçemiyordu.
+        # Qt.Window + WindowStaysOnTopHint + BypassWindowManagerHint kombinasyonu
+        # Cinnamon WM'i atlayarak doğrudan X11 compositing katmanına yerleşir.
+        self.setWindowFlags(
+            Qt.Window
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.X11BypassWindowManagerHint
+        )
         self.setGeometry(QApplication.primaryScreen().geometry())
 
         # Ensure the window accepts mouse events
@@ -2878,6 +2902,10 @@ class FatihClientApp(QWidget):
             
             QApplication.processEvents()
 
+            # Cinnamon panel'i altımıza göm: xdotool ile kilit ekranını en üste al
+            QTimer.singleShot(500, self._force_on_top)
+            QTimer.singleShot(1500, self._force_on_top)  # 1.5 saniye sonra tekrar
+
             try:
                 if not getattr(self, 'keyboard_locker', None) or not self.keyboard_locker.is_alive():
                     self.keyboard_locker = KeyboardLocker()
@@ -2886,6 +2914,34 @@ class FatihClientApp(QWidget):
             except Exception as e:
                 logging.error(f"Failed to start KeyboardLocker: {e}")
                 self.keyboard_locker = None
+    def _force_on_top(self):
+        """Cinnamon'da kilit ekranını taskbar'ın üstüne zorla al"""
+        try:
+            self.raise_()
+            self.activateWindow()
+            # xdotool ile kendi penceremizin ID'sini bul ve en üste al
+            try:
+                result = _subprocess.run(
+                    ['xdotool', 'getactivewindow'],
+                    capture_output=True, text=True, timeout=2
+                )
+                wid = result.stdout.strip()
+                if wid:
+                    _subprocess.run(['xdotool', 'windowraise', wid],
+                                   capture_output=True, timeout=2)
+            except Exception:
+                pass
+            # wmctrl ile 'above' bayrağını zorla ekle
+            try:
+                _subprocess.run(
+                    ['wmctrl', '-r', ':ACTIVE:', '-b', 'add,above,fullscreen'],
+                    capture_output=True, timeout=2
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            logging.debug(f"_force_on_top error: {e}")
+
     def unlock_system(self, reason=""):
         # Safety: always hide child login_panel before hiding the parent window
         # to prevent X11/Cinnamon WM from crashing on orphaned child widget repaints.
