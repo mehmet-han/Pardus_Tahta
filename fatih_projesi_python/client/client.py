@@ -11,7 +11,7 @@ import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
                            QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction, QFrame,
-                           QListWidget, QListWidgetItem, QScrollArea)
+                           QListWidget, QListWidgetItem, QScrollArea, QStackedWidget)
 from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
@@ -1114,43 +1114,47 @@ class BoardConfigWidget(QWidget):
         self.fetch_btn.clicked.connect(self.fetch_boards)
         layout.addWidget(self.fetch_btn)
 
-        # Board selection - form layout ile hizalı
-        board_form = QFormLayout()
-        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        board_form.setSpacing(10)
-        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        board_label = QLabel("Tahta Seçin:")
-        board_label.setFont(QFont("Arial", 12))
-        self.board_combo = QComboBox()
-        self.board_combo.setEnabled(False)
-        self.board_combo.setMinimumHeight(40)
-        self.board_combo.setFont(QFont("Arial", 12))
+        # QStackedWidget to swap between Numpad and Board List without resizing the window
+        self.stacked_widget = QStackedWidget()
         
-        # Sadece ana düğmenin görünümünü ayarlıyoruz. 
-        # Liste görünümü (drop-down) için QAbstractItemView CSS yazmıyoruz,
-        # böylece işletim sistemi (X11) kendi yerel, sorunsuz açılır pop-up'ını kullanır.
-        self.board_combo.setStyleSheet("""
-            QComboBox {
+        # Page 0: Numpad
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
+        self.numpad.set_target(self.corporate_code_field)
+        self.stacked_widget.addWidget(self.numpad)
+        
+        # Page 1: Board List Widget (replaces QComboBox to avoid X11 popup bugs)
+        self.board_page = QWidget()
+        board_page_layout = QVBoxLayout(self.board_page)
+        board_page_layout.setContentsMargins(0, 0, 0, 0)
+        
+        board_list_label = QLabel("Aşağıdaki Listeden Tahtanızı Seçin:")
+        board_list_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        board_page_layout.addWidget(board_list_label)
+        
+        self.board_list_widget = QListWidget()
+        self.board_list_widget.setFont(QFont("Arial", 12))
+        self.board_list_widget.setStyleSheet("""
+            QListWidget {
                 background-color: #ffffff;
                 color: #000000;
                 border: 2px solid #555;
                 border-radius: 5px;
-                padding: 5px 10px;
+                padding: 4px;
             }
-            QComboBox:disabled {
-                background-color: #555555;
-                color: #aaaaaa;
+            QListWidget::item {
+                padding: 10px 12px;
+                border-bottom: 1px solid #ddd;
+            }
+            QListWidget::item:selected {
+                background-color: #0066cc;
+                color: white;
+                font-weight: bold;
             }
         """)
+        board_page_layout.addWidget(self.board_list_widget)
+        self.stacked_widget.addWidget(self.board_page)
         
-        board_form.addRow(board_label, self.board_combo)
-        layout.addLayout(board_form)
-
-        # Embedded Numpad
-        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
-        layout.addWidget(self.numpad)
-        # İlk alan varsayılan hedef olsun
-        self.numpad.set_target(self.corporate_code_field)
+        layout.addWidget(self.stacked_widget)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1178,9 +1182,9 @@ class BoardConfigWidget(QWidget):
             field.installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """QLineEdit focus olduğunda numpad hedefini güncelle"""
+        """QLineEdit focus olduğunda numpad hedefini güncelle ve sayfayı Numpad sayfasına getir"""
         if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
-            self.numpad.show()
+            self.stacked_widget.setCurrentIndex(0)
             self.numpad.set_target(obj)
         return super().eventFilter(obj, event)
 
@@ -1232,13 +1236,16 @@ class BoardConfigWidget(QWidget):
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
-                    self.board_combo.clear()
+                    self.board_list_widget.clear()
                     for board in items:
                         board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}', board.get("id"))
-                    self.board_combo.setEnabled(True)
-                    self.numpad.hide()  # Tuş takımını gizle ki liste aşağı rahat açılabilsin
-                    QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulundu.")
+                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
+                        item.setData(Qt.UserRole, board.get("id"))
+                        self.board_list_widget.addItem(item)
+                    
+                    self.board_list_widget.setCurrentRow(0)
+                    self.stacked_widget.setCurrentIndex(1)  # Swap to board list
+                    QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulunda. \nLütfen aşağıdan tahtanızı seçip Onayla'ya basınız.")
                 else:
                     QMessageBox.warning(self, "Uyarı", "Bu kurum için tahta bulunamadı.")
             else:
@@ -1250,13 +1257,18 @@ class BoardConfigWidget(QWidget):
 
     def confirm_selection(self, checked=False):
         logging.info("[BoardConfig] confirm_selection called")
-        if not self.board_combo.isEnabled():
-            QMessageBox.warning(self, "Hata", "Önce tahtaları getirin!")
+        if self.stacked_widget.currentIndex() != 1:
+            QMessageBox.warning(self, "Hata", "Önce 'Tahtaları Getir' tuşuna basarak listeyi yükleyin!")
             return
 
-        selected_board_id = self.board_combo.currentData()
+        selected_item = self.board_list_widget.currentItem()
+        if not selected_item:
+            QMessageBox.warning(self, "Hata", "Listeden bir tahta seçiniz!")
+            return
+
+        selected_board_id = selected_item.data(Qt.UserRole)
         if selected_board_id is None:
-            QMessageBox.warning(self, "Hata", "Tahta seçin!")
+            QMessageBox.warning(self, "Hata", "Listeden geçerli bir tahta seçiniz!")
             return
 
         # Update configuration
