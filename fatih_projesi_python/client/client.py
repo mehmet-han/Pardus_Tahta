@@ -843,6 +843,22 @@ class EmbeddedNumpad(QWidget):
         self.init_ui()
 
     def init_ui(self):
+        self.setObjectName("embeddedNumpad")
+        self.setStyleSheet("""
+            QWidget#embeddedNumpad QPushButton {
+                background-color: #444444;
+                color: white;
+                border: 1px solid #666;
+                border-radius: 8px;
+            }
+            QWidget#embeddedNumpad QPushButton:hover {
+                background-color: #5aa1e3;
+            }
+            QWidget#embeddedNumpad QPushButton:pressed {
+                background-color: #0066cc;
+            }
+        """)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 10, 0, 0)
         keyboard_layout = QGridLayout()
