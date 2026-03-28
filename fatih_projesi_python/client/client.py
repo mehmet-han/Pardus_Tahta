@@ -990,7 +990,7 @@ class LoginDialog(QDialog):
         # so the onscreen keyboard logic or physical typing fires
         QTimer.singleShot(100, self.password_field.setFocus)
 
-    def attempt_login(self):
+    def attempt_login(self, checked=False):
         password = self.password_field.text()
         logging.info(f"Login attempt with password: {'*' * len(password)}")
         
@@ -1110,7 +1110,7 @@ class BoardConfigDialog(QDialog):
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
-    def fetch_boards(self):
+    def fetch_boards(self, checked=False):
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
             QMessageBox.warning(self, "Hata", "Kurum kodu gerekli!")
@@ -1169,7 +1169,7 @@ class BoardConfigDialog(QDialog):
             self.network_client.settings['corporate_code'] = original_code
             QMessageBox.warning(self, "Hata", f"Bir hata oluştu: {e}")
 
-    def confirm_selection(self):
+    def confirm_selection(self, checked=False):
         if not self.board_combo.isEnabled():
             QMessageBox.warning(self, "Hata", "Önce tahtaları getirin!")
             return
@@ -1355,7 +1355,7 @@ class ChangePasswordDialog(QDialog):
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
-    def change_password(self):
+    def change_password(self, checked=False):
         current = self.current_field.text()
         new = self.new_field.text()
         confirm = self.confirm_field.text()
