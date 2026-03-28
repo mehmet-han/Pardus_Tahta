@@ -2135,7 +2135,6 @@ class FatihClientApp(QWidget):
 
         # Geri getirilen Gömülü Numpad (UI ezilmesin diye minimum yükseklik)
         self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
-        self.numpad.set_target(self.login_password_field)
         self.numpad.setMinimumHeight(200)
         lp_layout.addWidget(self.numpad)
 
