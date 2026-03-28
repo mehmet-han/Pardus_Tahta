@@ -1114,44 +1114,53 @@ class BoardConfigWidget(QWidget):
         self.fetch_btn.clicked.connect(self.fetch_boards)
         layout.addWidget(self.fetch_btn)
 
-        # Board selection - QListWidget kullanılıyor (QComboBox popup'ı X11Bypass ile çalışmaz)
-        board_label = QLabel("Tahta Listesi:")
+        # Board selection - form layout ile hizalı
+        board_form = QFormLayout()
+        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        board_form.setSpacing(10)
+        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        board_label = QLabel("Tahta Seçin:")
         board_label.setFont(QFont("Arial", 12))
-        board_label.setStyleSheet("color: white;")
-        layout.addWidget(board_label)
-
-        self.board_list = QListWidget()
-        self.board_list.setEnabled(False)
-        self.board_list.setMinimumHeight(80)
-        self.board_list.setMaximumHeight(150)
-        self.board_list.setFont(QFont("Arial", 12))
-        self.board_list.setStyleSheet("""
-            QListWidget {
-                background-color: #2b2b2b;
+        self.board_combo = QComboBox()
+        self.board_combo.setEnabled(False)
+        self.board_combo.setMinimumHeight(35)
+        self.board_combo.setFont(QFont("Arial", 12))
+        self.board_combo.setMaxVisibleItems(15)
+        # Açılır liste (popup) koyu arkaplan üzerinde görünür olsun
+        self.board_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #3c3c3c;
                 color: white;
                 border: 2px solid #555;
                 border-radius: 5px;
-                padding: 4px;
-                outline: none;
+                padding: 5px 10px;
             }
-            QListWidget:enabled {
+            QComboBox:enabled {
                 border-color: #0066cc;
             }
-            QListWidget::item {
-                padding: 8px 12px;
-                border-bottom: 1px solid #444;
-                border-radius: 3px;
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
             }
-            QListWidget::item:selected {
-                background-color: #0066cc;
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid white;
+                margin-right: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2b2b2b;
                 color: white;
-                font-weight: bold;
-            }
-            QListWidget::item:hover {
-                background-color: #3a3a5a;
+                selection-background-color: #0066cc;
+                selection-color: white;
+                border: 2px solid #0066cc;
+                font-size: 12px;
+                padding: 4px;
             }
         """)
-        layout.addWidget(self.board_list)
+        board_form.addRow(board_label, self.board_combo)
+        layout.addLayout(board_form)
 
         # Embedded Numpad
         self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
@@ -1238,15 +1247,11 @@ class BoardConfigWidget(QWidget):
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
-                    self.board_list.clear()
+                    self.board_combo.clear()
                     for board in items:
                         board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
-                        item.setData(Qt.UserRole, board.get("id"))
-                        self.board_list.addItem(item)
-                    self.board_list.setEnabled(True)
-                    # İlk öğeyi seç
-                    self.board_list.setCurrentRow(0)
+                        self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}', board.get("id"))
+                    self.board_combo.setEnabled(True)
                     QMessageBox.information(self, "Başarılı", f"{len(items)} tahta bulundu.")
                 else:
                     QMessageBox.warning(self, "Uyarı", "Bu kurum için tahta bulunamadı.")
@@ -1259,16 +1264,11 @@ class BoardConfigWidget(QWidget):
 
     def confirm_selection(self, checked=False):
         logging.info("[BoardConfig] confirm_selection called")
-        if not self.board_list.isEnabled():
+        if not self.board_combo.isEnabled():
             QMessageBox.warning(self, "Hata", "Önce tahtaları getirin!")
             return
 
-        selected_item = self.board_list.currentItem()
-        if selected_item is None:
-            QMessageBox.warning(self, "Hata", "Tahta seçin!")
-            return
-
-        selected_board_id = selected_item.data(Qt.UserRole)
+        selected_board_id = self.board_combo.currentData()
         if selected_board_id is None:
             QMessageBox.warning(self, "Hata", "Tahta seçin!")
             return
