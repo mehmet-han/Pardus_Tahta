@@ -3391,10 +3391,7 @@ class FatihClientApp(QWidget):
             context_menu.addAction(lock_action)
             context_menu.addSeparator()
 
-        # System status
-        status_action = QAction("Sistem Durumu", self)
-        status_action.triggered.connect(self.show_system_status)
-        context_menu.addAction(status_action)
+
 
         # Ayarlar kaldırıldı - müşteri isteği
         # settings_action = QAction("Ayarlar", self)
@@ -3420,10 +3417,7 @@ class FatihClientApp(QWidget):
 
         context_menu.addSeparator()
 
-        # On-screen keyboard
-        keyboard_action = QAction("Ekran Klavyesi", self)
-        keyboard_action.triggered.connect(self.show_on_screen_keyboard)
-        context_menu.addAction(keyboard_action)
+
 
         # Kayıtları Görüntüle kaldırıldı - müşteri isteği
         # logs_action = QAction("Kayıtları Görüntüle", self)
@@ -3443,10 +3437,7 @@ class FatihClientApp(QWidget):
 
         context_menu.addSeparator()
 
-        # About
-        about_action = QAction("Hakkında", self)
-        about_action.triggered.connect(self.show_about)
-        context_menu.addAction(about_action)
+
 
         context_menu.exec(QCursor.pos())
 
@@ -4094,10 +4085,7 @@ class FatihKioskMode(QMainWindow):
 
         context_menu.addSeparator()
 
-        # Sistem Durumu
-        status_action = QAction("Sistem Durumu", self)
-        status_action.triggered.connect(self.kiosk_show_system_status)
-        context_menu.addAction(status_action)
+
 
         context_menu.addSeparator()
 
@@ -4120,10 +4108,7 @@ class FatihKioskMode(QMainWindow):
 
         context_menu.addSeparator()
 
-        # Ekran Klavyesi
-        keyboard_action = QAction("Ekran Klavyesi", self)
-        keyboard_action.triggered.connect(self.kiosk_show_on_screen_keyboard)
-        context_menu.addAction(keyboard_action)
+
 
         context_menu.addSeparator()
 
@@ -4139,10 +4124,7 @@ class FatihKioskMode(QMainWindow):
 
         context_menu.addSeparator()
 
-        # Hakkında
-        about_action = QAction("Hakkında", self)
-        about_action.triggered.connect(self.kiosk_show_about)
-        context_menu.addAction(about_action)
+
 
         context_menu.exec_(QCursor.pos())
 
