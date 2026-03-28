@@ -1061,7 +1061,7 @@ class BoardConfigDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Tahta Yapılandırması")
         self.setModal(True)
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
         self.setMinimumWidth(480)
         
         layout = QVBoxLayout()
@@ -1304,7 +1304,7 @@ class ChangePasswordDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Şifre Değiştir")
         self.setModal(True)
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
@@ -1506,7 +1506,7 @@ class ScheduleDialog(QDialog):
 
     def init_ui(self):
         self.setWindowTitle("Giriş/Çıkış Saatleri")
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint | Qt.FramelessWindowHint)
         self.setModal(True)
         self.setMinimumSize(500, 600)
 
@@ -3260,6 +3260,7 @@ class FatihClientApp(QWidget):
         about_action.triggered.connect(self.show_about)
         context_menu.addAction(about_action)
 
+        context_menu.setWindowFlags(context_menu.windowFlags() | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
         context_menu.exec(QCursor.pos())
 
     def show_system_status(self, checked=False):
@@ -3461,7 +3462,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             msg.setWindowTitle("Uyarı")
             msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+            msg.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
             msg.exec()
             
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
