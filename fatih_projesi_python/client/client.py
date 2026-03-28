@@ -1150,7 +1150,7 @@ class BoardConfigWidget(QWidget):
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
-    def close_widget(self):
+    def close_widget(self, *args, **kwargs):
         if self.close_callback:
             self.close_callback()
 
@@ -1397,7 +1397,7 @@ class ChangePasswordWidget(QWidget):
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
-    def close_widget(self):
+    def close_widget(self, *args, **kwargs):
         if self.close_callback:
             self.close_callback()
 
@@ -1562,7 +1562,7 @@ class LockScreenOverlay(QFrame):
             y = (p.height() - self.height()) // 2
             self.move(x, y)
 
-    def close_overlay(self):
+    def close_overlay(self, *args, **kwargs):
         self.hide()
         self.deleteLater()
         # X11'de parent üzerinde raise_() veya activateWindow() çağırmak, Cinnamon WM'nin 
