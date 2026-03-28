@@ -1058,6 +1058,7 @@ class BoardConfigWidget(QWidget):
         self.close_callback = close_callback
         self.boards = []
         self.init_ui()
+        self._connect_focus_tracking()
 
     def init_ui(self):
         self.setMinimumWidth(480)
@@ -1129,6 +1130,8 @@ class BoardConfigWidget(QWidget):
         # Embedded Numpad
         self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
         layout.addWidget(self.numpad)
+        # İlk alan varsayılan hedef olsun
+        self.numpad.set_target(self.corporate_code_field)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1149,6 +1152,17 @@ class BoardConfigWidget(QWidget):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def _connect_focus_tracking(self):
+        """Input alanlarına focus geldiğinde numpad hedefini güncelle"""
+        for field in [self.corporate_code_field, self.password_field]:
+            field.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """QLineEdit focus olduğunda numpad hedefini güncelle"""
+        if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
+            self.numpad.set_target(obj)
+        return super().eventFilter(obj, event)
 
     def close_widget(self, *args, **kwargs):
         if self.close_callback:
@@ -1302,6 +1316,7 @@ class ChangePasswordWidget(QWidget):
         self.parent = parent
         self.close_callback = close_callback
         self.init_ui()
+        self._connect_focus_tracking()
 
     def init_ui(self):
         self.setMinimumWidth(450)
@@ -1370,6 +1385,8 @@ class ChangePasswordWidget(QWidget):
         # Embedded Numpad
         self.numpad = EmbeddedNumpad(on_enter_callback=self.change_password)
         layout.addWidget(self.numpad)
+        # İlk alan varsayılan hedef olsun
+        self.numpad.set_target(self.current_field)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1396,6 +1413,17 @@ class ChangePasswordWidget(QWidget):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def _connect_focus_tracking(self):
+        """Input alanlarına focus geldiğinde numpad hedefini güncelle"""
+        for field in [self.current_field, self.new_field, self.confirm_field]:
+            field.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """QLineEdit focus olduğunda numpad hedefini güncelle"""
+        if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
+            self.numpad.set_target(obj)
+        return super().eventFilter(obj, event)
 
     def close_widget(self, *args, **kwargs):
         if self.close_callback:
