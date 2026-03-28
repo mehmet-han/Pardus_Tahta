@@ -1050,18 +1050,16 @@ class LoginDialog(QDialog):
             self.password_field.clear()
 
 # --- Board Configuration Dialog ---
-class BoardConfigDialog(QDialog):
-    def __init__(self, parent=None, network_client=None):
+class BoardConfigWidget(QWidget):
+    def __init__(self, parent=None, network_client=None, close_callback=None):
         super().__init__(parent)
         self.parent = parent
         self.network_client = network_client
+        self.close_callback = close_callback
         self.boards = []
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Tahta Yapılandırması")
-        self.setModal(True)
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(480)
         
         layout = QVBoxLayout()
@@ -1139,8 +1137,7 @@ class BoardConfigDialog(QDialog):
         cancel_btn = QPushButton("İptal")
         cancel_btn.setMinimumHeight(45)
         cancel_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        cancel_btn.clicked.connect(self.reject)
-        cancel_btn.clicked.connect(self.close)
+        cancel_btn.clicked.connect(self.close_widget)
         button_layout.addWidget(cancel_btn)
 
         confirm_btn = QPushButton("Onayla")
@@ -1152,6 +1149,10 @@ class BoardConfigDialog(QDialog):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def close_widget(self):
+        if self.close_callback:
+            self.close_callback()
 
     def fetch_boards(self, checked=False):
         corporate_code = self.corporate_code_field.text().strip()
@@ -1279,12 +1280,12 @@ class BoardConfigDialog(QDialog):
             SETTINGS['board_name'] = board_name
 
             # Update board ID display on main window
-            if self.parent:
+            if hasattr(self.parent, 'update_board_id_display'):
                 self.parent.update_board_id_display()
 
             QMessageBox.information(self, "Başarılı",
                                   f"Tahta yapılandırması güncellendi:\nID: {selected_board_id}\nAd: {board_name}")
-            self.accept()
+            self.close_widget()
 
         except PermissionError:
             QMessageBox.critical(self, "İzin Hatası",
@@ -1295,16 +1296,14 @@ class BoardConfigDialog(QDialog):
 
 
 # --- Change Password Dialog ---
-class ChangePasswordDialog(QDialog):
-    def __init__(self, parent=None):
+class ChangePasswordWidget(QWidget):
+    def __init__(self, parent=None, close_callback=None):
         super().__init__(parent)
         self.parent = parent
+        self.close_callback = close_callback
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Şifre Değiştir")
-        self.setModal(True)
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
@@ -1379,7 +1378,7 @@ class ChangePasswordDialog(QDialog):
         cancel_btn = QPushButton("İptal")
         cancel_btn.setMinimumHeight(40)
         cancel_btn.setFont(QFont("Arial", 11))
-        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.clicked.connect(self.close_widget)
         button_layout.addWidget(cancel_btn)
 
         change_btn = QPushButton("Değiştir")
@@ -1397,6 +1396,10 @@ class ChangePasswordDialog(QDialog):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def close_widget(self):
+        if self.close_callback:
+            self.close_callback()
 
     def change_password(self, checked=False):
         current = self.current_field.text()
@@ -3663,11 +3666,15 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
             return
 
-        self._safe_open_dialog(BoardConfigDialog, network_client=self.network_client)
+        widget = BoardConfigWidget(self, network_client=self.network_client)
+        overlay = LockScreenOverlay(self, title="Tahta Yapılandırması", content_widget=widget)
+        widget.close_callback = overlay.close_overlay
 
     def show_change_password(self, checked=False):
         """Show change password dialog"""
-        self._safe_open_dialog(ChangePasswordDialog)
+        widget = ChangePasswordWidget(self)
+        overlay = LockScreenOverlay(self, title="Şifre Değiştir", content_widget=widget)
+        widget.close_callback = overlay.close_overlay
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
