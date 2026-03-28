@@ -3172,8 +3172,8 @@ class FatihClientApp(QWidget):
         QTimer.singleShot(30000, self._reset_expected_lock)
         
         # Fatih kilidi açıldıktan sonra Pardus/GNOME ekran kilidini aktif et
-        # Böylece kullanıcı Pardus şifresiyle giriş yapabilir
-        self.activate_system_lock_screen()
+        # İPTAL: MebreCep veya USB ile açıldığında işletim sistemi şifresi sormasın
+        # self.activate_system_lock_screen()
 
     def activate_system_lock_screen(self):
         """
