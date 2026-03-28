@@ -2104,7 +2104,8 @@ class FatihClientApp(QWidget):
         """)
         self.login_panel.setObjectName("loginPanel")
         # No window flags needed for child widget overlaid on the main window
-        panel_w, panel_h = 420, 280
+        # Increase panel height to fit the EmbeddedNumpad properly
+        panel_w, panel_h = 450, 480
         self.login_panel.setGeometry(
             (self.width() - panel_w) // 2,
             (self.height() - panel_h) // 2,
@@ -2693,8 +2694,8 @@ class FatihClientApp(QWidget):
         threading.Thread(target=_poll_task, daemon=True).start()
 
     def process_commands(self, commands):
-        if len(commands) < 5:
-            # C# uses a catch for formatting issues with short/invalid WAF messages that sets tahta_lock = -5
+        if len(commands) < 4:
+            # Server returns at least 4 items (Lock status, message, shutdown, system remove).
             self.tahta_lock = -5
             self.shutDown = -5
             self.system_remove = -5
@@ -2704,7 +2705,11 @@ class FatihClientApp(QWidget):
             message = commands[1] if commands[1] != '0' else ""
             self.shutDown = int(commands[2])
             self.system_remove = int(commands[3])
-            self.log_send = int(commands[4])
+            
+            if len(commands) > 4:
+                self.log_send = int(commands[4])
+            else:
+                self.log_send = 0
             
             # --- DEBUG: Tum durum degiskenlerini logla ---
             lock_age = time.time() - self.last_lock_time if self.last_lock_time > 0 else -1
