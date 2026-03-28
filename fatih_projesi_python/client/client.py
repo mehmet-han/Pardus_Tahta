@@ -3285,6 +3285,22 @@ class FatihClientApp(QWidget):
 
         context_menu.exec(QCursor.pos())
 
+    def _show_info_dialog(self, dialog_class, **kwargs):
+        """
+        Bilgi amaçlı (read-only) dialogları kilit ekranını HİÇ kapatmadan gösterir.
+        Ana pencerenin flag'ini DEĞİŞTİRMEZ, keyboard locker'ı DURDURMAZ.
+        Sadece dialog'u Qt.WindowStaysOnTopHint ile en üstte açar.
+        """
+        try:
+            dialog = dialog_class(self, **kwargs)
+            dialog.exec()
+        except Exception as e:
+            logging.error(f"Info dialog error: {e}")
+        # Kilit ekranının odağını geri al
+        QTimer.singleShot(100, lambda: (
+            self.raise_(), self.activateWindow()
+        ))
+
     def show_system_status(self, checked=False):
         """Show system status dialog - Kurum kodu kaldırıldı"""
         board_name = SETTINGS.get('board_name', 'Akıllı Tahta')
@@ -3298,7 +3314,7 @@ USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        self._safe_open_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
+        self._show_info_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
 
     def show_settings(self, checked=False):
         """Show settings dialog"""
@@ -3317,7 +3333,7 @@ ________________________________________________________________________________
 
     def show_on_screen_keyboard(self, checked=False):
         """Show on-screen keyboard"""
-        self._safe_open_dialog(OnScreenKeyboardDialog)
+        self._show_info_dialog(OnScreenKeyboardDialog)
 
     def show_logs(self, checked=False):
         """Show recent logs"""
@@ -3501,7 +3517,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
         if self.schedule:
-            self._safe_open_dialog(ScheduleDialog, schedule_data=self.schedule)
+            self._show_info_dialog(ScheduleDialog, schedule_data=self.schedule)
         # The original instruction had an 'else:f process_admin_command(self):' here,
         # which is syntactically incorrect and seems like a copy-paste error.
         # Assuming the intent was to add a conditional check for self.schedule
@@ -4174,6 +4190,22 @@ class FatihKioskMode(QMainWindow):
         # Exit application - kiosk launcher will restart display manager
         QApplication.quit()
 
+    def _show_info_dialog(self, dialog_class, **kwargs):
+        """
+        Bilgi amaçlı (read-only) dialogları kilit ekranını HİÇ kapatmadan gösterir.
+        Ana pencerenin flag'ini DEĞİŞTİRMEZ, keyboard locker'ı DURDURMAZ.
+        Sadece dialog'u Qt.WindowStaysOnTopHint ile en üstte açar.
+        """
+        try:
+            dialog = dialog_class(self, **kwargs)
+            dialog.exec()
+        except Exception as e:
+            logging.error(f"Kiosk info dialog error: {e}")
+        # Kilit ekranının odağını geri al
+        QTimer.singleShot(100, lambda: (
+            self.raise_(), self.activateWindow()
+        ))
+
     def kiosk_show_system_status(self):
         """Kiosk modunda sistem durumu göster"""
         board_name = SETTINGS.get('board_name', 'Akıllı Tahta')
@@ -4187,7 +4219,7 @@ USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        self._safe_open_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
+        self._show_info_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
 
     def _safe_open_dialog(self, dialog_class, **kwargs):
         """
@@ -4254,11 +4286,11 @@ ________________________________________________________________________________
                     schedule_data = json.load(f)
             except Exception as e:
                 logging.error(f"Kiosk schedule load error: {e}")
-        self._safe_open_dialog(ScheduleDialog, schedule_data=schedule_data)
+        self._show_info_dialog(ScheduleDialog, schedule_data=schedule_data)
 
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
-        self._safe_open_dialog(OnScreenKeyboardDialog)
+        self._show_info_dialog(OnScreenKeyboardDialog)
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""
