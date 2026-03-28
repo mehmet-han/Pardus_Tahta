@@ -1493,6 +1493,29 @@ class ChangePasswordDialog(QDialog):
             self.status_label.setText(f"Hata: {str(e)[:30]}")
 
 
+# --- YENİ: Kilit Ekranı Üzerinde Gösterilen Mesaj Kutusu ---
+class SystemMessageBox(QMessageBox):
+    def __init__(self, parent=None, title="", text="", icon=QMessageBox.Information):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setText(text)
+        self.setIcon(icon)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+
+# --- YENİ: Kilit Ekranı Üzerinde Gösterilen Ekran Klavyesi ---
+class OnScreenKeyboardDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sayısal Tuş Takımı")
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        layout = QVBoxLayout(self)
+        numpad = EmbeddedNumpad()
+        layout.addWidget(numpad)
+        close_btn = QPushButton("Kapat")
+        close_btn.setMinimumHeight(40)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
 class ScheduleDialog(QDialog):
     """Ders giriş/çıkış saatlerini gösteren form."""
@@ -3270,12 +3293,12 @@ Sistem Durumu:
 
 Tahta Adı: {board_name}
 Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
-Sistem Kilidi: {'Aktif' if self.is_locked else 'Pasif'}
+Sistem Kilidi: {'Aktif' if getattr(self, 'is_locked', False) else 'Pasif'}
 USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        QMessageBox.information(self, "Sistem Durumu", status_text.strip())
+        self._safe_open_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
 
     def show_settings(self, checked=False):
         """Show settings dialog"""
@@ -3294,17 +3317,7 @@ ________________________________________________________________________________
 
     def show_on_screen_keyboard(self, checked=False):
         """Show on-screen keyboard"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Sayısal Tuş Takımı")
-        dialog.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        layout = QVBoxLayout(dialog)
-        numpad = EmbeddedNumpad()
-        layout.addWidget(numpad)
-        close_btn = QPushButton("Kapat")
-        close_btn.setMinimumHeight(40)
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn)
-        dialog.exec()
+        self._safe_open_dialog(OnScreenKeyboardDialog)
 
     def show_logs(self, checked=False):
         """Show recent logs"""
@@ -3417,7 +3430,7 @@ Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Bu yazılım Fatih Projesi kapsamında geliştirilmiştir.
 Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
-        QMessageBox.about(self, "Hakkında", about_text.strip())
+        self._safe_open_dialog(SystemMessageBox, title="Hakkında", text=about_text.strip())
 
     def _safe_open_dialog(self, dialog_class, **kwargs):
         """
@@ -3488,8 +3501,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
         if self.schedule:
-            dialog = ScheduleDialog(self, self.schedule)
-            dialog.exec_()
+            self._safe_open_dialog(ScheduleDialog, schedule_data=self.schedule)
         # The original instruction had an 'else:f process_admin_command(self):' here,
         # which is syntactically incorrect and seems like a copy-paste error.
         # Assuming the intent was to add a conditional check for self.schedule
@@ -3917,6 +3929,13 @@ class FatihKioskMode(QMainWindow):
 
         context_menu.addSeparator()
 
+        # Giriş/Çıkış Saatleri
+        schedule_action = QAction("Giriş/Çıkış Saatleri", self)
+        schedule_action.triggered.connect(self.kiosk_show_schedule)
+        context_menu.addAction(schedule_action)
+
+        context_menu.addSeparator()
+
         # Ekran Klavyesi
         keyboard_action = QAction("Ekran Klavyesi", self)
         keyboard_action.triggered.connect(self.kiosk_show_on_screen_keyboard)
@@ -4168,7 +4187,7 @@ USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
-        QMessageBox.information(self, "Sistem Durumu", status_text.strip())
+        self._safe_open_dialog(SystemMessageBox, title="Sistem Durumu", text=status_text.strip())
 
     def _safe_open_dialog(self, dialog_class, **kwargs):
         """
@@ -4224,23 +4243,22 @@ ________________________________________________________________________________
         """Kiosk modunda şifre değiştir dialog göster"""
         self._safe_open_dialog(ChangePasswordDialog)
 
+    def kiosk_show_schedule(self):
+        """Kiosk modunda giriş/çıkış saatleri dialog göster"""
+        schedule_file = os.path.expanduser("~/fatih_schedule.json")
+        schedule_data = {}
+        if os.path.exists(schedule_file):
+            try:
+                import json
+                with open(schedule_file, 'r', encoding='utf-8') as f:
+                    schedule_data = json.load(f)
+            except Exception as e:
+                logging.error(f"Kiosk schedule load error: {e}")
+        self._safe_open_dialog(ScheduleDialog, schedule_data=schedule_data)
+
     def kiosk_show_on_screen_keyboard(self):
         """Kiosk modunda ekran klavyesi göster"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Sayısal Tuş Takımı")
-        dialog.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        layout = QVBoxLayout(dialog)
-        
-        numpad = EmbeddedNumpad()
-        layout.addWidget(numpad)
-        
-        close_btn = QPushButton("Kapat")
-        close_btn.setMinimumHeight(40)
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn)
-        
-        dialog.show()
-        self._onscreen_kb = dialog
+        self._safe_open_dialog(OnScreenKeyboardDialog)
 
     def kiosk_show_about(self):
         """Kiosk modunda hakkında dialog göster"""
@@ -4252,7 +4270,7 @@ Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Bu yazılım Fatih Projesi kapsamında geliştirilmiştir.
 Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
 """
-        QMessageBox.about(self, "Hakkında", about_text.strip())
+        self._safe_open_dialog(SystemMessageBox, title="Hakkında", text=about_text.strip())
 
     def resizeEvent(self, event):
         """Handle window resize to reposition UI elements"""
