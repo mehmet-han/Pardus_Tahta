@@ -1061,7 +1061,7 @@ class BoardConfigDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Tahta Yapılandırması")
         self.setModal(True)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(480)
         
         layout = QVBoxLayout()
@@ -1304,7 +1304,7 @@ class ChangePasswordDialog(QDialog):
     def init_ui(self):
         self.setWindowTitle("Şifre Değiştir")
         self.setModal(True)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(450)
 
         layout = QVBoxLayout()
@@ -1506,7 +1506,7 @@ class ScheduleDialog(QDialog):
 
     def init_ui(self):
         self.setWindowTitle("Giriş/Çıkış Saatleri")
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         self.setModal(True)
         self.setMinimumSize(500, 600)
 
@@ -3260,7 +3260,6 @@ class FatihClientApp(QWidget):
         about_action.triggered.connect(self.show_about)
         context_menu.addAction(about_action)
 
-        context_menu.setWindowFlags(context_menu.windowFlags() | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
         context_menu.exec(QCursor.pos())
 
     def show_system_status(self, checked=False):
@@ -3435,20 +3434,32 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             logging.info("Keyboard locker stopped for dialog")
 
         def _open():
+            # Dialog açılmadan önce ana pencereden X11Bypass'ı kaldır
+            # yoksa dialog ana pencerenin altında kalır veya tıklanamaz
+            old_flags = self.windowFlags()
+            self.setWindowFlags(
+                Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+            )
+            self.show()  # Flag değişikliği pencereyi gizler, tekrar göster
+            
             dialog = dialog_class(self, **kwargs)
             dialog.exec()
+            
+            # Dialog kapandı, X11Bypass'ı geri yükle
+            self.setWindowFlags(
+                Qt.Window | Qt.FramelessWindowHint
+                | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint
+            )
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            
             if locker_was_active:
                 self.keyboard_locker = KeyboardLocker()
                 self.keyboard_locker.start()
                 logging.info("Keyboard locker restarted after dialog")
-            # Modal kapanınca FatihClient arkaplana düşmesin (Cinnamon X11 Focus Pump)
-            QTimer.singleShot(100, lambda: (
-                self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive),
-                self.show(), self.raise_(), self.activateWindow()
-            ))
 
         if locker_was_active:
-            # evdev grab release'inin tam tamamlanması için 500ms bekle — BLOKSUZ
             QTimer.singleShot(500, _open)
         else:
             _open()
@@ -3462,7 +3473,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             msg.setWindowTitle("Uyarı")
             msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.X11BypassWindowManagerHint)
+            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
             msg.exec()
             
             QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
