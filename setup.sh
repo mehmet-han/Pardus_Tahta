@@ -103,6 +103,25 @@ chown -R root:root "$INSTALL_DIR"
 echo "[4/6] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
 
+# Eski ayarları korumak için yapılandırma dosyasını oku
+EXISTING_CONFIG="/home/etapadmin/.config/fatih-client/config.ini"
+BOARD_ID="0"
+BOARD_NAME="Unknown Board"
+ADMIN_PASSWORD="mebre"
+PASSWORD_CHANGED="false"
+
+if [ -f "$EXISTING_CONFIG" ]; then
+    BOARD_ID=$(sed -nr 's/^board_id\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
+    BOARD_NAME=$(sed -nr 's/^board_name\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
+    ADMIN_PASSWORD=$(sed -nr 's/^admin_password\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
+    PASSWORD_CHANGED=$(sed -nr 's/^password_changed\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
+    
+    [ -z "$BOARD_ID" ] && BOARD_ID="0"
+    [ -z "$BOARD_NAME" ] && BOARD_NAME="Unknown Board"
+    [ -z "$ADMIN_PASSWORD" ] && ADMIN_PASSWORD="mebre"
+    [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
+fi
+
 # Tüm zorunlu değişkenleri barındıran tam teşekküllü varsayılan config'i oluştur:
 # ÖNEMLİ: API URL, kullanıcı adı, şifre ve user-agent C# ClassVariable.cs ile birebir aynı olmalıdır!
 cat <<EOF > "$INSTALL_DIR/config.ini"
@@ -111,11 +130,14 @@ api_url = https://api.mebre.com.tr/v4/s_brt.php
 wb_user = hcrKd_r
 wb_pass = B1Mu?WjG!Ga6
 user_agent = agent_SmartBoart
-board_id = 0
 version = V2.13
 sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
 ntp_servers = time.windows.com,time.google.com,time.cloudflare.com,time.apple.com
+board_id = $BOARD_ID
+board_name = $BOARD_NAME
+admin_password = $ADMIN_PASSWORD
+password_changed = $PASSWORD_CHANGED
 EOF
 
 if [ ! -z "$CORPORATE_CODE" ]; then
