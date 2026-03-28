@@ -858,6 +858,7 @@ class EmbeddedNumpad(QWidget):
     def __init__(self, parent=None, on_enter_callback=None):
         super().__init__(parent)
         self.on_enter_callback = on_enter_callback
+        self.target_field = None  # Doğrudan hedef alan referansı
         self.init_ui()
 
     def init_ui(self):
@@ -928,24 +929,32 @@ class EmbeddedNumpad(QWidget):
         control_layout.addWidget(clear_btn)
         layout.addLayout(control_layout)
 
-    def _get_active_field(self):
+    def set_target(self, field):
+        """Numpad'in yazmak için kullanacağı QLineEdit alanını ayarla"""
+        self.target_field = field
+
+    def _get_field(self):
+        """Hedef alanı döndür: önce sabit referans, yoksa focus'taki alan"""
+        if self.target_field is not None:
+            return self.target_field
+        # Fallback: focus'taki QLineEdit
         focus_w = QApplication.focusWidget()
         if isinstance(focus_w, QLineEdit):
             return focus_w
         return None
 
     def add_char(self, char):
-        w = self._get_active_field()
+        w = self._get_field()
         if w:
             w.insert(char)
 
     def backspace(self, checked=False):
-        w = self._get_active_field()
+        w = self._get_field()
         if w:
             w.backspace()
 
     def clear_text(self, checked=False):
-        w = self._get_active_field()
+        w = self._get_field()
         if w:
             w.clear()
 
@@ -2173,8 +2182,9 @@ class FatihClientApp(QWidget):
         self.login_password_field.set_on_enter_callback(self._login_attempt)
         lp_layout.addWidget(self.login_password_field)
 
-        # Geri getirilen Gömülü Numpad (UI ezilmesin diye minimum yükseklik)
+        # Geri getirilen Gömülü Numpad - set_target ile doğrudan şifre alanına yazar
         self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
+        self.numpad.set_target(self.login_password_field)  # Focus bağımsız, direkt yaz
         self.numpad.setMinimumHeight(200)
         lp_layout.addWidget(self.numpad)
 
