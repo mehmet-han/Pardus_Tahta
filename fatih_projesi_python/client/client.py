@@ -3409,10 +3409,7 @@ class FatihClientApp(QWidget):
         board_config_action.triggered.connect(self.show_board_config)
         context_menu.addAction(board_config_action)
 
-        # Giriş/Çıkış Saatleri (C# FormGirisCikisSaatleri karşılığı)
-        schedule_action = QAction("Giriş/Çıkış Saatleri", self)
-        schedule_action.triggered.connect(self.show_schedule)
-        context_menu.addAction(schedule_action)
+
 
         context_menu.addSeparator()
 
@@ -4100,10 +4097,7 @@ class FatihKioskMode(QMainWindow):
 
         context_menu.addSeparator()
 
-        # Giriş/Çıkış Saatleri
-        schedule_action = QAction("Giriş/Çıkış Saatleri", self)
-        schedule_action.triggered.connect(self.kiosk_show_schedule)
-        context_menu.addAction(schedule_action)
+
 
         context_menu.addSeparator()
 
