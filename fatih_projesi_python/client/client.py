@@ -2652,31 +2652,6 @@ class FatihClientApp(QWidget):
         except Exception as e:
             logging.error(f"System tray initialization failed: {e}")
 
-    def contextMenuEvent(self, event):
-        """Sağ tıkladığımızda açılacak menü (Task 2)"""
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2b2b2b;
-                color: white;
-                border: 1px solid #444;
-                font-size: 16px;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 10px 20px;
-            }
-            QMenu::item:selected {
-                background-color: #0066cc;
-            }
-        """)
-        
-        schedule_action = menu.addAction("🕒 Giriş Çıkış Saatlerini Göster")
-        action = menu.exec_(self.mapToGlobal(event.pos()))
-        
-        if action == schedule_action:
-            self.show_schedule_dialog()
-
     def show_schedule_dialog(self):
         """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)"""
         dialog = QDialog()
@@ -3183,28 +3158,48 @@ class FatihClientApp(QWidget):
             logging.info(f"[CMD] tahta_lock={self.tahta_lock}, is_locked={self.is_locked}, lock_age={lock_age:.1f}s")
             
             # --- Mesaj gelirse ve sistem açıksa otomatik kilitle (C# davranışı) ---
+            # Sadece mesaj değiştiğinde kilitle ki sonsuz döngüye girmesin!
+            if not hasattr(self, 'last_server_message'):
+                self.last_server_message = ""
+                
             if message != "" and not self.is_locked:
-                logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
-                self.manual_override = False
-                self.lock_system(f"Mesaj alındı: {message}")
-                if hasattr(self, 'message_label'):
-                    self.message_label.setText(message)
-                return
-
-            # --- C# BİREBİR DAVRANIŞI: Server ne derse onu yap ---
-            if self.tahta_lock == 1 and not self.is_locked and message == "":
-                # USB takılıysa sunucu komutunu (lock=1) yoksay (C# IsFlash mantığı)
-                if check_usb_password():
-                    logging.info("Server says lock, but USB is present. Skipping lock.")
-                else:
+                if message != self.last_server_message:
+                    logging.info(f"YENİ Mesaj geldi, sistem kilitleniyor: {message}")
                     self.manual_override = False
-                    self.lock_system("Sunucudan gelen komut ile kilitlendi")
+                    self.lock_system(f"Mesaj alındı: {message}")
+                
+            self.last_server_message = message
 
-            elif self.tahta_lock == 0 and self.is_locked and message == "":
-                logging.info("Sunucudan 'AÇ (0)' komutu geldi. Sistem açılıyor.")
-                if hasattr(self, 'login_panel') and self.login_panel.isVisible():
-                    self.login_panel.hide()
-                self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
+            if hasattr(self, 'message_label'):
+                if message != "":
+                    self.message_label.setText(message)
+                else:
+                    self.message_label.setText("")
+
+            # --- Sadece sunucudaki sinyal DEĞİŞTİĞİNDE aksiyon al ---
+            if not hasattr(self, 'last_server_tahta_lock'):
+                self.last_server_tahta_lock = -6
+                
+            is_new_command = False
+            if self.tahta_lock != self.last_server_tahta_lock and self.tahta_lock in (0, 1):
+                is_new_command = True
+                self.last_server_tahta_lock = self.tahta_lock
+
+            # C# BİREBİR DAVRANIŞI: Server yeni komut gönderirse onu uygula
+            if is_new_command:
+                if self.tahta_lock == 1 and not self.is_locked and message == "":
+                    # USB takılıysa sunucu komutunu (lock=1) yoksay (C# IsFlash mantığı)
+                    if check_usb_password():
+                        logging.info("Server says lock, but USB is present. Skipping lock.")
+                    else:
+                        self.manual_override = False
+                        self.lock_system("Sunucudan gelen komut ile kilitlendi")
+
+                elif self.tahta_lock == 0 and self.is_locked and message == "":
+                    logging.info("Sunucudan 'AÇ (0)' komutu geldi. Sistem açılıyor.")
+                    if hasattr(self, 'login_panel') and self.login_panel.isVisible():
+                        self.login_panel.hide()
+                    self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
             
             self.server_has_spoken = True
 
@@ -3644,7 +3639,10 @@ class FatihClientApp(QWidget):
         board_config_action.triggered.connect(self.show_board_config)
         context_menu.addAction(board_config_action)
 
-
+        # Ders Saatleri
+        schedule_action = QAction("🕒 Giriş Çıkış Saatleri", self)
+        schedule_action.triggered.connect(self.show_schedule_dialog)
+        context_menu.addAction(schedule_action)
 
         context_menu.addSeparator()
 
