@@ -117,7 +117,6 @@ def get_setting(key, fallback=''):
 def validate_config():
     """Validate that all required configuration variables are present"""
     required_vars = [
-        'api_url', 'wb_user', 'wb_pass', 'user_agent', 
         'corporate_code', 'board_id', 'version', 'sub_version'
     ]
     
@@ -2065,12 +2064,10 @@ class UdevMonitor(QObject):
 class NetworkClient:
     """
     Handles all communication with the backend server, mirroring the
-    functionality of the C# ClassClient.
+    functionality of the C# ClassClient. Zero footprint approach used for secrets.
     """
     def __init__(self, settings):
         self.settings = settings
-        self.api_url = get_setting('api_url')
-        self.auth = (get_setting('wb_user'), get_setting('wb_pass'))
 
     def _get_headers(self, core_code: str) -> dict:
         """Generates the required headers for an API request."""
@@ -2087,11 +2084,17 @@ class NetworkClient:
                 s = s.replace(old, new)
             return s
             
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        _agt = _dx("1106170a012c615d534455320e131611")
+        
         headers = {
-            "User-Agent": self.settings.get('user_agent'), 
+            "User-Agent": _agt, 
             "User-Key": generate_user_key(), 
             "UserCore": cFnc_original(core_code)
         }
+        
+        del _k, _dx, _agt
         logging.debug(f"Request headers: {headers}")
         return headers
 
@@ -2102,42 +2105,55 @@ class NetworkClient:
             return None
         
         headers = self._get_headers(core_code)
+        
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
+        _usr = _dx("1802002f112c40")
+        _pwd = _dx("32503f114a24587713714046")
+
         try:
             response = requests.post(
-                self.api_url, 
+                _url, 
                 headers=headers, 
                 data=data,
-                auth=self.auth, 
+                auth=(_usr, _pwd), 
                 timeout=timeout,
-                verify=False
+                verify=True
             )
+            del _url, _usr, _pwd, _k, _dx
+            
             if response.status_code != 200:
-                logging.error(f"API Error: {response.status_code} for {self.api_url} with data {data}. Response: {response.text[:200]}")
+                logging.error(f"API Error: {response.status_code} with data {data}.")
                 return None
             return response
         except requests.exceptions.SSLError as e:
-            logging.error(f"SSL Error during network request: {e}. This is likely due to an untrusted server certificate. Temporarily bypassing verification.")
+            del _url, _usr, _pwd, _k, _dx
+            logging.error(f"SSL Error during network request: {e}. MITM Protection active.")
             return None
         except requests.RequestException as e:
+            try: del _url, _usr, _pwd, _k, _dx
+            except: pass
             logging.error(f"Network request failed: {e}")
             return None
 
     def check_network(self):
         """Check if network is available. Made specifically for Fatih internet."""
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
+
         try:
-            # En garanti yol: Kendi API'sine 3 saniyelik basit bir istek atıp atmadığına bakmak.
-            # 403 (Yasak) dönse bile bu internete çıktığımızın (sunucunun bizi gördüğünün) kanıtıdır.
             import requests
-            response = requests.get(self.api_url, timeout=3, verify=False)
-            return True  # 200, 403, 500 ne dönerse dönsün bağlantı var demektir.
+            response = requests.get(_url, timeout=3, verify=True)
+            del _url, _k, _dx
+            return True
         except requests.exceptions.RequestException:
-            # Eğer requests.get hata verirse bile, en azından Fatih Ağı yerel bağlantı sağlıyor mu diye bakalım
+            del _url, _k, _dx
             import socket
             try:
-                # Fatih hattında MEB DNS'ine veya kendi API adresine son bir kez ping dene
                 from urllib.parse import urlparse
-                domain = urlparse(self.api_url).netloc or "api.mebre.com.tr"
-                socket.create_connection((domain, 443), timeout=3)
+                socket.create_connection(("api.mebre.com.tr", 443), timeout=3)
                 return True
             except OSError:
                 return False

@@ -99,7 +99,7 @@ def create_release():
     print("🔒 GÜVENLİK KONTROLÜ")
     print("=" * 60)
     
-    sensitive_strings = ['B1Mu?WjG', 'hcrKd_r', '803435Hasan']
+    sensitive_strings = ['B1Mu?WjG', 'hcrKd_r', '803435Hasan', 'verify=False', 'ENC:']
     issues_found = False
     
     with zipfile.ZipFile(release_name, 'r') as zf:

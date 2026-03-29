@@ -11,9 +11,10 @@ Eğer mevcut veya gelecekteki bir AI ajanı (sistem asistanı) bu projede (Pardu
 ## 🔒 1. GÜVENLİK VE ŞİFRELEME (OBFUSCATION) BÖLÜMÜ
 Sistem okullara açık kaynak olarak dağıtıldığı için öğrencilerin ve yetkisiz kişilerin şifreleri çalmaması adına çok katmanlı bir şifreleme bulunmaktadır.
 - **Asla Plaintext Yok:** `client.py` ve `setup.sh` dosyalarının içerisine hiçbir sunucu API URL'i, `wb_user`, `wb_pass`, admin şifresi veya USB hash değeri DÜZ METİN (Plaintext) olarak yazılamaz.
-- **Base64 ve get_setting() :** Konfigürasyon dosyasına yazılacak olan hassas bilgiler `config.ini` içerisine `ENC:Base64String` formatıyla gizlenerek yazılır.
-- **Runtime Decode:** `client.py` içerisine yazılmış olan `get_setting(key)` fonksiyonu, configden gelen Base64 obfuscated alanları runtime (çalışma zamanı) sırasında decode eder.
-- **Cython Compiled (.so):** Kurulum scriptleri (`setup.sh`, `install-unified.sh`) her zaman `client.py` dosyasını `Cython` paketleyicisi ile C-uzantısına (`client.so` veya `client.c`) derler. Okunabilir haldeki `client.py` dosyası kurulum hedefine atıldıktan sonra SİLİNMEK ZORUNDADIR. Python kodlarının çıplak kalması kesin yasaktır. 
+- **Zero-Footprint XOR ve RAM Temizliği:** Hassas bilgiler (URL, kullanıcı adı, API parolası vb.) kesinlikle `config.ini` veya diğer dosyalara YAZILAMAZ. Bu veriler `client.py` içerisine XOR hex string kodlaması olarak gömülür ve yalnızca ağ istekleri yapılırken (`requests.post` milisaniyesinde) çözülür. İstek biter bitmez Python'ın yerel RAM hafızasından `del _url, _pwd` vb. ile HIZLICA SİLİNMEK ZORUNDADIR.
+- **MITM Koruması:** Ağ bağlantılarında asla `verify=False` kullanılmaz. Sertifika doğrulaması (`verify=True`) her zaman şarttır.
+- **Config Güvenliği:** Oluşturulan `config.ini` dosyaları `chmod 600` Linux yetkilerini barındırmalıdır. `setup.sh` içinde hassas işlemler (örrn: şifre okumaları vs) komut satırı ve Bash komut geçmişine (history) iz bırakmamalıdır.
+- **Cython Compiled (.so):** Kurulum scriptleri (`setup.sh`, `install-unified.sh`) her zaman `client.py` dosyasını `Cython` paketleyicisi ile C-uzantısına (`client.so` veya `client.c`) derler. Okunabilir haldeki `client.py` dosyası kurulum hedefine atıldıktan sonra SİLİNMEK ZORUNDADIR. Python kodlarının çıplak kalması kesin yasaktır.
 
 ---
 

@@ -109,19 +109,12 @@ if [ -f "$EXISTING_CONFIG" ]; then
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
 fi
 
-# Credential'ları runtime'da decode et (obfuscated)
-_CU=$(echo "aGNyS2Rfcg==" | base64 -d)
-_CP=$(echo "QjFNdT9XakchR2E2" | base64 -d)
-_CA=$(echo "aHR0cHM6Ly9hcGkubWVicmUuY29tLnRyL3Y0L3NfYnJ0LnBocA==" | base64 -d)
-_AG=$(echo "YWdlbnRfU21hcnRCb2FydA==" | base64 -d)
+# Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
+# Tamamen Fatih Client'in içinde XOR şifresiyle çalışma zamanında deşifre edilecek.
 
-# Config dosyasını oluştur (credential'lar obfuscated olarak yazılır)
+# Config dosyasını oluştur (Sadece yetkisiz kurum ve tahta bilgisi, parola saklaması BİTTİ)
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
-api_url = ENC:aHR0cHM6Ly9hcGkubWVicmUuY29tLnRyL3Y0L3NfYnJ0LnBocA==
-wb_user = ENC:aGNyS2Rfcg==
-wb_pass = ENC:QjFNdT9XakchR2E2
-user_agent = ENC:YWdlbnRfU21hcnRCb2FydA==
 version = V2.13
 sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
@@ -137,7 +130,9 @@ if [ ! -z "$CORPORATE_CODE" ]; then
     mkdir -p /home/etapadmin/.config/fatih-client
     cp "$INSTALL_DIR/config.ini" /home/etapadmin/.config/fatih-client/config.ini
     chown -R etapadmin:etapadmin /home/etapadmin/.config/fatih-client
-    echo "✅ Kurum kodu ayarlandı: $CORPORATE_CODE"
+    chmod 600 /home/etapadmin/.config/fatih-client/config.ini
+    chmod 600 "$INSTALL_DIR/config.ini"
+    echo "✅ Kurum kodu ayarlandı: $CORPORATE_CODE (Güvenlik yetkileri 600 olarak kilitlendi)"
 fi
 
 echo "[5/7] Otomatik Başlatma (Autostart) yapılandırılıyor..."
