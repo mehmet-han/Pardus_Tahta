@@ -1122,38 +1122,47 @@ class BoardConfigWidget(QWidget):
         self.status_label.setStyleSheet("color: #ffaa00;")
         layout.addWidget(self.status_label)
 
-        # Board selection - form layout ile hizalı
-        board_form = QFormLayout()
-        board_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        board_form.setSpacing(10)
-        board_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        board_label = QLabel("Tahta Seçin:")
-        board_label.setFont(QFont("Arial", 12))
-        self.board_combo = QComboBox()
-        self.board_combo.setEnabled(False)
-        self.board_combo.setMinimumHeight(40)
-        self.board_combo.setFont(QFont("Arial", 12))
-        self.board_combo.setStyleSheet("""
-            QComboBox {
+        # Alt Kısım: Sol tarafta küçültülmüş numpad, sağ tarafta liste
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setSpacing(20)
+
+        # Sol taraf: Embedded Numpad (Maksimum genişliği kısıtlanmış)
+        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
+        self.numpad.setMaximumWidth(260)  # Numpad'i sola yasla ve küçült
+        self.numpad.set_target(self.corporate_code_field)
+        bottom_layout.addWidget(self.numpad, stretch=1)
+
+        # Sağ taraf: Tahta Listesi (QListWidget) - Popup olmadan, sabit yanda
+        list_container = QVBoxLayout()
+        list_container.setSpacing(5)
+        
+        board_label = QLabel("Sağdan Tahtanızı Seçin:")
+        board_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        list_container.addWidget(board_label)
+
+        self.board_list_widget = QListWidget()
+        self.board_list_widget.setFont(QFont("Arial", 12))
+        self.board_list_widget.setStyleSheet("""
+            QListWidget {
                 background-color: #ffffff;
                 color: #000000;
                 border: 2px solid #555;
                 border-radius: 5px;
-                padding: 5px 10px;
             }
-            QComboBox:disabled {
-                background-color: #555555;
-                color: #aaaaaa;
+            QListWidget::item {
+                padding: 10px 12px;
+                border-bottom: 1px solid #ddd;
+            }
+            QListWidget::item:selected {
+                background-color: #0066cc;
+                color: white;
+                font-weight: bold;
             }
         """)
-        board_form.addRow(board_label, self.board_combo)
-        layout.addLayout(board_form)
-
-        # Embedded Numpad
-        self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
-        layout.addWidget(self.numpad)
-        # İlk alan varsayılan hedef olsun
-        self.numpad.set_target(self.corporate_code_field)
+        list_container.addWidget(self.board_list_widget)
+        bottom_layout.addLayout(list_container, stretch=2) # Liste alanı sağda daha geniş olsun
+        
+        layout.addLayout(bottom_layout)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1242,16 +1251,17 @@ class BoardConfigWidget(QWidget):
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
-                    self.board_combo.clear()
+                    self.board_list_widget.clear()
                     for board in items:
                         board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        self.board_combo.addItem(f'{board.get("id", "N/A")} - {board_name}', board.get("id"))
+                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
+                        item.setData(Qt.UserRole, board.get("id"))
+                        self.board_list_widget.addItem(item)
                     
-                    self.board_combo.setEnabled(True)
-                    self.numpad.hide() # Combo box rahat açılsın diye gizle
+                    self.board_list_widget.setCurrentRow(0)
                     
                     self.status_label.setStyleSheet("color: #55ff55;")
-                    self.status_label.setText(f"Başarılı! {len(items)} tahta bulundu. Lütfen seçin.")
+                    self.status_label.setText(f"Başarılı! {len(items)} tahta bulundu. Lütfen sağdan seçin.")
                 else:
                     self.status_label.setStyleSheet("color: #ffaa00;")
                     self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
@@ -1266,12 +1276,14 @@ class BoardConfigWidget(QWidget):
 
     def confirm_selection(self, checked=False):
         logging.info("[BoardConfig] confirm_selection called")
-        if not self.board_combo.isEnabled():
+        
+        selected_item = self.board_list_widget.currentItem()
+        if not selected_item:
             self.status_label.setStyleSheet("color: #ff5555;")
-            self.status_label.setText("Hata: Önce 'Tahtaları Getir' tuşuna basın.")
+            self.status_label.setText("Hata: Sağdaki listeden bir tahta seçiniz!")
             return
 
-        selected_board_id = self.board_combo.currentData()
+        selected_board_id = selected_item.data(Qt.UserRole)
         if selected_board_id is None:
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Listeden bir tahta seçiniz!")
