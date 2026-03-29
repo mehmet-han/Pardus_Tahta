@@ -2653,28 +2653,48 @@ class FatihClientApp(QWidget):
             logging.error(f"System tray initialization failed: {e}")
 
     def show_schedule_dialog(self):
-        """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)"""
-        # Eğer zaten açıksa öne getir
-        if hasattr(self, 'schedule_dialog') and self.schedule_dialog and self.schedule_dialog.isVisible():
-            self.schedule_dialog.raise_()
-            self.schedule_dialog.activateWindow()
-            return
+        """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)
+        
+        Veri yapısı (test_schedule.py'den):
+        hours = [
+            null,                                              # index 0 (kullanılmıyor)
+            null,                                              # index 1 = Pazartesi (null ise veri yok)
+            {"1": ["", "08:30", "09:10"], "2": ["", ...]},    # index 2 = Salı
+            ...
+        ]
+        C# karşılığı: hours[Gun, DersSirasi, 1=Giris/2=Cikis]
+        """
+        # Eğer zaten açıksa öne getir (güvenli None kontrolü)
+        if hasattr(self, '_schedule_dialog_ref') and self._schedule_dialog_ref is not None:
+            try:
+                if self._schedule_dialog_ref.isVisible():
+                    self._schedule_dialog_ref.raise_()
+                    self._schedule_dialog_ref.activateWindow()
+                    return
+            except RuntimeError:
+                # C++ nesnesi silinmiş, referansı temizle
+                self._schedule_dialog_ref = None
 
-        logging.info(f"[SCHEDULE_DIALOG] schedule={type(self.schedule)}, keys={list(self.schedule.keys()) if isinstance(self.schedule, dict) else 'not-dict'}")
+        logging.info(f"[SCHEDULE_DIALOG] Opening. schedule type={type(self.schedule)}")
+        if self.schedule and isinstance(self.schedule, dict):
+            logging.info(f"[SCHEDULE_DIALOG] schedule keys={list(self.schedule.keys())}")
+            if 'hours' in self.schedule:
+                h = self.schedule['hours']
+                logging.info(f"[SCHEDULE_DIALOG] hours type={type(h)}, len={len(h) if hasattr(h, '__len__') else '?'}")
 
-        self.schedule_dialog = QDialog()
-        self.schedule_dialog.setWindowTitle("Giriş Çıkış Saatleri")
+        dlg = QDialog()
+        dlg.setWindowTitle("Giriş Çıkış Saatleri")
         # X11BypassWindowManagerHint: Cinnamon WM'yi atlayarak kilit ekranının ÜSTÜNDE aç
-        self.schedule_dialog.setWindowFlags(
+        dlg.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.X11BypassWindowManagerHint
         )
-        self.schedule_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.schedule_dialog.setFixedSize(340, 500)
-        self.schedule_dialog.setStyleSheet("background-color: #1a1a2e; color: white; border: 2px solid #16213e; border-radius: 10px;")
+        # WA_DeleteOnClose KULLANMA — ikinci açılışta RuntimeError oluyor
+        dlg.setFixedSize(340, 500)
+        dlg.setStyleSheet("background-color: #1a1a2e; color: white; border: 2px solid #16213e; border-radius: 10px;")
         
-        layout = QVBoxLayout(self.schedule_dialog)
+        layout = QVBoxLayout(dlg)
         layout.setContentsMargins(15, 15, 15, 15)
         
         title = QLabel("🕒 Ders Saatleri")
@@ -2701,21 +2721,36 @@ class FatihClientApp(QWidget):
         # check_schedule ile BİREBİR AYNI veri okuma mantığı
         if self.schedule and isinstance(self.schedule, dict) and 'hours' in self.schedule:
             hours_data = self.schedule['hours']
-            logging.info(f"[SCHEDULE_DIALOG] hours_data type={type(hours_data)}, len={len(hours_data) if isinstance(hours_data, (list, dict)) else '?'}")
             
             lbl_day = QLabel(f"📅 Bugün: {days_tr[day_of_week]}")
             lbl_day.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 16px; margin-bottom: 8px;")
             lbl_day.setAlignment(Qt.AlignCenter)
             content_layout.addWidget(lbl_day)
             
-            if isinstance(hours_data, list):
-                # 3D list: hours[day][period][property] — C# hours[Gun, i, 1/2] ile aynı
-                if day_of_week < len(hours_data):
-                    day_schedule = hours_data[day_of_week]
-                    
+            if isinstance(hours_data, list) and day_of_week < len(hours_data):
+                day_schedule = hours_data[day_of_week]
+                
+                if isinstance(day_schedule, dict):
+                    # Sunucu veri yapısı: day_schedule = {"1": ["", "08:30", "09:10"], "2": [...], ...}
+                    for k in range(1, 19):
+                        slot = day_schedule.get(str(k))
+                        if slot and isinstance(slot, list) and len(slot) >= 3:
+                            start_time = slot[1] if slot[1] else ""
+                            end_time = slot[2] if slot[2] else ""
+                            
+                            start_time = self._format_time(start_time)
+                            end_time = self._format_time(end_time)
+                            
+                            if start_time and end_time and start_time != "0" and end_time != "0":
+                                lbl = QLabel(f"  <b>{k}. Ders:</b>  {start_time}  ➜  {end_time}")
+                                lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
+                                content_layout.addWidget(lbl)
+                                found_any = True
+                                
+                elif isinstance(day_schedule, list):
+                    # Alternatif yapı: day_schedule = [null, ["", "08:30", "09:10"], ...]
                     for period_idx in range(1, min(19, len(day_schedule))):
                         period_data = day_schedule[period_idx]
-                        
                         if isinstance(period_data, list) and len(period_data) >= 3:
                             start_time = period_data[1] if period_data[1] else ""
                             end_time = period_data[2] if period_data[2] else ""
@@ -2728,31 +2763,33 @@ class FatihClientApp(QWidget):
                                 lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
                                 content_layout.addWidget(lbl)
                                 found_any = True
-                                
+                else:
+                    logging.warning(f"[SCHEDULE_DIALOG] day_schedule unexpected type: {type(day_schedule)}")
+                    
             elif isinstance(hours_data, dict):
-                # Dict yapısı: hours["1"]["1"]["1"] / hours["1"]["1"]["2"]
+                # hours kendisi dict ise: hours = {"1": {"1": [...], "2": [...]}, "2": {...}, ...}
                 day_schedule = hours_data.get(str(day_of_week), {})
-                
-                for k in range(1, 19):
-                    slot = day_schedule.get(str(k)) if isinstance(day_schedule, dict) else None
-                    if slot:
-                        start_time = ""
-                        end_time = ""
-                        if isinstance(slot, list) and len(slot) >= 3:
-                            start_time = slot[1] if slot[1] else ""
-                            end_time = slot[2] if slot[2] else ""
-                        elif isinstance(slot, dict):
-                            start_time = slot.get('1', '')
-                            end_time = slot.get('2', '')
-                        
-                        start_time = self._format_time(start_time)
-                        end_time = self._format_time(end_time)
-                        
-                        if start_time and end_time and start_time != "0" and end_time != "0":
-                            lbl = QLabel(f"  <b>{k}. Ders:</b>  {start_time}  ➜  {end_time}")
-                            lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
-                            content_layout.addWidget(lbl)
-                            found_any = True
+                if isinstance(day_schedule, dict):
+                    for k in range(1, 19):
+                        slot = day_schedule.get(str(k))
+                        if slot:
+                            start_time = ""
+                            end_time = ""
+                            if isinstance(slot, list) and len(slot) >= 3:
+                                start_time = slot[1] if slot[1] else ""
+                                end_time = slot[2] if slot[2] else ""
+                            elif isinstance(slot, dict):
+                                start_time = slot.get('1', '')
+                                end_time = slot.get('2', '')
+                            
+                            start_time = self._format_time(start_time)
+                            end_time = self._format_time(end_time)
+                            
+                            if start_time and end_time and start_time != "0" and end_time != "0":
+                                lbl = QLabel(f"  <b>{k}. Ders:</b>  {start_time}  ➜  {end_time}")
+                                lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
+                                content_layout.addWidget(lbl)
+                                found_any = True
             
             if not found_any:
                 lbl = QLabel("Bugün için ders saati bulunamadı.")
@@ -2760,7 +2797,8 @@ class FatihClientApp(QWidget):
                 lbl.setAlignment(Qt.AlignCenter)
                 content_layout.addWidget(lbl)
         else:
-            logging.warning(f"[SCHEDULE_DIALOG] schedule verisi yok! schedule={self.schedule}")
+            reason = "schedule=None" if not self.schedule else f"keys={list(self.schedule.keys()) if isinstance(self.schedule, dict) else type(self.schedule)}"
+            logging.warning(f"[SCHEDULE_DIALOG] schedule verisi yok! {reason}")
             lbl = QLabel("Saat bilgisi henüz sunucudan alınmadı.")
             lbl.setStyleSheet("font-size: 14px; color: #ff6b6b;")
             lbl.setAlignment(Qt.AlignCenter)
@@ -2772,30 +2810,33 @@ class FatihClientApp(QWidget):
         btn_close = QPushButton("✕ Kapat")
         btn_close.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn_close.setStyleSheet("background-color: #e94560; color: white; font-weight: bold; padding: 12px; font-size: 16px; border-radius: 6px; border: none;")
-        btn_close.clicked.connect(self.schedule_dialog.close)
+        btn_close.clicked.connect(dlg.close)
         layout.addWidget(btn_close)
+        
+        # Referansı sakla (GC ve ikinci açılış koruması)
+        self._schedule_dialog_ref = dlg
         
         # Position the dialog near the center
         screenGeometry = QApplication.primaryScreen().geometry()
-        x = (screenGeometry.width() - self.schedule_dialog.width()) // 2
-        y = (screenGeometry.height() - self.schedule_dialog.height()) // 2
-        self.schedule_dialog.setGeometry(x, y, self.schedule_dialog.width(), self.schedule_dialog.height())
+        x = (screenGeometry.width() - dlg.width()) // 2
+        y = (screenGeometry.height() - dlg.height()) // 2
+        dlg.setGeometry(x, y, dlg.width(), dlg.height())
         
-        self.schedule_dialog.show()
-        self.schedule_dialog.raise_()
-        self.schedule_dialog.activateWindow()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         
-        # xdotool ile pencereyi en üste zorla
+        # 200ms sonra tekrar öne getir (Cinnamon WM gecikmesi için)
         QTimer.singleShot(200, self._raise_schedule_dialog)
     
     def _raise_schedule_dialog(self):
         """Schedule dialog'u kilit ekranının üstüne zorla"""
         try:
-            if hasattr(self, 'schedule_dialog') and self.schedule_dialog and self.schedule_dialog.isVisible():
-                self.schedule_dialog.raise_()
-                self.schedule_dialog.activateWindow()
-        except Exception:
-            pass
+            if hasattr(self, '_schedule_dialog_ref') and self._schedule_dialog_ref is not None:
+                self._schedule_dialog_ref.raise_()
+                self._schedule_dialog_ref.activateWindow()
+        except (RuntimeError, Exception):
+            self._schedule_dialog_ref = None
 
     def toggle_help_guide(self):
         """(i) butonuna basıldığında yardım kılavuzunu göster/gizle (top-level window)."""
