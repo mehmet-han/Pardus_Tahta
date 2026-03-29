@@ -2653,18 +2653,15 @@ class FatihClientApp(QWidget):
             logging.error(f"System tray initialization failed: {e}")
 
     def show_schedule_dialog(self):
-        """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)
+        """C# FormGirisCikisSaatleri birebir karşılığı.
         
-        Veri yapısı (test_schedule.py'den):
-        hours = [
-            null,                                              # index 0 (kullanılmıyor)
-            null,                                              # index 1 = Pazartesi (null ise veri yok)
-            {"1": ["", "08:30", "09:10"], "2": ["", ...]},    # index 2 = Salı
-            ...
-        ]
-        C# karşılığı: hours[Gun, DersSirasi, 1=Giris/2=Cikis]
+        7 gün butonu (radioButton1-7) + 18 ders satırı (txtg/txtc 1-18).
+        Açılışta bugünün günü seçili gelir, gün butonlarına tıklanınca
+        o günün giriş-çıkış saatleri listelenir.
+        
+        Veri: self.schedule['hours'] = list[8], hours[gun] = dict {"1": ["", "08:30", "09:10"], ...}
         """
-        # Eğer zaten açıksa öne getir (güvenli None kontrolü)
+        # Eğer zaten açıksa öne getir
         if hasattr(self, '_schedule_dialog_ref') and self._schedule_dialog_ref is not None:
             try:
                 if self._schedule_dialog_ref.isVisible():
@@ -2672,37 +2669,72 @@ class FatihClientApp(QWidget):
                     self._schedule_dialog_ref.activateWindow()
                     return
             except RuntimeError:
-                # C++ nesnesi silinmiş, referansı temizle
                 self._schedule_dialog_ref = None
 
-        logging.info(f"[SCHEDULE_DIALOG] Opening. schedule type={type(self.schedule)}")
-        if self.schedule and isinstance(self.schedule, dict):
-            logging.info(f"[SCHEDULE_DIALOG] schedule keys={list(self.schedule.keys())}")
-            if 'hours' in self.schedule:
-                h = self.schedule['hours']
-                logging.info(f"[SCHEDULE_DIALOG] hours type={type(h)}, len={len(h) if hasattr(h, '__len__') else '?'}")
+        logging.info(f"[SCHEDULE_DIALOG] Opening weekly view")
 
         dlg = QDialog()
         dlg.setWindowTitle("Giriş Çıkış Saatleri")
-        # X11BypassWindowManagerHint: Cinnamon WM'yi atlayarak kilit ekranının ÜSTÜNDE aç
         dlg.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.X11BypassWindowManagerHint
         )
-        # WA_DeleteOnClose KULLANMA — ikinci açılışta RuntimeError oluyor
-        dlg.setFixedSize(340, 500)
+        dlg.setFixedSize(420, 560)
         dlg.setStyleSheet("background-color: #1a1a2e; color: white; border: 2px solid #16213e; border-radius: 10px;")
         
-        layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(15, 15, 15, 15)
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
         
-        title = QLabel("🕒 Ders Saatleri")
-        title.setFont(QFont('Sans', 18, QFont.Bold))
-        title.setStyleSheet("color: #e94560; margin-bottom: 5px;")
+        # Başlık
+        title = QLabel("🕒 Giriş Çıkış Saatleri")
+        title.setFont(QFont('Sans', 16, QFont.Bold))
+        title.setStyleSheet("color: #e94560; margin-bottom: 2px;")
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        main_layout.addWidget(title)
         
+        # --- GÜN BUTONLARI (C# radioButton1-7) ---
+        days_tr = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+        days_full = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+        
+        day_btn_layout = QHBoxLayout()
+        day_btn_layout.setSpacing(3)
+        day_buttons = []
+        
+        today_iso = datetime.now().isoweekday()  # 1=Pzt, 7=Paz
+        
+        for i, day_name in enumerate(days_tr):
+            day_idx = i + 1  # 1-7
+            btn = QPushButton(day_name)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFixedHeight(36)
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16213e; color: #aaa; font-size: 13px; 
+                    font-weight: bold; border-radius: 5px; border: 1px solid #1a1a4e;
+                    padding: 4px 2px;
+                }
+                QPushButton:checked {
+                    background-color: #e94560; color: white; border: 1px solid #e94560;
+                }
+                QPushButton:hover {
+                    background-color: #0f3460;
+                }
+            """)
+            day_buttons.append(btn)
+            day_btn_layout.addWidget(btn)
+        
+        main_layout.addLayout(day_btn_layout)
+        
+        # Seçili gün başlığı
+        selected_day_label = QLabel("")
+        selected_day_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 15px;")
+        selected_day_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(selected_day_label)
+        
+        # --- DERS SAATLERİ LİSTESİ (ScrollArea) ---
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
@@ -2711,112 +2743,93 @@ class FatihClientApp(QWidget):
         content.setStyleSheet("background-color: transparent;")
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignTop)
+        content_layout.setSpacing(3)
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
         
-        now = datetime.now()
-        day_of_week = now.isoweekday()
-        days_tr = ["", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-        
-        found_any = False
-        
-        # check_schedule ile BİREBİR AYNI veri okuma mantığı
-        if self.schedule and isinstance(self.schedule, dict) and 'hours' in self.schedule:
+        # --- Gün değiştiğinde listeyi güncelleyen fonksiyon (C# SetAndChangeEvent) ---
+        def load_day(day_idx):
+            # Önce tüm butonları kaldır, seçili olanı işaretle
+            for j, b in enumerate(day_buttons):
+                b.setChecked((j + 1) == day_idx)
+            
+            selected_day_label.setText(f"📅 {days_full[day_idx - 1]}")
+            
+            # Mevcut satırları temizle
+            while content_layout.count():
+                item = content_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.deleteLater()
+            
+            if not self.schedule or not isinstance(self.schedule, dict) or 'hours' not in self.schedule:
+                lbl = QLabel("Saat bilgisi henüz sunucudan alınmadı.")
+                lbl.setStyleSheet("font-size: 14px; color: #ff6b6b;")
+                lbl.setAlignment(Qt.AlignCenter)
+                content_layout.addWidget(lbl)
+                return
+            
             hours_data = self.schedule['hours']
+            day_schedule = None
             
-            lbl_day = QLabel(f"📅 Bugün: {days_tr[day_of_week]}")
-            lbl_day.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 16px; margin-bottom: 8px;")
-            lbl_day.setAlignment(Qt.AlignCenter)
-            content_layout.addWidget(lbl_day)
-            
-            if isinstance(hours_data, list) and day_of_week < len(hours_data):
-                day_schedule = hours_data[day_of_week]
-                
-                if isinstance(day_schedule, dict):
-                    # Sunucu veri yapısı: day_schedule = {"1": ["", "08:30", "09:10"], "2": [...], ...}
-                    for k in range(1, 19):
-                        slot = day_schedule.get(str(k))
-                        if slot and isinstance(slot, list) and len(slot) >= 3:
-                            start_time = slot[1] if slot[1] else ""
-                            end_time = slot[2] if slot[2] else ""
-                            
-                            start_time = self._format_time(start_time)
-                            end_time = self._format_time(end_time)
-                            
-                            if start_time and end_time and start_time != "0" and end_time != "0":
-                                lbl = QLabel(f"  <b>{k}. Ders:</b>  {start_time}  ➜  {end_time}")
-                                lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
-                                content_layout.addWidget(lbl)
-                                found_any = True
-                                
-                elif isinstance(day_schedule, list):
-                    # Alternatif yapı: day_schedule = [null, ["", "08:30", "09:10"], ...]
-                    for period_idx in range(1, min(19, len(day_schedule))):
-                        period_data = day_schedule[period_idx]
-                        if isinstance(period_data, list) and len(period_data) >= 3:
-                            start_time = period_data[1] if period_data[1] else ""
-                            end_time = period_data[2] if period_data[2] else ""
-                            
-                            start_time = self._format_time(start_time)
-                            end_time = self._format_time(end_time)
-                            
-                            if start_time and end_time and start_time != "0" and end_time != "0":
-                                lbl = QLabel(f"  <b>{period_idx}. Ders:</b>  {start_time}  ➜  {end_time}")
-                                lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
-                                content_layout.addWidget(lbl)
-                                found_any = True
-                else:
-                    logging.warning(f"[SCHEDULE_DIALOG] day_schedule unexpected type: {type(day_schedule)}")
-                    
+            if isinstance(hours_data, list) and day_idx < len(hours_data):
+                day_schedule = hours_data[day_idx]
             elif isinstance(hours_data, dict):
-                # hours kendisi dict ise: hours = {"1": {"1": [...], "2": [...]}, "2": {...}, ...}
-                day_schedule = hours_data.get(str(day_of_week), {})
-                if isinstance(day_schedule, dict):
-                    for k in range(1, 19):
-                        slot = day_schedule.get(str(k))
-                        if slot:
-                            start_time = ""
-                            end_time = ""
-                            if isinstance(slot, list) and len(slot) >= 3:
-                                start_time = slot[1] if slot[1] else ""
-                                end_time = slot[2] if slot[2] else ""
-                            elif isinstance(slot, dict):
-                                start_time = slot.get('1', '')
-                                end_time = slot.get('2', '')
-                            
-                            start_time = self._format_time(start_time)
-                            end_time = self._format_time(end_time)
-                            
-                            if start_time and end_time and start_time != "0" and end_time != "0":
-                                lbl = QLabel(f"  <b>{k}. Ders:</b>  {start_time}  ➜  {end_time}")
-                                lbl.setStyleSheet("font-size: 15px; padding: 6px 8px; background-color: #16213e; border-radius: 5px; margin-bottom: 3px;")
-                                content_layout.addWidget(lbl)
-                                found_any = True
+                day_schedule = hours_data.get(str(day_idx))
             
-            if not found_any:
-                lbl = QLabel("Bugün için ders saati bulunamadı.")
+            found = False
+            
+            if isinstance(day_schedule, dict):
+                # hours[gun] = {"1": ["", "08:30", "09:10"], "2": [...], ...}
+                for k in range(1, 19):
+                    slot = day_schedule.get(str(k))
+                    if slot and isinstance(slot, list) and len(slot) >= 3:
+                        s = slot[1] if slot[1] else ""
+                        e = slot[2] if slot[2] else ""
+                        s = self._format_time(s)
+                        e = self._format_time(e)
+                        if s and e and s != "0" and e != "0":
+                            row = QLabel(f"  <b>{k}. Ders:</b>  {s}  ➜  {e}")
+                            row.setStyleSheet("font-size: 14px; padding: 5px 8px; background-color: #16213e; border-radius: 5px;")
+                            content_layout.addWidget(row)
+                            found = True
+                            
+            elif isinstance(day_schedule, list):
+                for k in range(1, min(19, len(day_schedule))):
+                    pd = day_schedule[k]
+                    if isinstance(pd, list) and len(pd) >= 3:
+                        s = pd[1] if pd[1] else ""
+                        e = pd[2] if pd[2] else ""
+                        s = self._format_time(s)
+                        e = self._format_time(e)
+                        if s and e and s != "0" and e != "0":
+                            row = QLabel(f"  <b>{k}. Ders:</b>  {s}  ➜  {e}")
+                            row.setStyleSheet("font-size: 14px; padding: 5px 8px; background-color: #16213e; border-radius: 5px;")
+                            content_layout.addWidget(row)
+                            found = True
+            
+            if not found:
+                lbl = QLabel("Bu gün için ders saati tanımlanmamış.")
                 lbl.setStyleSheet("font-size: 14px; color: #aaa;")
                 lbl.setAlignment(Qt.AlignCenter)
                 content_layout.addWidget(lbl)
-        else:
-            reason = "schedule=None" if not self.schedule else f"keys={list(self.schedule.keys()) if isinstance(self.schedule, dict) else type(self.schedule)}"
-            logging.warning(f"[SCHEDULE_DIALOG] schedule verisi yok! {reason}")
-            lbl = QLabel("Saat bilgisi henüz sunucudan alınmadı.")
-            lbl.setStyleSheet("font-size: 14px; color: #ff6b6b;")
-            lbl.setAlignment(Qt.AlignCenter)
-            content_layout.addWidget(lbl)
-            
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
         
+        # Gün butonlarına tıklama sinyali bağla
+        for i, btn in enumerate(day_buttons):
+            day_idx = i + 1
+            btn.clicked.connect(lambda checked, d=day_idx: load_day(d))
+        
+        # Kapat butonu
         btn_close = QPushButton("✕ Kapat")
         btn_close.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn_close.setStyleSheet("background-color: #e94560; color: white; font-weight: bold; padding: 12px; font-size: 16px; border-radius: 6px; border: none;")
+        btn_close.setStyleSheet("background-color: #e94560; color: white; font-weight: bold; padding: 10px; font-size: 15px; border-radius: 6px; border: none;")
         btn_close.clicked.connect(dlg.close)
-        layout.addWidget(btn_close)
+        main_layout.addWidget(btn_close)
         
-        # Referansı sakla (GC ve ikinci açılış koruması)
+        # Referansı sakla
         self._schedule_dialog_ref = dlg
         
-        # Position the dialog near the center
+        # Ekranın ortasına konumlandır
         screenGeometry = QApplication.primaryScreen().geometry()
         x = (screenGeometry.width() - dlg.width()) // 2
         y = (screenGeometry.height() - dlg.height()) // 2
@@ -2826,7 +2839,10 @@ class FatihClientApp(QWidget):
         dlg.raise_()
         dlg.activateWindow()
         
-        # 200ms sonra tekrar öne getir (Cinnamon WM gecikmesi için)
+        # Bugünü otomatik yükle (C# FormGirisCikisSaatleri_Load)
+        load_day(today_iso)
+        
+        # Cinnamon WM gecikmesi için tekrar öne getir
         QTimer.singleShot(200, self._raise_schedule_dialog)
     
     def _raise_schedule_dialog(self):
