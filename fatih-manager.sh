@@ -447,7 +447,7 @@ do_update() {
     cd "$SCRIPT_DIR" || exit
     
     # Önce HTTPS ile dene
-    git remote set-url origin https://github.com/cappittall/Fatih_Projesi.git 2>/dev/null
+    git remote set-url origin https://github.com/mehmet-han/Pardus_Tahta.git 2>/dev/null
     
     # Git pull (credential olmadan public repo için)
     GIT_TERMINAL_PROMPT=0 git pull origin main 2>/dev/null

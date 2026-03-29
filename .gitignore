@@ -14,10 +14,44 @@ pyarmor.error.log
 # Environment variables
 .env
 
-# Visual Studio / C#
+# Visual Studio / C# (reference code - kept separately)
 [Bb]in/
 [Oo]bj/
 .vs/
 *.suo
 *.user
 *.v12.suo
+
+# C# Source Code Projects (moved to separate repo)
+Fatih_Projesi/
+ConfigServices/
+Kurulum/
+Updater1/
+Unsinstalll/
+Fatih_Projesi.sln
+packages/
+
+# Development/Debug files (not for distribution)
+old_client.py
+_context_check.txt
+_flags_check.txt
+changepass_dialog.txt
+config_dialog.txt
+config_dialog2.txt
+diff.txt
+fatihclientapp.txt
+kiosk_osk.txt
+login_dialog.txt
+osk_code.txt
+osk_leftover.txt
+output_lines.txt
+schedule_check.txt
+service_check.txt
+_encoded_vals.txt
+
+# Large screenshots/images (not needed in repo)
+mebre_lock.png
+screen.png
+
+# Compiled client (generated at install time)
+fatih_projesi_python/client/client.c

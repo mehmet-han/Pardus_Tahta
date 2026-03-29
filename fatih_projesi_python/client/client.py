@@ -1,4 +1,5 @@
 import sys
+import base64 as _b64
 import os
 import time
 import requests
@@ -98,7 +99,21 @@ config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 SETTINGS = config['settings']
 
-# --- NEW: Configuration Validation ---
+# --- Credential Deobfuscation (compiled into .so binary) ---
+def _deo(v):
+    """Decode obfuscated config values (ENC: prefix = base64)"""
+    if v and v.startswith('ENC:'):
+        try:
+            return _b64.b64decode(v[4:]).decode('utf-8')
+        except Exception:
+            return v
+    return v
+
+def get_setting(key, fallback=''):
+    """Get a config value, auto-decoding obfuscated ones"""
+    return _deo(SETTINGS.get(key, fallback))
+
+# --- Configuration Validation ---
 def validate_config():
     """Validate that all required configuration variables are present"""
     required_vars = [
@@ -118,8 +133,7 @@ def validate_config():
     
     logging.info("Configuration validation passed")
     logging.info(f"Loaded configuration for board: {SETTINGS.get('board_id')}")
-    logging.info(f"API URL: {SETTINGS.get('api_url')}")
-    logging.info(f"Version: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}")
+    logging.info(f"Version: {get_setting('version')}.{get_setting('sub_version')}")
 
 # Validate configuration on startup
 try:
@@ -128,9 +142,20 @@ except ValueError as e:
     print(f"Configuration Error: {e}")
     sys.exit(1)
 
-# --- NEW: USB Password Constants (matching C# code) ---
-USB_PASSWORD = "32541kehİUFali_veli_hüseyin?İ44EHEJSTRİHTEMES5488965E8GİEİ"
-USB_REMOVE_PASSWORD = "uege32541kehİUFali_veli_hüseyin?İEHEJSTRİH52874TEMES548965E8GİEİ"
+# --- USB Password Constants (obfuscated - decoded at runtime, compiled into .so) ---
+_UP = [_b64.b64decode(x).decode('utf-8') for x in [
+    'MzI1NDFrZWjEsFVGYWxpX3ZlbGlf',
+    'aMO8c2V5aW4/xLAwNDRFSEVKU1RS',
+    'xLBIVEVNRVM1NDg4OTY1RThHxLBFxLA='
+]]
+USB_PASSWORD = ''.join(_UP)
+_UR = [_b64.b64decode(x).decode('utf-8') for x in [
+    'dWVnZTMyNTQxa2Voxa',
+    'BVRmFsaV92ZWxpX2jDvHNleWluP8Sw',
+    'RUhFSlNUUsSwSDUyODc0VEVNRVM1',
+    'NDg5NjVFOEdpRcSwICA='
+]]
+USB_REMOVE_PASSWORD = ''.join(_UR).strip()
 
 # --- NEW: Ensure USB drives are mounted (fixes USB not working while locked) ---
 def ensure_usb_mounted():
@@ -2044,8 +2069,8 @@ class NetworkClient:
     """
     def __init__(self, settings):
         self.settings = settings
-        self.api_url = self.settings.get('api_url')
-        self.auth = (self.settings.get('wb_user'), self.settings.get('wb_pass'))
+        self.api_url = get_setting('api_url')
+        self.auth = (get_setting('wb_user'), get_setting('wb_pass'))
 
     def _get_headers(self, core_code: str) -> dict:
         """Generates the required headers for an API request."""
@@ -3198,7 +3223,7 @@ class FatihClientApp(QWidget):
             return s
             
         headers = {
-            "User-Agent": SETTINGS.get('user_agent', 'agent_SmartBoart'), 
+            "User-Agent": get_setting('user_agent'), 
             "User-Key": generate_user_key(), 
             "UserCore": cFnc_original(core_code)
         }
@@ -3817,7 +3842,7 @@ ________________________________________________________________________________
         settings_text = f"""
 Mevcut Ayarlar:
 
-API URL: {SETTINGS.get('api_url')}
+API URL: {get_setting('api_url')}
 Polling Aralığı: {SETTINGS.get('polling_interval', 5)} saniye
 USB Kontrol Aralığı: {SETTINGS.get('usb_check_interval', 3)} saniye
 Bakım Aralığı: {SETTINGS.get('maintenance_interval', 25)} saniye
@@ -4839,7 +4864,7 @@ if __name__ == '__main__':
             try:
                 validate_config()
                 print("✅ Configuration loaded successfully")
-                print(f"Admin password: {SETTINGS.get('admin_password', '803580')}")
+                print(f"Admin password: {SETTINGS.get('admin_password', 'mebre')}")
             except Exception as e:
                 print(f"❌ Configuration error: {e}")
             sys.exit(0)

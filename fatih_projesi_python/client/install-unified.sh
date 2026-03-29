@@ -93,7 +93,7 @@ echo -e "  ${GREEN}✓${NC} $APP_DIR oluşturuldu"
 echo ""
 echo -e "${CYAN}[1.2] Sistem bağımlılıkları kuruluyor...${NC}"
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv libxcb-cursor0 xauth 2>/dev/null
+apt-get install -y -qq python3 python3-pip python3-venv python3-dev gcc libxcb-cursor0 xauth 2>/dev/null
 echo -e "  ${GREEN}✓${NC} Sistem bağımlılıkları kuruldu"
 
 # 1.3 Python virtual environment oluştur
@@ -102,16 +102,65 @@ echo -e "${CYAN}[1.3] Python ortamı hazırlanıyor...${NC}"
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip -q
 "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" -q
+"$VENV_DIR/bin/pip" install Cython==3.0.11 setuptools -q
 echo -e "  ${GREEN}✓${NC} Python ortamı hazır"
 
-# 1.4 Uygulama dosyalarını kopyala
+# 1.4 Kodu şifrele (Cython ile .so'ya derle)
 echo ""
-echo -e "${CYAN}[1.4] Uygulama dosyaları kopyalanıyor...${NC}"
-cp "$SCRIPT_DIR/client.py" "$APP_DIR/"
+echo -e "${CYAN}[1.4] Kod şifreleniyor (Cython Compilation)...${NC}"
+cd "$SCRIPT_DIR"
+# Eski derlemeleri temizle
+rm -f client.c client*.so 2>/dev/null
+rm -rf build/ 2>/dev/null
+
+# Cython ile derle
+"$VENV_DIR/bin/python" -c "
+from setuptools import setup
+from Cython.Build import cythonize
+setup(ext_modules=cythonize(['client.py'], compiler_directives={'language_level': '3'}))
+" build_ext --inplace 2>/dev/null
+
+COMPILED_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "client*.so" -print -quit)
+if [ -n "$COMPILED_FILE" ]; then
+    echo -e "  ${GREEN}✓${NC} Kod başarıyla şifrelendi (.so oluşturuldu)"
+    USE_COMPILED=true
+else
+    echo -e "  ${YELLOW}⚠${NC} Cython derleme başarısız, düz Python kullanılacak"
+    USE_COMPILED=false
+fi
+
+# 1.5 Uygulama dosyalarını kopyala
+echo ""
+echo -e "${CYAN}[1.5] Uygulama dosyaları kopyalanıyor...${NC}"
+
+if [ "$USE_COMPILED" = true ]; then
+    # Derlenmiş .so dosyasını kopyala
+    cp "$COMPILED_FILE" "$APP_DIR/"
+    
+    # main.py oluştur (derlenmiş modülü import eder)
+    cat <<MAIN_EOF > "$APP_DIR/main.py"
+import os, sys
+os.chdir("/opt/fatih-client")
+import client
+if hasattr(client, 'main'):
+    client.main()
+MAIN_EOF
+    echo -e "  ${GREEN}✓${NC} Şifrelenmiş kod kopyalandı (.so)"
+else
+    # Düz Python dosyasını kopyala (fallback)
+    cp "$SCRIPT_DIR/client.py" "$APP_DIR/"
+fi
+
 cp "$SCRIPT_DIR/config.ini" "$APP_DIR/"
 cp "$SCRIPT_DIR/launch.sh" "$APP_DIR/" 2>/dev/null || true
 chmod +x "$APP_DIR/launch.sh" 2>/dev/null || true
 cp -r "$SCRIPT_DIR/resources"/* "$APP_DIR/resources/" 2>/dev/null || true
+
+# Kaynak kodu temizle (güvenlik)
+rm -f "$APP_DIR/client.py" 2>/dev/null
+rm -f "$SCRIPT_DIR/client.c" 2>/dev/null
+rm -rf "$SCRIPT_DIR/build/" 2>/dev/null
+
 echo -e "  ${GREEN}✓${NC} Dosyalar kopyalandı"
 
 # ============================================================

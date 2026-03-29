@@ -13,13 +13,13 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-echo "[1/6] Gerekli paketler yükleniyor..."
+echo "[1/7] Gerekli paketler yükleniyor..."
 apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
 # Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
 apt-get install -y python3-pip python3-pyqt5 python3-dev gcc python3-setuptools python3-evdev || echo "Uyarı: Bazı apt paketleri bulunamadı, pip3 ile kurulmaya çalışılacak..."
 pip3 install Cython==3.0.11 setuptools evdev --break-system-packages || pip3 install Cython==3.0.11 setuptools evdev
 
-echo "[2/6] Python kodları şifreleniyor (Obfuscation)..."
+echo "[2/7] Python kodları şifreleniyor (Obfuscation)..."
 # Ana projenin olduğu dizine geç
 cd "$(dirname "$0")"
 
@@ -45,7 +45,7 @@ fi
 
 echo "✅ Kodlar başarıyla şifrelendi (.so oluşturuldu: $COMPILED_FILE)."
 
-echo "[3/6] Sistem dosyaları hedefe kopyalanıyor..."
+echo "[3/7] Sistem dosyaları hedefe kopyalanıyor..."
 INSTALL_DIR="/opt/fatih-client"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/resources"
@@ -57,16 +57,6 @@ rm -f "$INSTALL_DIR/client.py" 2>/dev/null
 cp "$COMPILED_FILE" "$INSTALL_DIR/"
 
 # Çalıştırmak için ufak bir main.py oluştur (sadece derlenmiş kütüphaneyi içe aktarır)
-cat <<EOF > "$INSTALL_DIR/main.py"
-import client
-if __name__ == "__main__":
-    pass # client.py zaten import anında çalışmaya başlıyorsa yeterlidir.
-    # Eğer içerde if __name__ == "__main__": varsa, onu da manuel çağırmak gerekebilir:
-    # Ancak Fatih Client genelde PyQt5'i doğrudan globalde veya kendi çağırdığı bir fonksiyonla başlatır.
-EOF
-
-# Not: client.py'nin sonundaki if __name__ == "__main__": bloğu varsa import'ta çalışmaz.
-# Bu yüzden main.py içine o manuel çağrıyı ekliyoruz:
 cat <<EOF > "$INSTALL_DIR/main.py"
 import os
 import sys
@@ -89,9 +79,6 @@ cp -r fatih_projesi_python/client/resources/* "$INSTALL_DIR/resources/" 2>/dev/n
 # Versiyon dosyasını kopyala
 cp fatih_projesi_python/client/version.txt "$INSTALL_DIR/version.txt" 2>/dev/null
 
-# Varsayılan yapılandırma dosyasını kopyala
-cp config.ini "$INSTALL_DIR/config.ini" 2>/dev/null
-
 # uninstall.sh'i root dizinine veya güvenli bir yere kopyala
 cp uninstall.sh /usr/local/bin/fatih-uninstall
 chmod 700 /usr/local/bin/fatih-uninstall
@@ -100,7 +87,7 @@ chmod 700 /usr/local/bin/fatih-uninstall
 chmod -R 755 "$INSTALL_DIR"
 chown -R root:root "$INSTALL_DIR"
 
-echo "[4/6] Kurum Kodu (Corporate Code) ayarlanıyor..."
+echo "[4/7] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
 
 # Eski ayarları korumak için yapılandırma dosyasını oku
@@ -122,14 +109,19 @@ if [ -f "$EXISTING_CONFIG" ]; then
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
 fi
 
-# Tüm zorunlu değişkenleri barındıran tam teşekküllü varsayılan config'i oluştur:
-# ÖNEMLİ: API URL, kullanıcı adı, şifre ve user-agent C# ClassVariable.cs ile birebir aynı olmalıdır!
+# Credential'ları runtime'da decode et (obfuscated)
+_CU=$(echo "aGNyS2Rfcg==" | base64 -d)
+_CP=$(echo "QjFNdT9XakchR2E2" | base64 -d)
+_CA=$(echo "aHR0cHM6Ly9hcGkubWVicmUuY29tLnRyL3Y0L3NfYnJ0LnBocA==" | base64 -d)
+_AG=$(echo "YWdlbnRfU21hcnRCb2FydA==" | base64 -d)
+
+# Config dosyasını oluştur (credential'lar obfuscated olarak yazılır)
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
-api_url = https://api.mebre.com.tr/v4/s_brt.php
-wb_user = hcrKd_r
-wb_pass = B1Mu?WjG!Ga6
-user_agent = agent_SmartBoart
+api_url = ENC:aHR0cHM6Ly9hcGkubWVicmUuY29tLnRyL3Y0L3NfYnJ0LnBocA==
+wb_user = ENC:aGNyS2Rfcg==
+wb_pass = ENC:QjFNdT9XakchR2E2
+user_agent = ENC:YWdlbnRfU21hcnRCb2FydA==
 version = V2.13
 sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
@@ -148,7 +140,7 @@ if [ ! -z "$CORPORATE_CODE" ]; then
     echo "✅ Kurum kodu ayarlandı: $CORPORATE_CODE"
 fi
 
-echo "[5/6] Otomatik Başlatma (Autostart) yapılandırılıyor..."
+echo "[5/7] Otomatik Başlatma (Autostart) yapılandırılıyor..."
 AUTOSTART_DIR="/etc/xdg/autostart"
 AUTOSTART_FILE="$AUTOSTART_DIR/fatih-client-autostart.desktop"
 
@@ -168,45 +160,44 @@ EOF
 
 chmod 644 "$AUTOSTART_FILE"
 
-echo "[6/6] Arka plan servisleri temizleniyor..."
+echo "[6/7] Arka plan servisleri temizleniyor..."
 pkill -9 -f main.py 2>/dev/null
 pkill -9 -f client.py 2>/dev/null
 
 echo "[7/7] Güvenlik Temizliği ve Kullanıcı Ayarları Yapılıyor..."
+
+# --- C# ve kaynak kodları temizle ---
 if [ -d "Fatih_Projesi" ]; then
     rm -rf "Fatih_Projesi"
-    echo "✅ C# Kaynak kodları (Fatih_Projesi dizini) güvenlik sebebiyle silindi."
+    echo "✅ C# Kaynak kodları güvenlik sebebiyle silindi."
 fi
 
+# Düz metin Python kodunu sil (derlenmiş .so kullanılacak)
+rm -f "$INSTALL_DIR/client.py" 2>/dev/null
+rm -f fatih_projesi_python/client/client.py 2>/dev/null
+echo "✅ Kaynak Python kodu temizlendi (sadece derlenmiş .so mevcut)."
+
 # --- Pardus Kullanıcı Şifrelerini Kaldır ---
-# Fatih Client kendi kilit ekranını sağladığı için işletim sistemi şifrelerine gerek yok.
-# Bu sayede uzaktan kilit açıldığında kullanıcı ikinci bir şifre ekranıyla karşılaşmaz.
 echo "Kullanıcı şifreleri kaldırılıyor (Fatih kilit ekranı aktif)..."
 
-# etapadmin (yönetici) şifresini kaldır
 if id "etapadmin" &>/dev/null; then
     passwd -d etapadmin 2>/dev/null && echo "  ✅ etapadmin şifresi kaldırıldı" || echo "  ⚠ etapadmin şifresi kaldırılamadı"
 fi
 
-# ogretmen (öğretmen) şifresini kaldır
 if id "ogretmen" &>/dev/null; then
     passwd -d ogretmen 2>/dev/null && echo "  ✅ ogretmen şifresi kaldırıldı" || echo "  ⚠ ogretmen şifresi kaldırılamadı"
 fi
 
-# ogrenci (öğrenci) şifresini kaldır
 if id "ogrenci" &>/dev/null; then
     passwd -d ogrenci 2>/dev/null && echo "  ✅ ogrenci şifresi kaldırıldı" || echo "  ⚠ ogrenci şifresi kaldırılamadı"
 fi
 
 # --- LightDM Otomatik Giriş Ayarı ---
-# Bilgisayar açıldığında şifre sormadan doğrudan masaüstüne girsin
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf"
 if [ -f "$LIGHTDM_CONF" ] || [ -d "/etc/lightdm" ]; then
-    # Mevcut autologin ayarını kontrol et ve güncelle
     if grep -q "autologin-user" "$LIGHTDM_CONF" 2>/dev/null; then
         sed -i 's/^#*autologin-user=.*/autologin-user=etapadmin/' "$LIGHTDM_CONF"
     else
-        # [Seat:*] bölümüne ekle
         if grep -q "\[Seat:\*\]" "$LIGHTDM_CONF" 2>/dev/null; then
             sed -i '/\[Seat:\*\]/a autologin-user=etapadmin' "$LIGHTDM_CONF"
         else
@@ -221,7 +212,7 @@ LIGHTDM_EOF
     echo "  ✅ LightDM otomatik giriş ayarlandı (etapadmin)"
 fi
 
-# Cinnamon screensaver'ı devre dışı bırak (kilit ekranını engellemek için)
+# Cinnamon screensaver'ı devre dışı bırak
 sudo -u etapadmin dbus-launch gsettings set org.cinnamon.desktop.screensaver lock-enabled false 2>/dev/null
 sudo -u etapadmin dbus-launch gsettings set org.cinnamon.desktop.screensaver idle-activation-enabled false 2>/dev/null
 echo "  ✅ Cinnamon ekran kilidi devre dışı bırakıldı"
