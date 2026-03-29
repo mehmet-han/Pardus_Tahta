@@ -2269,14 +2269,12 @@ class FatihClientApp(QWidget):
         # dönerse, önceki durumla karşılaştırırız:
         # - Eğer önceki değer 1 idi ve şimdi 0 → birileri Mebrecep/yönetimden açtı → kilidi aç
         # - Eğer önceki değer -1 (bilinmiyor) ve şimdi 0 → internet yeni geldi → kilidi AÇMA
-        self.last_server_tahta_lock = -1  # Henüz sunucudan cevap yok
         self.server_has_spoken = False  # Sunucu en az bir kez başarılı cevap verdi mi?
         
         # Yerel kilit/kilit açma durumunu sunucunun yansıtmasını beklemek için
         # -1 = Gelen her şeyi kabul et (beklenti yok)
         # 0 = Sunucunun 0 döndürmesini bekliyoruz (yeni açtık)
         # 1 = Sunucunun 1 döndürmesini bekliyoruz (yeni kilitledik)
-        self.expected_server_tahta_lock = -1 
         
         # --- KİLİTLEME SOĞUMA SÜRESİ ---
         # Kilitleme yapıldıktan sonra sunucunun eski 'aç' komutunu yoksaymak için
@@ -2990,6 +2988,9 @@ class FatihClientApp(QWidget):
         return headers
 
     def poll_server(self):
+        self.server_has_spoken = False
+        self.manual_override = False
+        self.early_wait_ticks = 0
         def _poll_task():
             response_text = self.network_client.ctrl_post()
             if response_text is not None:
@@ -3009,10 +3010,8 @@ class FatihClientApp(QWidget):
                 
                 commands = response_text.split(',')
                 # Safely emit to main thread instead of lambda QTimer which gets garbage collected
-                self.command_signal.emit(commands)
             else:
                 # İNTERNET VEYA SUNUCU KOPTU
-                self.last_server_tahta_lock = -1
                 self.server_has_spoken = False
                 
                 # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
@@ -3033,11 +3032,7 @@ class FatihClientApp(QWidget):
 
     def process_commands(self, commands):
         if len(commands) < 4:
-            # Server returns at least 4 items (Lock status, message, shutdown, system remove).
             logging.warning(f"Sunucudan eksik/hatalı komut formatı geldi (len < 4): {commands}")
-            self.tahta_lock = -5
-            self.shutDown = -5
-            self.system_remove = -5
             return
         try:
             self.tahta_lock = int(commands[0])
@@ -3051,51 +3046,33 @@ class FatihClientApp(QWidget):
                 self.log_send = 0
             
             # --- DEBUG: Tum durum degiskenlerini logla ---
-            lock_age = time.time() - self.last_lock_time if self.last_lock_time > 0 else -1
-            logging.info(f"[CMD] tahta_lock={self.tahta_lock}, is_locked={self.is_locked}, expected={self.expected_server_tahta_lock}, lock_age={lock_age:.1f}s, start_work={self.start_work}")
+            lock_age = time.time() - self.last_lock_time if hasattr(self, 'last_lock_time') and self.last_lock_time > 0 else -1
+            logging.info(f"[CMD] tahta_lock={self.tahta_lock}, is_locked={self.is_locked}, lock_age={lock_age:.1f}s")
             
             # --- Mesaj gelirse ve sistem açıksa otomatik kilitle (C# davranışı) ---
             if message != "" and not self.is_locked:
                 logging.info(f"Mesaj geldi, sistem kilitleniyor: {message}")
-                self.manual_override = False # Mesaj gelirse override'ı iptal et
+                self.manual_override = False
                 self.lock_system(f"Mesaj alındı: {message}")
                 if hasattr(self, 'message_label'):
                     self.message_label.setText(message)
                 return
 
+            # --- C# BİREBİR DAVRANIŞI: Server ne derse onu yap ---
             if self.tahta_lock == 1 and not self.is_locked and message == "":
-                # Don't lock if USB with password is present (regardless of how it was unlocked)
+                # USB takılıysa sunucu komutunu (lock=1) yoksay (C# IsFlash mantığı)
                 if check_usb_password():
                     logging.info("Server says lock, but USB is present. Skipping lock.")
-                elif self.expected_server_tahta_lock == 0:
-                    logging.info("Server says lock (1), but we just unlocked and expect acknowledgment (0). Ignoring.")
                 else:
-                    self.manual_override = False # Sunucudan kilitleme gelirse override'ı iptal et
+                    self.manual_override = False
                     self.lock_system("Sunucudan gelen komut ile kilitlendi")
+
             elif self.tahta_lock == 0 and self.is_locked and message == "":
-                # --- DURUM DEGISIMI ALGILAMA ---
-                # Sadece sunucu durumu 1->0 degistiginde kilit ac (gercek MebreCep komutu)
-                # Sunucu surekli 0 gonderiyorsa (eski/bayat komut) yoksay
-                if self.last_server_tahta_lock == 1:
-                    # Sunucu onceden 1 (kilitli) idi, simdi 0 (acik) -> GERCEK MebreCep komutu
-                    logging.info("Sunucu durumu 1->0 degisti: Gercek MebreCep/Yonetim Paneli komutu alindi")
-                    # Kullanıcı şifre formunu açmışsa, formu kapat sonra unlock et
-                    if hasattr(self, 'login_panel') and self.login_panel.isVisible():
-                        logging.info("Login panel açık - önce panel kapatılıyor, sonra unlock yapılacak")
-                        self.login_panel.hide()
-                    self.unlock_system("Sunucudan (Mobilden) Istek Geldi")
-                else:
-                    # Sunucu zaten 0 idi veya bilinmiyor (-1) -> eski/bayat komut, yoksay
-                    logging.info(f"Server says unlock (0), but last_server={self.last_server_tahta_lock} (no 1->0 change). Stale command ignored.")
+                logging.info("Sunucudan 'AÇ (0)' komutu geldi. Sistem açılıyor.")
+                if hasattr(self, 'login_panel') and self.login_panel.isVisible():
+                    self.login_panel.hide()
+                self.unlock_system("Sunucudan (Mobilden) İstek Geldi")
             
-            # Eğer sunucudan gelen değer beklediğimiz değerse, beklentiyi sıfırla (-1)
-            # Artık sunucunun güncel durumunu tamamen kabul edebiliriz.
-            if self.expected_server_tahta_lock != -1 and self.expected_server_tahta_lock == self.tahta_lock:
-                logging.info(f"Server synchronized with expected state: {self.tahta_lock}")
-                self.expected_server_tahta_lock = -1
-            
-            # --- Sunucunun son bilinen durumunu güncelle ---
-            self.last_server_tahta_lock = self.tahta_lock
             self.server_has_spoken = True
 
             # Update Message Label
@@ -3171,9 +3148,7 @@ class FatihClientApp(QWidget):
             # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
-            # expected_server_tahta_lock'u 30sn sonra sıfırla;
-            # böylece MebreCep'ten kısa süre sonra gelen kilit/açma komutları yutulmaz.
-            QTimer.singleShot(30000, self._reset_expected_lock)
+            self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
             PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
@@ -3206,10 +3181,7 @@ class FatihClientApp(QWidget):
                 logging.error(f"Failed to start KeyboardLocker: {e}")
                 self.keyboard_locker = None
 
-    def _reset_expected_lock(self):
-        """30 saniye sonra expected_server_tahta_lock'u sıfırla — sunucu senkronize olmuştur."""
-        self.expected_server_tahta_lock = -1
-        logging.info("[LOCK] expected_server_tahta_lock reset to -1 (30s timer)")
+
     def _force_on_top(self):
         """Cinnamon'da kilit ekranını taskbar'ın üstüne zorla al"""
         try:
@@ -3269,9 +3241,7 @@ class FatihClientApp(QWidget):
                 self.usb_monitor.reset_usb_unlock_flag()
             
         self.acknowledge_command("tahtaLock", "0")
-        # expected_server_tahta_lock'u 30sn sonra sıfırla;
-        # böylece MebreCep'ten kısa süre sonra gelen kilitleme komutu yutulmaz.
-        QTimer.singleShot(30000, self._reset_expected_lock)
+        self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
         
         # Fatih kilidi açıldıktan sonra Pardus/GNOME ekran kilidini aktif et
         # İPTAL: MebreCep veya USB ile açıldığında işletim sistemi şifresi sormasın
@@ -3319,15 +3289,6 @@ class FatihClientApp(QWidget):
 
     def acknowledge_command(self, cmd_key, cmd_val):
         # Notify the server that we have processed a command.
-        if cmd_key == "tahtaLock":
-            # Yerel olarak tahtanın kilit durumunu değiştirdiğimizde, 
-            # sunucuya bu durumu bildiriyoruz ve sunucudan bu durumun gelmesini bekliyoruz.
-            try:
-                self.expected_server_tahta_lock = int(cmd_val)
-                logging.debug(f"Expected server tahta_lock set to: {self.expected_server_tahta_lock}")
-            except ValueError:
-                pass
-                
         def send_ack():
             self.network_client.set_value(cmd_key, cmd_val)
             if cmd_key == "tahtaLock":
