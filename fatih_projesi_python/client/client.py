@@ -1126,11 +1126,11 @@ class BoardConfigWidget(QWidget):
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(20)
 
-        # Sol taraf: Embedded Numpad (Maksimum genişliği kısıtlanmış)
+        # Sol taraf: Embedded Numpad (Genişliği enter tuşu sığacak kadar artırıldı)
         self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
-        self.numpad.setMaximumWidth(260)  # Numpad'i sola yasla ve küçült
+        self.numpad.setMaximumWidth(320)  # Enter tam sığsın
         self.numpad.set_target(self.corporate_code_field)
-        bottom_layout.addWidget(self.numpad, stretch=1)
+        bottom_layout.addWidget(self.numpad, stretch=10)
 
         # Sağ taraf: Tahta Listesi (QListWidget) - Popup olmadan, sabit yanda
         list_container = QVBoxLayout()
@@ -1160,7 +1160,7 @@ class BoardConfigWidget(QWidget):
             }
         """)
         list_container.addWidget(self.board_list_widget)
-        bottom_layout.addLayout(list_container, stretch=2) # Liste alanı sağda daha geniş olsun
+        bottom_layout.addLayout(list_container, stretch=11) # Liste ile tuş takımı oranları dengelendi
         
         layout.addLayout(bottom_layout)
 
@@ -3330,6 +3330,12 @@ class FatihClientApp(QWidget):
                 
         def send_ack():
             self.network_client.set_value(cmd_key, cmd_val)
+            if cmd_key == "tahtaLock":
+                # Cihazın kilitli olup olmadığını MebreCep'e bildiren asıl kolon 'open_close'dir.
+                # C# kodunda (systmlock = true ise "1", false ise "0") gönderiliyordu.
+                # python tarafında cmd_val "1" (kilitli) ve "0" (açık) olarak geliyor.
+                # MebreCep'teki yeşil/kırmızı ışığın doğru tespiti için bu satır gereklidir:
+                self.network_client.set_value("open_close", cmd_val)
 
         threading.Thread(target=send_ack, daemon=True).start()
 
