@@ -3577,6 +3577,15 @@ class FatihClientApp(QWidget):
             self.login_password_field.setFocus()
             # start_work=False olarak kalıyor (panel hâlâ açık)
 
+    def _toggle_password_visibility(self):
+        """Şifre kutusunda göz ikonuna tıklandığında şifreyi göster/gizle (Task 3)"""
+        if self.login_password_field.echoMode() == QLineEdit.EchoMode.Password:
+            self.login_password_field.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.eye_btn.setText("🔒") # Kapalı kilit/göz ikonu
+        else:
+            self.login_password_field.setEchoMode(QLineEdit.EchoMode.Password)
+            self.eye_btn.setText("👁")
+
     def _login_cancel(self):
         """Gömülü giriş panelini kapat"""
         self.login_panel.hide()
