@@ -2453,11 +2453,21 @@ class FatihClientApp(QWidget):
         lp_title.setAlignment(Qt.AlignCenter)
         lp_layout.addWidget(lp_title)
 
+        pass_layout = QHBoxLayout()
         self.login_password_field = KeyboardLineEdit()
         self.login_password_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.login_password_field.setPlaceholderText("Mebrecep şifresini yazınız")
         self.login_password_field.set_on_enter_callback(self._login_attempt)
-        lp_layout.addWidget(self.login_password_field)
+        pass_layout.addWidget(self.login_password_field)
+
+        self.eye_btn = QPushButton("👁")
+        self.eye_btn.setFixedSize(40, 48)
+        self.eye_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.eye_btn.setStyleSheet("font-size: 20px; background-color: #444; color: white; border-radius: 5px;")
+        self.eye_btn.pressed.connect(self._toggle_password_visibility)
+        pass_layout.addWidget(self.eye_btn)
+
+        lp_layout.addLayout(pass_layout)
 
         # Geri getirilen Gömülü Numpad - set_target ile doğrudan şifre alanına yazar
         self.numpad = EmbeddedNumpad(on_enter_callback=self._login_attempt)
@@ -2642,6 +2652,125 @@ class FatihClientApp(QWidget):
         except Exception as e:
             logging.error(f"System tray initialization failed: {e}")
 
+    def contextMenuEvent(self, event):
+        """Sağ tıkladığımızda açılacak menü (Task 2)"""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2b2b2b;
+                color: white;
+                border: 1px solid #444;
+                font-size: 16px;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 10px 20px;
+            }
+            QMenu::item:selected {
+                background-color: #0066cc;
+            }
+        """)
+        
+        schedule_action = menu.addAction("🕒 Giriş Çıkış Saatlerini Göster")
+        action = menu.exec_(self.mapToGlobal(event.pos()))
+        
+        if action == schedule_action:
+            self.show_schedule_dialog()
+
+    def show_schedule_dialog(self):
+        """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)"""
+        dialog = QDialog()
+        dialog.setWindowTitle("Giriş Çıkış Saatleri")
+        # Ensure it stays on top without blocking main thread, and deletes on close
+        dialog.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setFixedSize(320, 450)
+        dialog.setStyleSheet("background-color: #222; color: white; border: 2px solid #555; border-radius: 8px;")
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        title = QLabel("🕒 Ders Saatleri")
+        title.setFont(QFont('Sans', 18, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+        
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setAlignment(Qt.AlignTop)
+        
+        now = datetime.now()
+        day_of_week = now.isoweekday()
+        days_tr = ["", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+        
+        if self.schedule and 'hours' in self.schedule:
+            hours_data = self.schedule['hours']
+            day_schedule = None
+            if isinstance(hours_data, list) and day_of_week < len(hours_data):
+                day_schedule = hours_data[day_of_week]
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(day_of_week))
+                
+            if day_schedule:
+                lbl_day = QLabel(f"Bugün: {days_tr[day_of_week]}")
+                lbl_day.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 16px; margin-bottom: 10px;")
+                lbl_day.setAlignment(Qt.AlignCenter)
+                content_layout.addWidget(lbl_day)
+                
+                # Check 1 to 18 classes
+                for k in range(1, 19):
+                    slot = None
+                    if isinstance(day_schedule, list) and k < len(day_schedule):
+                        slot = day_schedule[k]
+                    elif isinstance(day_schedule, dict):
+                        slot = day_schedule.get(str(k))
+                        
+                    if slot:
+                        s_time, e_time = "", ""
+                        if isinstance(slot, list) and len(slot) >= 3:
+                            s_time = slot[1] if slot[1] else ""
+                            e_time = slot[2] if slot[2] else ""
+                        elif isinstance(slot, dict):
+                            s_time = slot.get('1', '')
+                            e_time = slot.get('2', '')
+                            
+                        s_time = self._format_time(s_time)
+                        e_time = self._format_time(e_time)
+                        if s_time and e_time:
+                            lbl = QLabel(f"<b>{k}. Ders:</b> {s_time} - {e_time}")
+                            lbl.setStyleSheet("font-size: 15px; padding: 5px; background-color: #333; border-radius: 4px; margin-bottom: 2px;")
+                            content_layout.addWidget(lbl)
+            else:
+                lbl = QLabel("Bugün için ders saati bulunamadı.")
+                lbl.setAlignment(Qt.AlignCenter)
+                content_layout.addWidget(lbl)
+        else:
+            lbl = QLabel("Saat bilgisi henüz sunucudan alınmadı.")
+            lbl.setAlignment(Qt.AlignCenter)
+            content_layout.addWidget(lbl)
+            
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        
+        btn_close = QPushButton("Kapat")
+        btn_close.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_close.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; padding: 12px; font-size: 16px; border-radius: 5px;")
+        btn_close.clicked.connect(dialog.close)
+        layout.addWidget(btn_close)
+        
+        # Position the dialog near the center
+        screenGeometry = QApplication.primaryScreen().geometry()
+        x = (screenGeometry.width() - dialog.width()) // 2
+        y = (screenGeometry.height() - dialog.height()) // 2
+        dialog.setGeometry(x, y, dialog.width(), dialog.height())
+        
+        dialog.show()
+
     def toggle_help_guide(self):
         """(i) butonuna basıldığında yardım kılavuzunu göster/gizle (top-level window)."""
         if not hasattr(self, 'help_guide_label'):
@@ -2709,11 +2838,11 @@ class FatihClientApp(QWidget):
         self.update_time_display()  # Initial update
 
     def init_schedule_timer(self):
-        """Initialize timer for checking the schedule every minute."""
+        """Initialize timer for checking the schedule every 20 seconds."""
         self.schedule_timer = QTimer(self)
         self.schedule_timer.timeout.connect(self.check_schedule)
-        self.schedule_timer.start(60000)  # Check every 60 seconds
-        logging.info("Schedule check timer started with 1 minute interval")
+        self.schedule_timer.start(20000)  # Check every 20 seconds
+        logging.info("Schedule check timer started with 20 second interval")
 
     def perform_maintenance(self):
         """
@@ -2833,10 +2962,10 @@ class FatihClientApp(QWidget):
                         period_data = day_schedule[period_idx]
 
                         if isinstance(period_data, list) and len(period_data) >= 3:
-                            start_time = period_data[1] if len(period_data) > 1 else ""
-                            end_time = period_data[2] if len(period_data) > 2 else ""
+                            start_time = period_data[1] if period_data[1] else ""
+                            end_time = period_data[2] if len(period_data) > 2 and period_data[2] else ""
 
-                            if start_time and end_time and start_time != "0" and end_time != "0" and start_time != "" and end_time != "":
+                            if start_time and end_time and start_time != "0" and end_time != "0":
 
                                 # --- C# timer1Thread mantığı: Çıkış saati kontrolü ---
                                 # Çıkış saati geldiğinde kilitle (tenefüs/ders bitimi)
@@ -2871,14 +3000,20 @@ class FatihClientApp(QWidget):
                 # The hour slots are also 1-indexed strings "1" through "18"
                 for k in range(1, 19):
                     slot = day_schedule.get(str(k))
-                    # Slot is expected to be a dict like {'1': '08:30', '2': '09:10'}
-                    if slot and isinstance(slot, dict):
-                        start_time = slot.get('1')
-                        end_time = slot.get('2')
+                    # Slot is expected to be a list like ["", "08:30", "09:10"] or dict
+                    if slot:
+                        start_time = ""
+                        end_time = ""
+                        if isinstance(slot, list) and len(slot) >= 3:
+                            start_time = slot[1] if slot[1] else ""
+                            end_time = slot[2] if slot[2] else ""
+                        elif isinstance(slot, dict):
+                            start_time = slot.get('1', '')
+                            end_time = slot.get('2', '')
 
                         if start_time and end_time and start_time != "0" and end_time != "0":
 
-                            # Çıkış saati kontrolü (dict format)
+                            # Çıkış saati kontrolü
                             formatted_exit = self._format_time(end_time)
                             if formatted_exit and len(formatted_exit) == 5 and not self.is_locked:
                                 if self.exit_time_locked[k] == 0:
