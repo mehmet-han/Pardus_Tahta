@@ -2654,15 +2654,21 @@ class FatihClientApp(QWidget):
 
     def show_schedule_dialog(self):
         """Ders saatlerini gösteren C# uyumlu bağımsız popup (Task 2)"""
-        dialog = QDialog()
-        dialog.setWindowTitle("Giriş Çıkış Saatleri")
+        # Eğer zaten açıksa öne getir
+        if hasattr(self, 'schedule_dialog') and self.schedule_dialog.isVisible():
+            self.schedule_dialog.raise_()
+            self.schedule_dialog.activateWindow()
+            return
+
+        self.schedule_dialog = QDialog()
+        self.schedule_dialog.setWindowTitle("Giriş Çıkış Saatleri")
         # Ensure it stays on top without blocking main thread, and deletes on close
-        dialog.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        dialog.setFixedSize(320, 450)
-        dialog.setStyleSheet("background-color: #222; color: white; border: 2px solid #555; border-radius: 8px;")
+        self.schedule_dialog.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.schedule_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.schedule_dialog.setFixedSize(320, 450)
+        self.schedule_dialog.setStyleSheet("background-color: #222; color: white; border: 2px solid #555; border-radius: 8px;")
         
-        layout = QVBoxLayout(dialog)
+        layout = QVBoxLayout(self.schedule_dialog)
         layout.setContentsMargins(15, 15, 15, 15)
         
         title = QLabel("🕒 Ders Saatleri")
@@ -2735,16 +2741,16 @@ class FatihClientApp(QWidget):
         btn_close = QPushButton("Kapat")
         btn_close.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn_close.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; padding: 12px; font-size: 16px; border-radius: 5px;")
-        btn_close.clicked.connect(dialog.close)
+        btn_close.clicked.connect(self.schedule_dialog.close)
         layout.addWidget(btn_close)
         
         # Position the dialog near the center
         screenGeometry = QApplication.primaryScreen().geometry()
-        x = (screenGeometry.width() - dialog.width()) // 2
-        y = (screenGeometry.height() - dialog.height()) // 2
-        dialog.setGeometry(x, y, dialog.width(), dialog.height())
+        x = (screenGeometry.width() - self.schedule_dialog.width()) // 2
+        y = (screenGeometry.height() - self.schedule_dialog.height()) // 2
+        self.schedule_dialog.setGeometry(x, y, self.schedule_dialog.width(), self.schedule_dialog.height())
         
-        dialog.show()
+        self.schedule_dialog.show()
 
     def toggle_help_guide(self):
         """(i) butonuna basıldığında yardım kılavuzunu göster/gizle (top-level window)."""
