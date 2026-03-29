@@ -2988,9 +2988,6 @@ class FatihClientApp(QWidget):
         return headers
 
     def poll_server(self):
-        self.server_has_spoken = False
-        self.manual_override = False
-        self.early_wait_ticks = 0
         def _poll_task():
             response_text = self.network_client.ctrl_post()
             if response_text is not None:
