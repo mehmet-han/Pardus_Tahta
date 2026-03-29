@@ -3647,7 +3647,7 @@ class FatihClientApp(QWidget):
 
         # Ders Saatleri
         schedule_action = QAction("🕒 Giriş Çıkış Saatleri", self)
-        schedule_action.triggered.connect(self.show_schedule_dialog)
+        schedule_action.triggered.connect(lambda: self.show_schedule_dialog())
         context_menu.addAction(schedule_action)
 
         context_menu.addSeparator()
