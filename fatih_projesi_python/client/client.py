@@ -3010,6 +3010,7 @@ class FatihClientApp(QWidget):
                 
                 commands = response_text.split(',')
                 # Safely emit to main thread instead of lambda QTimer which gets garbage collected
+                self.command_signal.emit(commands)
             else:
                 # İNTERNET VEYA SUNUCU KOPTU
                 self.server_has_spoken = False
