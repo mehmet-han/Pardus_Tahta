@@ -1337,9 +1337,11 @@ class BoardConfigWidget(QWidget):
             if hasattr(self.parent, 'update_board_id_display'):
                 self.parent.update_board_id_display()
 
-            QMessageBox.information(self, "Başarılı",
-                                  f"Tahta yapılandırması güncellendi:\nID: {selected_board_id}\nAd: {board_name}")
-            self.close_widget()
+            self.status_label.setStyleSheet("color: #55ff55; font-size: 13px;")
+            self.status_label.setText(f"Başarılı! Tahta Ayarlandı:\nID: {selected_board_id} - Ad: {board_name}")
+            
+            # Kilit ekranında pencereyi düzgünce kapatmak için 1.5 sn bekle
+            QTimer.singleShot(1500, self.close_widget)
 
         except PermissionError:
             QMessageBox.critical(self, "İzin Hatası",
