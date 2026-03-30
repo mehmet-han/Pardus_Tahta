@@ -142,19 +142,18 @@ except ValueError as e:
     sys.exit(1)
 
 # --- USB Password Constants (obfuscated - decoded at runtime, compiled into .so) ---
-_UP = [_b64.b64decode(x).decode('utf-8') for x in [
+USB_PASSWORD = _b64.b64decode(''.join([
     'MzI1NDFrZWjEsFVGYWxpX3ZlbGlf',
     'aMO8c2V5aW4/xLAwNDRFSEVKU1RS',
     'xLBIVEVNRVM1NDg4OTY1RThHxLBFxLA='
-]]
-USB_PASSWORD = ''.join(_UP)
-_UR = [_b64.b64decode(x).decode('utf-8') for x in [
+])).decode('utf-8')
+
+USB_REMOVE_PASSWORD = _b64.b64decode(''.join([
     'dWVnZTMyNTQxa2Voxa',
     'BVRmFsaV92ZWxpX2jDvHNleWluP8Sw',
     'RUhFSlNUUsSwSDUyODc0VEVNRVM1',
     'NDg5NjVFOEdpRcSwICA='
-]]
-USB_REMOVE_PASSWORD = ''.join(_UR).strip()
+])).decode('utf-8').strip()
 
 # --- NEW: Ensure USB drives are mounted (fixes USB not working while locked) ---
 def ensure_usb_mounted():
