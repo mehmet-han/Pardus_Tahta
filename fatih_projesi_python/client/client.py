@@ -2094,7 +2094,7 @@ class NetworkClient:
             "UserCore": cFnc_original(core_code)
         }
         
-        del _k, _dx, _agt
+        _k = _dx = _agt = None
         logging.debug(f"Request headers: {headers}")
         return headers
 
@@ -2121,19 +2121,18 @@ class NetworkClient:
                 timeout=timeout,
                 verify=True
             )
-            del _url, _usr, _pwd, _k, _dx
+            _url = _usr = _pwd = _k = _dx = None
             
             if response.status_code != 200:
                 logging.error(f"API Error: {response.status_code} with data {data}.")
                 return None
             return response
         except requests.exceptions.SSLError as e:
-            del _url, _usr, _pwd, _k, _dx
+            _url = _usr = _pwd = _k = _dx = None
             logging.error(f"SSL Error during network request: {e}. MITM Protection active.")
             return None
         except requests.RequestException as e:
-            try: del _url, _usr, _pwd, _k, _dx
-            except: pass
+            _url = _usr = _pwd = _k = _dx = None
             logging.error(f"Network request failed: {e}")
             return None
 
@@ -2146,10 +2145,10 @@ class NetworkClient:
         try:
             import requests
             response = requests.get(_url, timeout=3, verify=True)
-            del _url, _k, _dx
+            _url = _k = _dx = None
             return True
         except requests.exceptions.RequestException:
-            del _url, _k, _dx
+            _url = _k = _dx = None
             import socket
             try:
                 from urllib.parse import urlparse

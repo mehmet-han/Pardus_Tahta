@@ -78,6 +78,10 @@ echo -e "${CYAN}[4/5] Güvenlik temizliği yapılıyor...${NC}"
 rm -f /opt/fatih-client/client.py 2>/dev/null
 echo -e "${GREEN}✅ Kaynak kodlar temizlendi.${NC}"
 
+# fatih-manager.sh dosyasını kopyala
+cp -f "$TEMP_DIR/Pardus_Tahta/fatih-manager.sh" /opt/fatih-client/ 2>/dev/null || true
+chmod +x /opt/fatih-client/fatih-manager.sh 2>/dev/null || true
+
 # Geçici dosyaları temizle
 echo -e "${CYAN}[5/5] Geçici dosyalar temizleniyor...${NC}"
 cd /

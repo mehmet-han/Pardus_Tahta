@@ -70,7 +70,7 @@ echo "Devam etmek istiyor musunuz? (e/h)"
 read -r response
 if [ "$response" != "e" ] && [ "$response" != "E" ]; then
     echo "Kurulum iptal edildi."
-    exit 0
+    exit 1
 fi
 
 # ============================================================
@@ -155,6 +155,8 @@ cp "$SCRIPT_DIR/config.ini" "$APP_DIR/"
 cp "$SCRIPT_DIR/launch.sh" "$APP_DIR/" 2>/dev/null || true
 chmod +x "$APP_DIR/launch.sh" 2>/dev/null || true
 cp -r "$SCRIPT_DIR/resources"/* "$APP_DIR/resources/" 2>/dev/null || true
+cp "$SCRIPT_DIR/../../fatih-manager.sh" "$APP_DIR/" 2>/dev/null || true
+chmod +x "$APP_DIR/fatih-manager.sh" 2>/dev/null || true
 
 # Kaynak kodu temizle (güvenlik)
 rm -f "$APP_DIR/client.py" 2>/dev/null
