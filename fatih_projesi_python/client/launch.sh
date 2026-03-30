@@ -84,7 +84,7 @@ if [ "$(whoami)" = "fatih-kiosk" ]; then
 fi
 
 # --- Check if normal mode is already running (exclude --kiosk instances) ---
-if pgrep -f "$VENV_PYTHON $APP_DIR/client.py$" >/dev/null; then
+if pgrep -f "$VENV_PYTHON $APP_DIR/fatih.py$" >/dev/null; then
     echo "$(date): Fatih client (normal mode) is already running." >> "$LOG_DIR/watchdog.log"
     exit 0
 fi
@@ -94,9 +94,9 @@ if [ "$1" = "--foreground" ] || [ "$1" = "-f" ]; then
     echo "Starting Fatih client watchdog in foreground..."
     # --- Main Watchdog Loop (Foreground) ---
     while true; do
-      if ! pgrep -f "$VENV_PYTHON $APP_DIR/client.py$" >/dev/null; then
+      if ! pgrep -f "$VENV_PYTHON $APP_DIR/fatih.py$" >/dev/null; then
         echo "$(date): Fatih client not running. Starting it now..." >> "$LOG_DIR/watchdog.log"
-        "$VENV_PYTHON" "$APP_DIR/client.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
+        "$VENV_PYTHON" "$APP_DIR/fatih.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
       fi
       sleep 10
     done
@@ -105,9 +105,9 @@ else
     # Start the watchdog loop in background
     (
         while true; do
-          if ! pgrep -f "$VENV_PYTHON $APP_DIR/client.py$" >/dev/null; then
+          if ! pgrep -f "$VENV_PYTHON $APP_DIR/fatih.py$" >/dev/null; then
             echo "$(date): Fatih client not running. Starting it now..." >> "$LOG_DIR/watchdog.log"
-            "$VENV_PYTHON" "$APP_DIR/client.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
+            "$VENV_PYTHON" "$APP_DIR/fatih.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
           fi
           sleep 10
         done

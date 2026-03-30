@@ -5,8 +5,8 @@
 #
 # AKIŞ:
 # 1. Boot → GDM → fatih-kiosk auto-login → bu script çalışır
-# 2. client.py --kiosk → Kilit ekranı gösterilir
-# 3. Kilit açılınca (exit 0) → client.py normal mod başlar (aynı oturum)
+# 2. fatih.py --kiosk → Kilit ekranı gösterilir
+# 3. Kilit açılınca (exit 0) → fatih.py normal mod başlar (aynı oturum)
 # 4. Normal mod: mobil uygulamadan kilitleme/açma çalışır
 # 5. Reboot → goto 1
 
@@ -81,7 +81,7 @@ cd "$APP_DIR" || exit 1
 # ============================================================
 # PHASE 1: Kiosk kilit ekranı
 # ============================================================
-"$VENV_PYTHON" "$APP_DIR/client.py" --kiosk >> "$LOG_DIR/kiosk.out.log" 2>> "$LOG_DIR/kiosk.err.log"
+"$VENV_PYTHON" "$APP_DIR/fatih.py" --kiosk >> "$LOG_DIR/kiosk.out.log" 2>> "$LOG_DIR/kiosk.err.log"
 EXIT_CODE=$?
 
 log_msg "Fatih Client kiosk exited with code: $EXIT_CODE"
@@ -94,7 +94,7 @@ fi
 
 # ============================================================
 # PHASE 2: Normal mod (kilit açıldıktan sonra)
-# Aynı oturumda client.py normal modda başlar
+# Aynı oturumda fatih.py normal modda başlar
 # Mobil uygulamadan kilitleme/açma çalışır
 # ============================================================
 log_msg "Kiosk unlock successful, switching to NORMAL MODE in same session..."
@@ -103,11 +103,11 @@ log_msg "Kiosk unlock successful, switching to NORMAL MODE in same session..."
 sleep 2
 
 # Normal mod watchdog - crash olursa yeniden başlatır
-log_msg "Starting client.py in normal mode (watchdog)..."
+log_msg "Starting fatih.py in normal mode (watchdog)..."
 while true; do
-    if ! pgrep -f "$VENV_PYTHON $APP_DIR/client.py$" >/dev/null 2>&1; then
+    if ! pgrep -f "$VENV_PYTHON $APP_DIR/fatih.py$" >/dev/null 2>&1; then
         log_msg "Normal mode client not running, starting..."
-        "$VENV_PYTHON" "$APP_DIR/client.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
+        "$VENV_PYTHON" "$APP_DIR/fatih.py" >> "$LOG_DIR/client.out.log" 2>> "$LOG_DIR/client.err.log" &
         CLIENT_PID=$!
         log_msg "Normal mode client started with PID: $CLIENT_PID"
     fi

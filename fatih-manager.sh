@@ -83,8 +83,8 @@ check_status() {
     fi
     
     # Çalışma durumu
-    if pgrep -f "client.py" > /dev/null; then
-        PID=$(pgrep -f "client.py")
+    if pgrep -f "fatih.py" > /dev/null; then
+        PID=$(pgrep -f "fatih.py")
         echo -e "Program: ${GREEN}✓ Çalışıyor${NC} (PID: $PID)"
     else
         echo -e "Program: ${RED}✗ Çalışmıyor${NC}"
@@ -105,9 +105,9 @@ show_detailed_status() {
     if [ -d "$APP_DIR" ]; then
         echo -e "  Durum: ${GREEN}✓ Kurulu${NC}"
         echo -e "  Dizin: $APP_DIR"
-        if [ -f "$APP_DIR/client.py" ]; then
-            VERSION=$(grep -m1 "Version:" "$APP_DIR/client.py" 2>/dev/null | head -1 || echo "Bilinmiyor")
-            echo -e "  Dosya: client.py mevcut"
+        if [ -f "$APP_DIR/fatih.py" ]; then
+            VERSION=$(grep -m1 "Version:" "$APP_DIR/fatih.py" 2>/dev/null | head -1 || echo "Bilinmiyor")
+            echo -e "  Dosya: fatih.py mevcut"
         fi
     else
         echo -e "  Durum: ${RED}✗ Kurulu Değil${NC}"
@@ -135,8 +135,8 @@ show_detailed_status() {
     
     # Çalışma durumu
     echo -e "${CYAN}[Program Durumu]${NC}"
-    if pgrep -f "client.py" > /dev/null; then
-        PID=$(pgrep -f "client.py")
+    if pgrep -f "fatih.py" > /dev/null; then
+        PID=$(pgrep -f "fatih.py")
         echo -e "  Durum: ${GREEN}✓ Çalışıyor${NC}"
         echo -e "  PID: $PID"
         # CPU ve Memory kullanımı
@@ -236,7 +236,7 @@ do_stop() {
     else
         # Manuel durdurma
         echo "İşlemler durduruluyor..."
-        pkill -9 -f "client.py" 2>/dev/null
+        pkill -9 -f "fatih.py" 2>/dev/null
         pkill -9 -f "fatih-client" 2>/dev/null
         
         # Autostart'ı devre dışı bırak
@@ -263,11 +263,11 @@ do_start() {
     chmod 777 "$APP_DIR/logs"
     
     # Zaten çalışıyorsa uyar
-    if pgrep -f "client.py" > /dev/null; then
+    if pgrep -f "fatih.py" > /dev/null; then
         echo -e "${YELLOW}Program zaten çalışıyor. Yeniden başlatmak ister misiniz? (e/h)${NC}"
         read -r response
         if [ "$response" = "e" ] || [ "$response" = "E" ]; then
-            pkill -9 -f "client.py" 2>/dev/null
+            pkill -9 -f "fatih.py" 2>/dev/null
             sleep 2
         else
             return
@@ -382,12 +382,12 @@ do_start() {
         DISPLAY="$USER_DISPLAY" \
         XAUTHORITY="$XAUTH_PATH" \
         QT_QPA_PLATFORM=xcb \
-        bash -c "cd $APP_DIR && ./venv/bin/python client.py >> $APP_DIR/logs/client.out.log 2>> $APP_DIR/logs/client.err.log &"
+        bash -c "cd $APP_DIR && ./venv/bin/python fatih.py >> $APP_DIR/logs/client.out.log 2>> $APP_DIR/logs/client.err.log &"
     
     sleep 3
     
-    if pgrep -f "client.py" > /dev/null; then
-        PID=$(pgrep -f "client.py" | head -1)
+    if pgrep -f "fatih.py" > /dev/null; then
+        PID=$(pgrep -f "fatih.py" | head -1)
         echo -e "${GREEN}Program başarıyla başlatıldı! (PID: $PID)${NC}"
     else
         echo -e "${RED}Program başlatılamadı. Hata logunu kontrol edin:${NC}"
@@ -398,7 +398,7 @@ do_start() {
         echo "Manuel başlatma için:"
         echo "  export DISPLAY=$USER_DISPLAY"
         echo "  export XAUTHORITY=$XAUTH_PATH"
-        echo "  cd $APP_DIR && ./venv/bin/python client.py"
+        echo "  cd $APP_DIR && ./venv/bin/python fatih.py"
     fi
 }
 
@@ -458,7 +458,7 @@ do_update() {
     else
         echo -e "${YELLOW}Git pull başarısız (credential gerekebilir).${NC}"
         echo "Manuel güncelleme yapabilirsiniz:"
-        echo "  scp user@host:~/Fatih_Projesi/fatih_projesi_python/client/client.py ~/Fatih_Projesi/fatih_projesi_python/client/"
+        echo "  scp user@host:~/Fatih_Projesi/fatih_projesi_python/client/fatih.py ~/Fatih_Projesi/fatih_projesi_python/client/"
     fi
     
     echo ""
@@ -467,9 +467,9 @@ do_update() {
     if [ -d "$APP_DIR" ]; then
         echo "Uygulama dosyaları güncelleniyor..."
         
-        if [ -f "$CLIENT_DIR/client.py" ]; then
-            cp "$CLIENT_DIR/client.py" "$APP_DIR/"
-            echo "  ✓ client.py güncellendi"
+        if [ -f "$CLIENT_DIR/fatih.py" ]; then
+            cp "$CLIENT_DIR/fatih.py" "$APP_DIR/"
+            echo "  ✓ fatih.py güncellendi"
         fi
         
         if [ -f "$CLIENT_DIR/launch.sh" ]; then

@@ -137,8 +137,8 @@ if [ "$USE_COMPILED" = true ]; then
     # Derlenmiş .so dosyasını kopyala
     cp "$COMPILED_FILE" "$APP_DIR/"
     
-    # main.py oluştur (derlenmiş modülü import eder)
-    cat <<MAIN_EOF > "$APP_DIR/main.py"
+    # fatih.py oluştur (derlenmiş modülü import eder)
+    cat <<MAIN_EOF > "$APP_DIR/fatih.py"
 import os, sys
 os.chdir("/opt/fatih-client")
 import client
@@ -148,7 +148,7 @@ MAIN_EOF
     echo -e "  ${GREEN}✓${NC} Şifrelenmiş kod kopyalandı (.so)"
 else
     # Düz Python dosyasını kopyala (fallback)
-    cp "$SCRIPT_DIR/client.py" "$APP_DIR/"
+    cp "$SCRIPT_DIR/client.py" "$APP_DIR/fatih.py"
 fi
 
 cp "$SCRIPT_DIR/config.ini" "$APP_DIR/"
