@@ -178,8 +178,9 @@ echo ""
 echo -e "${CYAN}[2.1] fatih-kiosk kullanıcısı oluşturuluyor...${NC}"
 
 if ! id "fatih-kiosk" &>/dev/null; then
-    useradd -m -s /bin/bash -G video,audio,input fatih-kiosk
-    echo "fatih-kiosk:fatih2025secure" | chpasswd
+    # Generate password hash directly to bypass PAM token manipulation errors (e.g. complexity rules)
+    KIOSK_HASH=$(python3 -c "import crypt; print(crypt.crypt('fatih2025secure', crypt.mksalt(crypt.METHOD_SHA512)))")
+    useradd -m -s /bin/bash -G video,audio,input -p "$KIOSK_HASH" fatih-kiosk
     echo -e "  ${GREEN}✓${NC} fatih-kiosk kullanıcısı oluşturuldu"
 else
     echo -e "  ${YELLOW}⚠${NC} fatih-kiosk kullanıcısı zaten mevcut"
