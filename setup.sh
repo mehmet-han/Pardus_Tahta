@@ -93,8 +93,8 @@ read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
 # Eski ayarları korumak için yapılandırma dosyasını oku
 EXISTING_CONFIG="/home/etapadmin/.config/fatih-client/config.ini"
 BOARD_ID="0"
-BOARD_NAME="Unknown Board"
-ADMIN_PASSWORD="mebre"
+BOARD_NAME="Pardus Board"
+ADMIN_PASSWORD="803580"
 PASSWORD_CHANGED="false"
 
 if [ -f "$EXISTING_CONFIG" ]; then
@@ -104,8 +104,8 @@ if [ -f "$EXISTING_CONFIG" ]; then
     PASSWORD_CHANGED=$(sed -nr 's/^password_changed\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
     
     [ -z "$BOARD_ID" ] && BOARD_ID="0"
-    [ -z "$BOARD_NAME" ] && BOARD_NAME="Unknown Board"
-    [ -z "$ADMIN_PASSWORD" ] && ADMIN_PASSWORD="mebre"
+    [ -z "$BOARD_NAME" ] && BOARD_NAME="Pardus Board"
+    [ -z "$ADMIN_PASSWORD" ] && ADMIN_PASSWORD="803580"
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
 fi
 

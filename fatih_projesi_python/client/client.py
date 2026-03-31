@@ -1104,12 +1104,11 @@ class BoardConfigWidget(QWidget):
         form_layout.setSpacing(10)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        # Corporate code input - maskelenmiş görünsün (**** şeklinde)
+        # Corporate code input - görünür şekilde gelecek
         corporate_label = QLabel("Kurum Kodu:")
         corporate_label.setFont(QFont("Arial", 12))
         self.corporate_code_field = KeyboardLineEdit()
         self.corporate_code_field.set_on_enter_callback(self.fetch_boards)
-        self.corporate_code_field.setEchoMode(QLineEdit.EchoMode.Password)  # **** şeklinde görünsün
         self.corporate_code_field.setText(SETTINGS.get('corporate_code', ''))
         self.corporate_code_field.setMinimumWidth(250)
         self.corporate_code_field.setMinimumHeight(35)
@@ -1152,7 +1151,8 @@ class BoardConfigWidget(QWidget):
         # Sol taraf: Embedded Numpad (Genişliği enter tuşu sığacak kadar artırıldı)
         self.numpad = EmbeddedNumpad(on_enter_callback=self.fetch_boards)
         self.numpad.setMaximumWidth(320)  # Enter tam sığsın
-        self.numpad.set_target(self.corporate_code_field)
+        self.numpad.set_target(self.password_field)  # Numpad şifre alanına yazsın
+        QTimer.singleShot(100, self.password_field.setFocus)
         bottom_layout.addWidget(self.numpad, stretch=10)
 
         # Sağ taraf: Tahta Listesi (QListWidget) - Popup olmadan, sabit yanda
@@ -1322,7 +1322,7 @@ class BoardConfigWidget(QWidget):
         config.set('settings', 'board_id', str(selected_board_id))
 
         # Find board name
-        board_name = "Unknown Board"
+        board_name = "Pardus Tahta"
         for board in self.boards:
             if board.get("id") == selected_board_id:
                 board_name = board.get("Name", f"Tahta {selected_board_id}")
