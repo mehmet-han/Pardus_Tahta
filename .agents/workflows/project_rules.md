@@ -40,4 +40,69 @@ Oluşturulan kodlar doğrudan son kullanıcı (öğretmenler) tarafından kullan
 - **Tek Tuş Bash / Curl:** Öğretmen kurulumları `install_from_github.sh` uzaktan erişim URL'si ile çalışır, eğer bu dosyanın işleyiş tarzı bozulursa binlerce tahta öksüz kalabilir. Cihaz kurulum esnasında `setup.sh` ve `install-unified.sh` çalıştırır; bu betikler şifreli (.so) sistemi `/opt/fatih-client` altına gömer, `.desktop` ile sistem Autostart'a kayıt eder.
 - **Kaldırma (Uninstall.sh):** Programın izinsiz kaldırılmasını önlemek maksadıyla `sudo fatih-uninstall` içerisinde gizlenmiş olan SHA-256 doğrulayıcı kod (sır tutulur: 803435... uzantısı), kaldırma onayı sunar. Systemd temizliği ve service pkill (katletme) evreleri bozulmamalıdır.
 
+---
+
+## 🔑 5. ADMIN ŞİFRE SİSTEMİ — DOKUNULMAZ REFERANS (PASSWORD INVARIANT CONTRACT)
+
+> ⛔ **BU BÖLÜM MUTLAK DOKUNULMAZDIR.** Herhangi bir AI ajanı şifre, parola, `admin_password`, `ChangePasswordWidget`, `BoardConfigWidget`, `validate_admin_password`, Numpad hedefleme veya login/unlock mantığına dokunacaksa bu bölümü önce **tamamen okumalı** ve aşağıdaki kuralları harfiyen uygulamalıdır. Aksi halde yapılan değişiklik **REDDEDILIR**.
+
+### 5.1 Varsayılan Şifre Değeri
+- Sistemin varsayılan admin şifresi daima **`803580`** olmalıdır.
+- **Eski değer `mebre`** bazı tahtalarda hâlâ config.ini'de bulunabilir. Kod içinde `mebre` → `803580` dönüşümü yapılmalıdır ama `mebre` asla default olarak ATANAMAZ.
+
+### 5.2 Dosya Bazında Şifre Konumları (Dokunma Haritası)
+
+| Dosya | Konum/Değişken | Doğru Değer | Not |
+|---|---|---|---|
+| `config.ini` | `admin_password` | `803580` | Yeni kurulum default'u |
+| `setup.sh` | `ADMIN_PASSWORD` (satır ~97) | `"803580"` | Bash değişkeni, yeni kurulumda yazılır |
+| `client.py` — `ChangePasswordWidget.init_ui()` | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Mevcut şifre gösterimi |
+| `client.py` — `ChangePasswordWidget.init_ui()` | `self.current_field.setText('803580')` | Sabit `803580` | Default ise readonly gösterilir |
+| `client.py` — `ChangePasswordWidget.change_password()` | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Doğrulama |
+| `client.py` — `BoardConfigWidget.fetch_boards()` | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Tahta getirme şifre kontrolü |
+| `client.py` — `validate_admin_password()` | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Login doğrulama |
+| `client.py` — `kiosk_show_board_config()` | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Yapılandırma erişim kontrolü |
+| `client.py` — `__main__` test bloğu | `SETTINGS.get('admin_password', '803580')` | fallback `803580` | Debug çıktısı |
+
+### 5.3 `ChangePasswordWidget` — Mevcut Şifre Alanı Kuralları
+```
+Eğer config'deki admin_password == '803580' VEYA == 'mebre':
+  → self._is_default_password = True
+  → current_field.setEchoMode(Normal)     # Şifre GÖRÜNSİN
+  → current_field.setText('803580')        # SABİT DEĞER
+  → current_field.setReadOnly(True)        # Kullanıcı DEĞİŞTİREMESİN
+  → Numpad hedefi → new_field              # Direkt yeni şifre alanına
+
+Aksi halde (kullanıcı şifreyi daha önce değiştirmişse):
+  → self._is_default_password = False
+  → current_field.setEchoMode(Password)   # Şifre GİZLİ
+  → current_field.setText('')              # BOŞ, kullanıcı girsin
+  → Numpad hedefi → current_field          # Mevcut şifreye
+```
+
+### 5.4 Numpad Hedefleme (Focus Targeting) — Bozulmaması Gereken Mantık
+- **ChangePasswordWidget:** 3 input alanı var (`current_field`, `new_field`, `confirm_field`). `_connect_focus_tracking()` + `eventFilter()` ile her alana tıklandığında `self.numpad.set_target(obj)` çağrılır. Varsayılan şifre durumunda initial hedef `new_field`.
+- **BoardConfigWidget:** 2 input alanı var (`corporate_code_field`, `password_field`). Aynı `_connect_focus_tracking()` + `eventFilter()` mekanizması. Initial hedef `password_field`.
+- **LoginDialog:** 1 input alanı var (`password_field`). Numpad doğrudan bu alana yazıyor.
+- **KURAL:** `eventFilter` metodunda `event.type() == event.Type.FocusIn` kontrolü **ASLA KALDIRILMAMALI**. Bu mekanizma, kullanıcı fareyle farklı bir input'a tıkladığında Numpad'in otomatik olarak o alana geçmesini sağlar.
+
+### 5.5 `mebre` → `803580` Migration Kontrolü
+Aşağıdaki her yerde `if config_password == 'mebre': config_password = '803580'` satırı bulunmalı:
+1. `ChangePasswordWidget.init_ui()` — mevcut şifre gösterimi
+2. `ChangePasswordWidget.change_password()` — şifre doğrulama
+3. `BoardConfigWidget.fetch_boards()` — tahta listesi şifre kontrolü
+4. `validate_admin_password()` — login doğrulama
+5. `kiosk_show_board_config()` — `_pw == 'mebre'` kontrolü
+
+### 5.6 ASLA YAPILMAMASI GEREKENLER
+- ❌ `admin_password` fallback değerini `'803580'` dışında bir şeye değiştirmek
+- ❌ `current_field.setText('803580')` satırını değiştirmek veya silmek
+- ❌ `mebre` migration kontrollerini kaldırmak
+- ❌ Varsayılan şifre durumunda `current_field`'ı `readOnly(False)` yapmak
+- ❌ `eventFilter` focus tracking mantığını kaldırmak veya değiştirmek
+- ❌ Numpad `set_target()` çağrılarının sırasını değiştirmek
+- ❌ BoardConfigWidget'teki `corporate_code_field`'a `EchoMode.Password` eklemek
+
+---
+
 > Eğer kullanıcı (USER) *"Projeye uzun zaman sonra geri döndük, şu bug var"* vs. derse, LÜTFEN ASLA yukarıdaki kuralların (Focus-ZOrder, Obfuscation, C# İzole vb.) Dışına ÇIKACAK şekilde 'çevik ama riskli' (fragile) kod değişiklikleri YAPMA!

@@ -1036,6 +1036,7 @@ class LoginDialog(QDialog):
 
         # Embedded Numpad
         self.numpad = EmbeddedNumpad(on_enter_callback=self.attempt_login)
+        self.numpad.set_target(self.password_field)  # Numpad şifre alanına yazsın
         layout.addWidget(self.numpad)
 
         # Buttons
