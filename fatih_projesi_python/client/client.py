@@ -1426,7 +1426,7 @@ class ChangePasswordWidget(QWidget):
         
         # Mevcut şifre gösterimi mantığı (Okul şifreyi değiştirdiyse gizle)
         config_password = SETTINGS.get('admin_password', '803580')
-        if config_password == '803580':
+        if config_password in ['803580', 'mebre']:
             self.current_field.setEchoMode(QLineEdit.EchoMode.Normal)
             self.current_field.setText(config_password)
         else:
@@ -1539,7 +1539,7 @@ class ChangePasswordWidget(QWidget):
             logging.warning("[ChangePassword] Password too short")
             return
 
-        if new == 'mebre':
+        if new in ['803580', 'mebre']:
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Varsayılan şifre ile aynı olamaz!")
             logging.warning("[ChangePassword] Default password rejected")
@@ -4025,7 +4025,7 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_board_config(self, checked=False):
         """Show board configuration dialog"""
         # Şifre Zorunluluğu Kuralı:
-        if SETTINGS.get('admin_password', '803580') == '803580':
+        if SETTINGS.get('admin_password', '803580') in ['803580', 'mebre']:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Uyarı")
@@ -4780,7 +4780,7 @@ ________________________________________________________________________________
     def kiosk_show_board_config(self):
         """Kiosk modunda tahta yapılandırması göster"""
         # Şifre Zorunluluğu Kuralı:
-        if SETTINGS.get('admin_password', '803580') == '803580':
+        if SETTINGS.get('admin_password', '803580') in ['803580', 'mebre']:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Uyarı")
@@ -4878,7 +4878,7 @@ if __name__ == '__main__':
             try:
                 validate_config()
                 print("✅ Configuration loaded successfully")
-                print(f"Admin password: {SETTINGS.get('admin_password', 'mebre')}")
+                print(f"Admin password: {SETTINGS.get('admin_password', '803580')}")
             except Exception as e:
                 print(f"❌ Configuration error: {e}")
             sys.exit(0)

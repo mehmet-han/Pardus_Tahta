@@ -79,7 +79,7 @@ sudo reboot
 
 **After reboot:**
 1. Fatih lock screen appears immediately
-2. Enter admin password (default: `mebre`)
+2. Enter admin password (default: `803580`)
 3. GDM3 login appears with your 3 users (ogretmen, yetkili, ogrenci)
 4. Users can now log in normally
 
