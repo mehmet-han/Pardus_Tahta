@@ -1241,6 +1241,9 @@ class BoardConfigWidget(QWidget):
 
         # Şifre doğrulama - config'deki admin_password ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
+        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
+        if config_password == 'mebre':
+            config_password = '803580'
         if password != config_password:
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Şifre yanlış!")
@@ -1424,12 +1427,22 @@ class ChangePasswordWidget(QWidget):
         self.current_field.setMinimumHeight(35)
         self.current_field.setFont(QFont("Arial", 12))
         
-        # Mevcut şifre gösterimi mantığı (Okul şifreyi değiştirdiyse gizle)
+        # Mevcut şifre gösterimi mantığı
         config_password = SETTINGS.get('admin_password', '803580')
-        if config_password in ['803580', 'mebre']:
+        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
+        if config_password == 'mebre':
+            config_password = '803580'
+        
+        self._is_default_password = (config_password == '803580')
+        
+        if self._is_default_password:
+            # Varsayılan şifre: göster ve readOnly yap (kullanıcı değiştirmesin)
             self.current_field.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.current_field.setText(config_password)
+            self.current_field.setText('803580')
+            self.current_field.setReadOnly(True)
+            self.current_field.setStyleSheet("background-color: #e0e0e0; color: #333;")
         else:
+            # Özel şifre: gizle, kullanıcı girsin
             self.current_field.setEchoMode(QLineEdit.EchoMode.Password)
             self.current_field.setText('')
             
@@ -1462,8 +1475,12 @@ class ChangePasswordWidget(QWidget):
         # Embedded Numpad
         self.numpad = EmbeddedNumpad(on_enter_callback=self.change_password)
         layout.addWidget(self.numpad)
-        # İlk alan varsayılan hedef olsun
-        self.numpad.set_target(self.current_field)
+        # Varsayılan şifrede numpad doğrudan "Yeni Şifre" alanına yazsın
+        if self._is_default_password:
+            self.numpad.set_target(self.new_field)
+            QTimer.singleShot(100, self.new_field.setFocus)
+        else:
+            self.numpad.set_target(self.current_field)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -1521,6 +1538,9 @@ class ChangePasswordWidget(QWidget):
 
         # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
+        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
+        if config_password == 'mebre':
+            config_password = '803580'
         if current != config_password:
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Mevcut şifre yanlış!")
@@ -1539,7 +1559,7 @@ class ChangePasswordWidget(QWidget):
             logging.warning("[ChangePassword] Password too short")
             return
 
-        if new in ['803580', 'mebre']:
+        if new == '803580':
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Varsayılan şifre ile aynı olamaz!")
             logging.warning("[ChangePassword] Default password rejected")
@@ -3744,6 +3764,9 @@ class FatihClientApp(QWidget):
         """
         # Önce config'deki admin şifresi ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
+        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
+        if config_password == 'mebre':
+            config_password = '803580'
         if password == config_password:
             logging.info("Password validated via config admin_password")
             return True
@@ -4025,7 +4048,8 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_board_config(self, checked=False):
         """Show board configuration dialog"""
         # Şifre Zorunluluğu Kuralı:
-        if SETTINGS.get('admin_password', '803580') in ['803580', 'mebre']:
+        _pw = SETTINGS.get('admin_password', '803580')
+        if _pw == '803580' or _pw == 'mebre':
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Uyarı")
@@ -4780,7 +4804,8 @@ ________________________________________________________________________________
     def kiosk_show_board_config(self):
         """Kiosk modunda tahta yapılandırması göster"""
         # Şifre Zorunluluğu Kuralı:
-        if SETTINGS.get('admin_password', '803580') in ['803580', 'mebre']:
+        _pw = SETTINGS.get('admin_password', '803580')
+        if _pw == '803580' or _pw == 'mebre':
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Uyarı")
