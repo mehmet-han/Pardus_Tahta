@@ -15,7 +15,7 @@ Sistem okullara açık kaynak olarak dağıtıldığı için öğrencilerin ve y
 - **MITM Koruması:** Ağ bağlantılarında asla `verify=False` kullanılmaz. Sertifika doğrulaması (`verify=True`) her zaman şarttır.
 - **Config Güvenliği:** Oluşturulan `config.ini` dosyaları `chmod 600` Linux yetkilerini barındırmalıdır. `setup.sh` içinde hassas işlemler (örrn: şifre okumaları vs) komut satırı ve Bash komut geçmişine (history) iz bırakmamalıdır.
 - **Cython Compiled (.so):** Kurulum scriptleri (`setup.sh`, `install-unified.sh`) her zaman `client.py` dosyasını `Cython` paketleyicisi ile C-uzantısına (`client.so` veya `client.c`) derler. Okunabilir haldeki `client.py` dosyası kurulum hedefine atıldıktan sonra SİLİNMEK ZORUNDADIR. Python kodlarının çıplak kalması kesin yasaktır. Sistem, dışarıya şifrelenmiş `.so` modülünü güvenli bir biçimde import edebilmek adına sadece sığ bir `fatih.py` taşıyıcısı ile tetiklenir ve arkaplan kabukları (`launch.sh`, `fatih-manager.sh` vs.) direkt olarak bu dosyayı muhatap alır.
-
+- **Varsayılan Kurulum Şifresi & Eski Sistemlere Destek (Migration):** Sistemin varsayılan admin şifresi KESİNLİKLE `803580` olmalıdır (`mebre` vb. geçmiş isimler default olarak atanamaz). Ancak eski versiyondan kalma tahtalardaki yapılandırma (`config.ini`) uyumsuzluklarını önlemek adına `client.py` içerisindeki varsayılan şifre kural kontrollerinde `803580` ile beraber `mebre` ihtimali de KONTROL EDİLMELİDİR. Yeni kurulum (`setup.sh`) her zaman default şifreyi `803580` yazar.
 ---
 
 ## 🖥 2. ARAYÜZ (UI), ODAK YÖNETİMİ VE PENCERE MİMARİSİ
@@ -23,6 +23,8 @@ Pardus (Cinnamon/XFCE vb.) ortamlarında, kilit ekranı arka plana atılıp masa
 - **Asla QDialog.exec_() Yok:** Sistem LockScreen (kaldırılamaz, AlwaysOnTop, Frameless) yapısına dayalıdır. `QDialog.exec_()` kullanıldığında Cinnamon/X11 pencerelerin input/focus (odak) ayarlarını bozar ve kilit ekranı kaybolabilir (Segmentation fault/UI freezing tetiklenir).
 - **Qt.Tool Bayrağı (Flag):** Uyarı, Parola veya Yapılandırma ekranları (dialogs) daima Model/Tool `QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint` ile ana kilit ekranının (parent) üzerine render edilmelidir.
 - **Embedded Numpad:** Virtual OSK (On-Screen Keyboard) sistemin çökmesine neden olduğu için sanal klavyeler kaldırılmış olup, kullanıcıdan veri alma (şifre vb.) işlemleri tamamen formun kendisine gömülmüş (Embedded) Custom Numpad mekanizması ile gerçekleştirilmelidir.
+- **Odak (Focus) ve Numpad Hedeflemesi (Targeting):** Şifre değiştirme gibi çoklu input ekranlarında, Embedded Numpad'in doğru alana (`set_target`) odaklanması çok katı bir şekilde ayarlanmalıdır. Ayrıca `KeyboardLineEdit`'e fareyle tıklandığında `eventFilter` ile Numpad odağının otomatik güncellenmesine dikkat edilmelidir. "Mevcut şifre" alanında varsayılan şifre gösteriliyorsa Numpad otomatik olarak "Yeni Şifre" kutusuna hedeflenmelidir.
+- **Yanlış Maskeleme (EchoMode) Kuralı:** Arayüz güvenli olsa da, "Kurum Kodu" veya tahta isimleri ASLA `QLineEdit.EchoMode.Password` ile maskelenmemelidir. Şifre alanı dışındaki config değerleri görünür olmalıdır.
 
 ---
 
