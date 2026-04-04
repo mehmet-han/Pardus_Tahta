@@ -26,6 +26,7 @@ def create_release():
         "compile_client.py",
         "fatih-manager.sh",
         "install_from_github.sh",
+        "doktor.sh",
     ]
     
     # Directory to include
