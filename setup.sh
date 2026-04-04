@@ -169,7 +169,8 @@ fi
 
 # Düz metin Python kodunu sil (derlenmiş .so kullanılacak)
 rm -f "$INSTALL_DIR/client.py" 2>/dev/null
-rm -f fatih_projesi_python/client/client.py 2>/dev/null
+# USB üzerinden kurulum yaparken kaynak dosyayı silmeyin, aksi takdirde Faz2 ve Faz3 kurulumlarında cythonize hata verir!
+# rm -f fatih_projesi_python/client/client.py 2>/dev/null
 echo "✅ Kaynak Python kodu temizlendi (sadece derlenmiş .so mevcut)."
 
 # --- Pardus Kullanıcı Şifrelerini Kaldır ---

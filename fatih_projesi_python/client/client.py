@@ -3348,10 +3348,19 @@ class FatihClientApp(QWidget):
             if not hasattr(self, 'last_server_tahta_lock'):
                 self.last_server_tahta_lock = -6
                 
+            overlay_active = False
+            for child in self.children():
+                if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
+                    overlay_active = True
+                    break
+
             is_new_command = False
             if self.tahta_lock != self.last_server_tahta_lock and self.tahta_lock in (0, 1):
-                is_new_command = True
-                self.last_server_tahta_lock = self.tahta_lock
+                if overlay_active:
+                    logging.info("Sunucudan komut geldi ancak overlay (Şifre/Ayar ekranı) açık, erteleniyor.")
+                else:
+                    is_new_command = True
+                    self.last_server_tahta_lock = self.tahta_lock
 
             # C# BİREBİR DAVRANIŞI: Server yeni komut gönderirse onu uygula
             if is_new_command:
