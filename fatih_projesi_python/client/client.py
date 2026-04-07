@@ -1220,6 +1220,11 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("") # Mesajı temizle
         return super().eventFilter(obj, event)
 
+    def wheelEvent(self, event):
+        """Scroll event'leri BoardConfigWidget içinde tut.
+        Listenin sonunda/başında wheel event parent'a sızmasını engelle."""
+        event.accept()
+
     def close_widget(self, *args, **kwargs):
         if self.close_callback:
             self.close_callback()
@@ -1714,6 +1719,12 @@ class LockScreenOverlay(QFrame):
             self.close_overlay()
         else:
             super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        """Scroll event'leri overlay içinde tut, parent kilit ekranına sızdırma.
+        QListWidget listenin sonuna/başına geldiğinde event'i parent'a sızdırabilir,
+        bu da kilit ekranının tetiklenmesine veya focus kaybına yol açar."""
+        event.accept()
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
 class ScheduleDialog(QDialog):
@@ -3190,6 +3201,13 @@ class FatihClientApp(QWidget):
         # --- Çıkış saati bazlı kilitleme (öncelikli) ---
         # C# timer1Thread: çıkış saati geldiğinde USB yoksa kilitle
         if exit_time_triggered and not self.is_locked:
+            # Overlay açıkken (kullanıcı Yapılandırma/Şifre Değiştir ekranında)
+            # lock_system() çağırmak X11'de focus çakışması ve donma yaratır.
+            # Kilitlemeyi bir sonraki timer tick'e (20sn) ertele.
+            for child in self.children():
+                if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
+                    logging.info("Çıkış saati kilitleme ertelendi: overlay aktif")
+                    return
             if check_usb_password():
                 logging.info("Exit time says lock, but USB is present. Skipping lock.")
             else:
@@ -3388,7 +3406,17 @@ class FatihClientApp(QWidget):
                     self.message_label.setText("")
             if self.shutDown == 1:
                 logging.info("Shutdown command received from server (mobile app)")
-                self.acknowledge_command("shutdown", "0")
+                # KRİTİK: ACK'i SENKRON yap — daemon thread kapatılmadan önce
+                # sunucunun shutdown=0 öğrenmesini garanti et.
+                # Aksi halde sunucu hâlâ shutdown=1 tutar → sonsuz reboot döngüsü!
+                try:
+                    ack_ok = self.network_client.set_value("shutdown", "0")
+                    if ack_ok:
+                        logging.info("Shutdown ACK başarıyla gönderildi (senkron)")
+                    else:
+                        logging.warning("Shutdown ACK başarısız — yine de kapatılıyor")
+                except Exception as ack_err:
+                    logging.error(f"Shutdown ACK hatası: {ack_err}")
                 self.save_log("Sunucudan kapatma komutu alındı", "system")
                 # Birden fazla kapatma yöntemi dene
                 import subprocess
@@ -3489,6 +3517,13 @@ class FatihClientApp(QWidget):
 
     def _force_on_top(self):
         """Cinnamon'da kilit ekranını taskbar'ın üstüne zorla al"""
+        # Overlay (Yapılandırma/Şifre Değiştir ekranı) açıkken
+        # raise_/activateWindow/xdotool çağırmak X11 focus kaybına ve
+        # QListWidget scroll donmasına yol açar — bu durumda atla!
+        for child in self.children():
+            if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
+                logging.debug("_force_on_top atlandı: overlay aktif")
+                return
         try:
             self.raise_()
             self.activateWindow()
@@ -3607,7 +3642,11 @@ class FatihClientApp(QWidget):
 
     def remove_system(self):
         logging.info("SYSTEM REMOVE command received. Uninstalling...")
-        self.acknowledge_command("system_Remove", "0")
+        # KRİTİK: ACK'i SENKRON yap — dosyalar silinmeden önce sunucu bilgilendirilmeli
+        try:
+            self.network_client.set_value("system_Remove", "0")
+        except Exception as ack_err:
+            logging.error(f"Remove ACK hatası: {ack_err}")
         os.system("rm -f /etc/xdg/autostart/fatih-client-autostart.desktop")
         os.system("rm -rf /opt/fatih-client")
         os.system("rm -f /etc/fatih-client/config.ini")
