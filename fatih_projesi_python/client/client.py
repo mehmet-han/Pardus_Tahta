@@ -26,7 +26,8 @@ NO_LOCK_MODE = '--no-lock' in sys.argv
 if NO_LOCK_MODE:
     print("[NO-LOCK] Development mode - locking disabled")
 
-# Disable SSL warnings since we're using verify=False for testing
+# v6: tum sunucu istekleri verify=True ile yapilir (MITM korumasi, project_rules §8).
+# Asagidaki satir artik no-op (guvensiz istek yok) ama zararsiz; birakildi.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Autostart dosya içeriği (watchdog ve client ortak kullanır) ---
