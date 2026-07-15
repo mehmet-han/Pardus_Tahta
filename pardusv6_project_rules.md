@@ -299,6 +299,9 @@ uygulama kodunu bozmaz, optimizer serbest seçer.
 - Depo: `C:\Github\Fatih_Client_CSharp`.
 - Faz 1'de tanımlanan **aynı** cihaz sözleşmesi kullanılır (yeni endpoint tasarlanmaz).
 - Windows tahtalar da v4'ten kurtarılır.
+- 📋 **Tık-tık kontrol listesi:** `faz3_csharp_gecis_playbook.md` — C# dosya/metod envanteri
+  (`ClassClient.cs`, `ClassVariable.cs`), her metodun v5 endpoint karşılığı, token yaşam döngüsü
+  (Registry+DPAPI), ve atlanmaması gereken kurallar. Faz 3'e gelince o dosya açılıp method-method ilerlenir.
 
 ### Faz 4 — Güvenlik Sertleştirmesi
 - Her tahtaya özel **cihaz token'ı** + provisioning akışı (paylaşılan tek `wb_pass` kalkar).

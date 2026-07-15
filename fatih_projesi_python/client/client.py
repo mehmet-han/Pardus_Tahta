@@ -1232,6 +1232,13 @@ class BoardConfigWidget(QWidget):
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
         self.status_label.setText("")
+        # --- Secenek A (v6): tahta tanitma/listeleme artik CLIENT'tan degil, provisioning
+        # araci (provision_board.py) ile yapilir. Istemci enroll sirrini tasimaz; bu yuzden
+        # buradan sunucu tahta listesi CEKILMEZ. Asagidaki eski kod olu (v5 /schedule token ister).
+        self.status_label.setStyleSheet("color: #ffaa00;")
+        self.status_label.setText("Tahta tanıtımı 'provision_board.py' kurulum aracıyla yapılır.")
+        return
+
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
             self.status_label.setStyleSheet("color: #ff5555;")
@@ -2100,207 +2107,157 @@ class NetworkClient:
     def __init__(self, settings):
         self.settings = settings
 
-    def _get_headers(self, core_code: str) -> dict:
-        """Generates the required headers for an API request."""
-        def cFnc_original(code_str: str) -> str:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            s = f"{code_str}?{timestamp}"
-            replacements = {
-                "0":"!g", "1":"gt", "2":"_a", "3":"me", "4":"?b", 
-                "5":"_z", "6":"fi", "7":"+d", "8":"da", "9":"|k",
-                " ":"kz", ".":"?u", ":":"wa"
-            }
-            for old, new in replacements.items(): 
-                s = s.replace(old, new)
-            return s
-            
+    def _base_url(self):
+        """v5 cihaz taban URL'i (XOR gizli, project_rules §1). Endpoint basina yol eklenir."""
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        u = _dx("1815061406491d1f53464806545c09101140551c554e1d4f06165a105e595758555f00190d191f5b6f46574904002d071c1b534a")
+        _k = _dx = None
+        return u
+
+    def _headers(self):
+        """v6 cihaz auth: Bearer cihaz token'i (config'te ENC'li device_token) + X-Timestamp (replay).
+        v4'teki Basic + User-Key + UserCore(fnc) semasi KALDIRILDI (pardusv6_project_rules §5)."""
         _k = "pardus2026!"
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         _agt = _dx("1106170a012c615d534455320e131611")
-        
+        token = get_setting('device_token', '') or None
         headers = {
-            "User-Agent": _agt, 
-            "User-Key": generate_user_key(), 
-            "UserCore": cFnc_original(core_code)
+            "User-Agent": _agt,
+            "X-Timestamp": str(int(time.time())),
         }
-        
-        _k = _dx = _agt = None
-        logging.debug(f"Request headers: {headers}")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        _k = _dx = _agt = token = None
         return headers
 
-    def _make_request(self, core_code: str, data: dict, timeout: int = 100):
-        """Makes a POST request to the server. Timeout 100s matches C# WebClient default."""
+    def _make_request(self, endpoint: str, data: dict = None, method: str = "POST", timeout: int = 100):
+        """v5 cihaz endpoint'ine JSON istek. endpoint: poll|ack|schedule|log|log_reset|version."""
         if not self.check_network():
             logging.warning("Network is unavailable. Aborting request.")
             return None
-        
-        headers = self._get_headers(core_code)
-        
-        _k = "pardus2026!"
-        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
-        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
-        _usr = _dx("1802002f112c40")
-        _pwd = _dx("32503f114a24587713714046")
 
+        headers = self._headers()
+        if "Authorization" not in headers:
+            logging.error("Cihaz token'i yok (config'te device_token tanimli degil) — enrollment gerekli.")
+            return None
+
+        _url = self._base_url() + "/" + endpoint
         try:
-            response = requests.post(
-                _url, 
-                headers=headers, 
-                data=data,
-                auth=(_usr, _pwd), 
-                timeout=timeout,
-                verify=True
-            )
-            _url = _usr = _pwd = _k = _dx = None
-            
+            if method == "GET":
+                response = requests.get(_url, headers=headers, timeout=timeout, verify=True)
+            else:
+                response = requests.post(_url, headers=headers, json=(data or {}), timeout=timeout, verify=True)
+            _url = None
+
             if response.status_code != 200:
-                logging.error(f"API Error: {response.status_code} with data {data}.")
+                logging.error(f"API Error: {response.status_code} @ {endpoint}")
                 return None
             return response
         except requests.exceptions.SSLError as e:
-            _url = _usr = _pwd = _k = _dx = None
+            _url = None
             logging.error(f"SSL Error during network request: {e}. MITM Protection active.")
             return None
         except requests.RequestException as e:
-            _url = _usr = _pwd = _k = _dx = None
-            logging.error(f"Network request failed: {e}")
+            _url = None
+            logging.error(f"Network request failed @ {endpoint}: {e}")
             return None
 
+    def _result(self, response):
+        """v5 zarfi {status, desc, httpStatus, result} -> result doner; status false/parse hatasi -> None."""
+        if not response:
+            return None
+        try:
+            body = response.json()
+        except ValueError:
+            logging.error(f"JSON decode failed: {response.text[:200]}")
+            return None
+        if body.get("status") is not True:
+            logging.error(f"API status false: {body.get('desc')}")
+            return None
+        return body.get("result")
+
     def check_network(self):
-        """Check if network is available. Made specifically for Fatih internet."""
+        """Ag var mi? v5 kok host'una (apiv5) bakar. Host XOR'lu; plaintext host YOK (§5.1)."""
         _k = "pardus2026!"
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
-        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
+        _url = _dx("1815061406491d1f53464806545c09101140551c554e1d4f0616")
 
         try:
             import requests
-            response = requests.get(_url, timeout=3, verify=True)
+            requests.get(_url, timeout=3, verify=True)
             _url = _k = _dx = None
             return True
         except requests.exceptions.RequestException:
-            _url = _k = _dx = None
             import socket
+            from urllib.parse import urlparse
+            _host = urlparse(_url).hostname
+            _url = _k = _dx = None
             try:
-                from urllib.parse import urlparse
-                socket.create_connection(("api.mebre.com.tr", 443), timeout=3)
+                socket.create_connection((_host, 443), timeout=3)
                 return True
             except OSError:
                 return False
 
     def ctrl_post(self):
-        """
-        Fetches control commands from the server.
-        Equivalent to C# CtrlPost().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "t_na": self.settings.get('board_name', 'Pardus Board')
-        }
-        response = self._make_request("5567", data)
-        return response.text if response else None
+        """Yoklama (v5 /poll). Kimlik token'dan gelir; govde bos.
+        process_commands ile uyum icin LISTE doner: [openClose, message, shutdown, systemRemove, logIstek]
+        (hepsi str; mesaj bos ise '0' = v4 default davranisi). Kayit yoksa v5 fail-safe KILITLI doner."""
+        result = self._result(self._make_request("poll", {}))
+        if result is None:
+            return None
+        msg = result.get("message", "")
+        return [
+            str(result.get("openClose", 1)),
+            msg if msg else "0",
+            str(result.get("shutdown", 0)),
+            str(result.get("systemRemove", 0)),
+            str(result.get("logIstek", 0)),
+        ]
 
     def set_value(self, column, value):
-        """
-        Updates a specific value on the server.
-        Equivalent to C# SetValue().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'), 
-            "t_n": self.settings.get('board_id'), 
-            "fnc": "3480", 
-            "c_l": column, 
-            "value": value
-        }
-        response = self._make_request("5566", data)
-        if response:
+        """Komut ACK'i (v5 /ack). Kolon whitelist: open_close/shutdown/system_Remove/log_istek/message."""
+        result = self._result(self._make_request("ack", {"column": column, "value": str(value)}))
+        if result is not None:
             logging.info(f"Acknowledged command: set {column}={value}")
-        return response is not None
+            return True
+        return False
 
     def save_log(self, log_name, vog_name):
-        """
-        Sends a log entry to the server.
-        Equivalent to C# LogSave().
-        """
+        """Hata/olay logu (v5 /log)."""
         if vog_name == "logistek":
             self.log_request()
 
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "log": f"{self.settings.get('version')}-{self.settings.get('sub_version')}:{log_name}",
-            "vog": vog_name
-        }
-        response = self._make_request("5571", data)
-        if response:
+        log_str = f"{self.settings.get('version')}-{self.settings.get('sub_version')}:{log_name}"
+        result = self._result(self._make_request("log", {"logName": log_str, "vog": vog_name}))
+        if result is not None:
             logging.info(f"Log saved: {vog_name} - {log_name}")
-        return response is not None
+            return True
+        return False
 
     def log_request(self):
-        """
-        Sends a special log request.
-        Equivalent to C# logRequest().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id')
-        }
-        response = self._make_request("5574", data)
-        if response:
+        """log_istek bayragini sifirla (v5 /log_reset)."""
+        result = self._result(self._make_request("log_reset", {}))
+        if result is not None:
             logging.info("Log request sent successfully.")
-        return response is not None
+            return True
+        return False
 
     def get_values(self):
-        """
-        Retrieves board configurations/schedules.
-        Equivalent to C# GetValues().
-        C# kodu t_n göndermez - sunucu tüm tahtaları döndürür.
-        Filtreleme client-side yapılır (tg flag'ine göre).
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480"
-        }
-        response = self._make_request("5563", data)
-        if response:
-            try:
-                return response.json()
-            except ValueError:
-                logging.error(f"Failed to decode JSON from GetValues: {response.text}")
-                return None
-        return None
-
-    def get_inspc(self, st, gn):
-        """
-        Gets inspection data.
-        Equivalent to C# GetInspc().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "s_t": str(st),
-            "g_n": str(gn)
-        }
-        response = self._make_request("5573", data)
-        return response.text if response else ""
+        """Calisma saatleri (v5 /schedule). result.schedule (parse edilmis JSON) doner.
+        NOT: kurulumdaki tahta LISTELEME artik buradan gelmez (Secenek A); onu provisioning araci yapar."""
+        result = self._result(self._make_request("schedule", {}))
+        if result is None:
+            return None
+        return result.get("schedule")
 
     def check_version(self):
-        """
-        Checks for a new client version.
-        Equivalent to C# vck().
-        """
+        """Guncel istemci surumu (v5 GET /version)."""
         current_version = self.settings.get('version')
-        data = {"fnc": "3480"}
-        response = self._make_request("5570", data)
-        if response and response.text:
-            nw = response.text.strip()
-            # C# logic: if Nw != "" && Nw != null && Nw.Length < 6 && Nw != ClassVariable.Vercion
-            if len(nw) < 6:
+        result = self._result(self._make_request("version", method="GET"))
+        if result:
+            nw = str(result.get("version", "")).strip()
+            if nw and len(nw) < 6:
                 return nw
         return current_version
 
@@ -3256,37 +3213,13 @@ class FatihClientApp(QWidget):
         except Exception as e:
             logging.error(f"Error in USB status check: {e}")
         
-    def _get_headers(self, core_code: str) -> dict:
-        def cFnc_original(code_str: str) -> str:
-            """
-            A direct Python port of the original C# cFnc function.
-            It includes the problematic '?' and a formatted timestamp.
-            """
-            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            s = f"{code_str}?{timestamp}"
-            
-            # the original replacement map.
-            replacements = {
-                "0":"!g", "1":"gt", "2":"_a", "3":"me", "4":"?b", 
-                "5":"_z", "6":"fi", "7":"+d", "8":"da", "9":"|k",
-                " ":"kz", ".":"?u", ":":"wa"
-            }
-            for old, new in replacements.items(): 
-                s = s.replace(old, new)
-            return s
-            
-        headers = {
-            "User-Agent": get_setting('user_agent'), 
-            "User-Key": generate_user_key(), 
-            "UserCore": cFnc_original(core_code)
-        }
-        logging.debug(f"Sending request with ORIGINAL headers: {headers}")
-        return headers
+    # NOT: Eski v4-tarzi _get_headers (User-Key/UserCore/cFnc) KALDIRILDI — kullanilmiyordu.
+    # v6 runtime'inin tum sunucu iletisimi NetworkClient uzerinden v5'e (Bearer + X-Timestamp) gider.
 
     def poll_server(self):
         def _poll_task():
-            response_text = self.network_client.ctrl_post()
-            if response_text is not None:
+            commands = self.network_client.ctrl_post()
+            if commands is not None:
                 logging.info("Successfully polled server.")
                 self.network_status_signal.emit(True)
                 
@@ -3301,7 +3234,7 @@ class FatihClientApp(QWidget):
                         logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
                         return
                 
-                commands = response_text.split(',')
+                # ctrl_post artik liste donuyor (v5 JSON'dan); split gerekmiyor.
                 # Safely emit to main thread instead of lambda QTimer which gets garbage collected
                 self.command_signal.emit(commands)
             else:
@@ -4441,9 +4374,8 @@ class FatihKioskMode(QMainWindow):
         tahta_lock=0 → unlock, shutDown=1 → shutdown
         """
         try:
-            response_text = self.network_client.ctrl_post()
-            if response_text:
-                commands = response_text.split(',')
+            commands = self.network_client.ctrl_post()
+            if commands:
                 if len(commands) >= 5:
                     tahta_lock = int(commands[0])
                     shut_down = int(commands[2])
