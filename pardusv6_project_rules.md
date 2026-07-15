@@ -392,6 +392,47 @@ Okul bazlı tahta listesi eklenirken ortaya çıktı — ikisi de **yanlış bil
 
 ---
 
+## 5D. OTURUM DURUMU — 14/15 Temmuz 2026 (KALINAN YER)
+
+### Bugün TAMAMLANANLAR ✅
+1. **v6 iskeleti:** `v1.00.93` tag'i, `v6` branch + `C:\Github\Pardus_Tahta_v6` worktree, bu kurallar dosyası.
+2. **`.gitignore` düzeltmesi** hem `v6` hem `main`'de (UTF-16 `*.zip` → "her şeyi yoksay" hatasıydı).
+3. **DB bakımı (prod, dev'den sonra):** `smart_boadr_logs` tarih indeksi + MyISAM→InnoDB (rapor 7,7s→0,30s),
+   gereksiz indeks silindi, `smart_board_post`'a `UNIQUE(kurum_kodu, t_id)`, `tahta_istatistik_gunluk`
+   özet tablosu (615 gün geçmiş).
+4. **ynt5 Akıllı Tahta ekranı** (canlıda, commit `cd632aa`): master-detail (solda 18 okul `t_aktif=1`,
+   sağda tahtalar), Kilit+Elektrik ayrı sütunlar, `GET /smartboards/schools` + `/school/:kk` +
+   `/school/commands`. 3 sessiz hata düzeltildi (komut yanlış no'ya gidiyordu, "Durum yok" yerine "Aktif",
+   Dashboard'da yanlış "dev" etiketi).
+
+### YARIN DEVAM EDİLECEKLER (öncelik sırasıyla)
+1. **🔴 Eski `ynt.mebre.com.tr` (v4 PHP paneli) kapatma kararı.** Giriş loglarında gece boyu bot taraması
+   görüldü (AWS IP'leri `login.php`'ye vuruyor, KULLANICI sütunu boş = giriş YOK, sadece bot gürültüsü).
+   ynt5'e geçildiyse eski panel kapatılmalı/IP-whitelist'e alınmalı. **ÖNCE** v4'ün başka neyinin ona
+   bağlı olduğu kontrol edilmeli — körlemesine kapatma. Kullanıcıya soruldu: "eski ynt hâlâ kullanılıyor mu?"
+   → cevap bekliyor.
+2. **Tahta çalışma-saati mantığını netleştir.** Kullanıcı "saatleri tetikleyen cron var" sanıyordu ama:
+   `workAll.php` = lisans+IP işi (tahtaya dokunmaz), tahta saatleri aslında **client-side** (tahta
+   `get_values`/5563 ile çalışma saatlerini çeker, `_saat.php`'den saati alır, KENDİ açılıp kapanır).
+   İstenirse `client.py`'deki çalışma-saati mantığı birlikte gözden geçirilecek.
+3. **Faz 1'e başla:** v5'e cihaz endpoint modülü (`akilliTahtaCihaz`): 5567/5566/5563/5571/5574/5570 +
+   heartbeat (`son_gorulme`) + `5566` kolon whitelist + atomik upsert (UNIQUE hazır).
+
+### Cron durumu (kontrol edildi, HEPSİ SAĞLAM)
+Sunucu `mebrecomtr` kullanıcısı crontab'ında: `workAll.php` (gece 8×, lisans+IP), `tableOnarim.php`
+(00:03, TÜM tabloları `REPAIR` — InnoDB'ye çevirdiğimiz tabloyu zararsızca atlar; MyISAM bozulma
+workaround'uydu, artık o tablo için gereksiz), `cronBackupCtrl.php` (yedek). **Hiçbiri bugünkü DB
+değişikliklerinden etkilenmedi.** Cron scriptleri REPODA YOK (`/home/mebrecomtr/public_html/api/crons/`) —
+canlıda repoda olmayan v4 kodu var (ayrı teknik borç).
+
+### Önemli mimari hatırlatma
+- Cihaz tarafı (`s_brt.php` 5567 vb.) HÂLÂ v4'te. Loglarda `/v4/s_brt.php` görmek DOĞRU. `securtyphp_logs`'a
+  sadece `v4/security.php` yazar; ynt5 sadece okur. Loglar Faz 1'de v5'e geçince node'a taşınır.
+- ynt5 yerel geliştirme: MySQL kullanıcı IP whitelist gerektiriyor (yerelden dev DB'ye bağlanılamadı,
+  `176.216.9.169` reddedildi). Test SQL'leri phpMyAdmin'den yapıldı.
+
+---
+
 ## 6. Tespit Edilen Hatalar ve Teknik Borç
 
 ### 6.1 Güvenlik — v5'e taşırken MUTLAKA düzeltilecek
