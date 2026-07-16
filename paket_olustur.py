@@ -105,6 +105,12 @@ def create_release():
     
     with zipfile.ZipFile(release_name, 'r') as zf:
         for name in zf.namelist():
+            # v6: enroll sırrı ASLA pakete girmez. Paket WhatsApp/GitHub üzerinden dolaşıyor;
+            # secret.txt yalnızca kurulum USB'sinde, setup.sh'ın yanında durur.
+            if os.path.basename(name).lower() == 'secret.txt':
+                print(f"  ❌ ENROLL SIRRI PAKETTE: {name} — bu paket DAĞITILMAMALI!")
+                issues_found = True
+
             # Check for C# files
             if name.endswith('.cs') or name.endswith('.csproj') or name.endswith('.sln'):
                 print(f"  ❌ C# DOSYASI TESPİT EDİLDİ: {name}")

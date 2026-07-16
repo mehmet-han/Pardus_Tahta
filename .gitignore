@@ -14,6 +14,10 @@ pyarmor.error.log
 # Environment variables
 .env
 
+# v6 enroll sırrı — kurulum medyasında (USB) durur; depoya veya pakete ASLA girmez.
+secret.txt
+**/secret.txt
+
 # Visual Studio / C# (reference code - kept separately)
 [Bb]in/
 [Oo]bj/

@@ -1233,12 +1233,6 @@ class BoardConfigWidget(QWidget):
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
         self.status_label.setText("")
-        # --- Secenek A (v6): tahta tanitma/listeleme artik CLIENT'tan degil, provisioning
-        # araci (provision_board.py) ile yapilir. Istemci enroll sirrini tasimaz; bu yuzden
-        # buradan sunucu tahta listesi CEKILMEZ. Asagidaki eski kod olu (v5 /schedule token ister).
-        self.status_label.setStyleSheet("color: #ffaa00;")
-        self.status_label.setText("Tahta tanıtımı 'provision_board.py' kurulum aracıyla yapılır.")
-        return
 
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
@@ -1279,38 +1273,38 @@ class BoardConfigWidget(QWidget):
         self.status_label.setText("Sunucuya bağlanılıyor, lütfen bekleyin...")
         QApplication.processEvents() # UI'ı güncelle
 
-        # Temporarily update the network client's settings for this request
-        original_code = self.network_client.settings.get('corporate_code')
-        self.network_client.settings['corporate_code'] = corporate_code
-        
+        # v6: liste kurulum-ani /boards'tan gelir (X-Enroll-Secret). Cihaz token'i henuz yok.
         try:
-            items = self.network_client.get_values()
-            # Restore original corporate code after request
-            self.network_client.settings['corporate_code'] = original_code
+            items = self.network_client.list_boards(corporate_code)
 
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
                     self.board_list_widget.clear()
                     for board in items:
-                        board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
-                        item.setData(Qt.UserRole, board.get("id"))
+                        board_id = board.get("boardId", "N/A")
+                        board_name = board.get("name") or f"Tahta {board_id}"
+                        pasif = "" if board.get("aktif", 1) else " (pasif)"
+                        item = QListWidgetItem(f"{board_id} - {board_name}{pasif}")
+                        item.setData(Qt.UserRole, board_id)
                         self.board_list_widget.addItem(item)
-                    
+
                     self.board_list_widget.setCurrentRow(0)
-                    
+
                     self.status_label.setStyleSheet("color: #55ff55;")
                     self.status_label.setText(f"Başarılı! {len(items)} tahta bulundu. Lütfen sağdan seçin.")
                 else:
                     self.status_label.setStyleSheet("color: #ffaa00;")
                     self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
+            elif not get_setting('enroll_secret', ''):
+                # Sik yapilan saha hatasi: kurulum medyasinda secret.txt yoktu.
+                self.status_label.setStyleSheet("color: #ff5555;")
+                self.status_label.setText("Hata: Kurulum sırrı yok. Tahta yeniden kurulmalı.")
             else:
                 self.status_label.setStyleSheet("color: #ff5555;")
                 self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
         except Exception as e:
-            # Restore original code in case of error
-            self.network_client.settings['corporate_code'] = original_code
+            logging.error(f"[BoardConfig] fetch_boards failed: {e}")
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Ağ hatası oluştu.")
 
@@ -1329,19 +1323,38 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Listeden bir tahta seçiniz!")
             return
 
-        # Update configuration
-        config = configparser.ConfigParser()
-        config.read(CONFIG_PATH)
-        config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
-        config.set('settings', 'board_id', str(selected_board_id))
-
         # Find board name
         board_name = "Pardus Tahta"
         for board in self.boards:
-            if board.get("id") == selected_board_id:
-                board_name = board.get("Name", f"Tahta {selected_board_id}")
+            if board.get("boardId") == selected_board_id:
+                board_name = board.get("name") or f"Tahta {selected_board_id}"
                 break
+
+        corporate_code = self.corporate_code_field.text().strip()
+
+        # v6: tahta secildi -> cihaz token'i uret (/enroll). Token OLMADAN config yazMA;
+        # yarim yazilirsa tahta kimliksiz kalir ve fail-safe ile kilitli acilir (sebebi de gorunmez).
+        self.status_label.setStyleSheet("color: #00aaff;")
+        self.status_label.setText("Tahta tanıtılıyor, lütfen bekleyin...")
+        QApplication.processEvents()
+
+        device_token = self.network_client.enroll(corporate_code, selected_board_id, board_name)
+        if not device_token:
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Tahta tanıtılamadı! Ayarlar kaydedilmedi.")
+            return
+
+        token_enc = 'ENC:' + _b64.b64encode(device_token.encode('utf-8')).decode('ascii')
+        device_token = None  # zero-footprint: token'i RAM'de tutma, config'ten okunacak
+
+        # Update configuration
+        config = configparser.ConfigParser()
+        config.read(CONFIG_PATH)
+        config.set('settings', 'corporate_code', corporate_code)
+        config.set('settings', 'board_id', str(selected_board_id))
         config.set('settings', 'board_name', board_name)
+        config.set('settings', 'device_token', token_enc)
+        config.remove_option('settings', 'enroll_secret')
 
         try:
             with open(CONFIG_PATH, 'w') as configfile:
@@ -1354,9 +1367,11 @@ class BoardConfigWidget(QWidget):
                 sys_config.read(system_config_path)
                 if 'settings' not in sys_config:
                     sys_config.add_section('settings')
-                sys_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                sys_config.set('settings', 'corporate_code', corporate_code)
                 sys_config.set('settings', 'board_id', str(selected_board_id))
                 sys_config.set('settings', 'board_name', board_name)
+                sys_config.set('settings', 'device_token', token_enc)
+                sys_config.remove_option('settings', 'enroll_secret')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
                 logging.info(f"System-wide config updated at {system_config_path}")
@@ -1371,9 +1386,11 @@ class BoardConfigWidget(QWidget):
                 os.makedirs(kiosk_dir, exist_ok=True)
                 kiosk_config = configparser.ConfigParser()
                 kiosk_config.read(system_config_path)  # Sistem config'ini baz al
-                kiosk_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                kiosk_config.set('settings', 'corporate_code', corporate_code)
                 kiosk_config.set('settings', 'board_id', str(selected_board_id))
                 kiosk_config.set('settings', 'board_name', board_name)
+                kiosk_config.set('settings', 'device_token', token_enc)
+                kiosk_config.remove_option('settings', 'enroll_secret')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
                 logging.info(f"Kiosk user config updated at {kiosk_config_path}")
@@ -1381,9 +1398,16 @@ class BoardConfigWidget(QWidget):
                 logging.warning(f"Could not update kiosk user config: {e}")
 
             # Update current SETTINGS in memory
-            SETTINGS['corporate_code'] = self.corporate_code_field.text().strip()
+            SETTINGS['corporate_code'] = corporate_code
             SETTINGS['board_id'] = str(selected_board_id)
             SETTINGS['board_name'] = board_name
+            # Token hemen devreye girsin (yeniden baslatma beklemeden poll calissin).
+            SETTINGS['device_token'] = token_enc
+            # Sir gorevini tamamladi: bellekten de dusur (artik cihaza ozel token var).
+            try:
+                del SETTINGS['enroll_secret']
+            except KeyError:
+                pass
 
             # Update board ID display on main window
             if hasattr(self.parent, 'update_board_id_display'):
@@ -2163,6 +2187,62 @@ class NetworkClient:
             _url = None
             logging.error(f"Network request failed @ {endpoint}: {e}")
             return None
+
+    def _enroll_request(self, endpoint: str, data: dict, timeout: int = 60):
+        """Kurulum-ani istek: cihaz token'i HENUZ YOK, X-Enroll-Secret ile kimlik dogrulanir.
+        Sir config'e setup.sh tarafindan ENC'li yazilir (kurulum medyasindaki secret.txt'ten) ve
+        enroll basarili olur olmaz silinir (bkz. BoardConfig._strip_enroll_secret)."""
+        secret = get_setting('enroll_secret', '')
+        if not secret:
+            logging.error("enroll_secret config'te yok — kurulum medyasinda secret.txt eksik olabilir.")
+            return None
+
+        if not self.check_network():
+            logging.warning("Network is unavailable. Aborting enroll request.")
+            return None
+
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        _agt = _dx("1106170a012c615d534455320e131611")
+        headers = {
+            "User-Agent": _agt,
+            "X-Enroll-Secret": secret,
+            "X-Timestamp": str(int(time.time())),
+        }
+        _url = self._base_url() + "/" + endpoint
+        try:
+            response = requests.post(_url, headers=headers, json=data, timeout=timeout, verify=True)
+            if response.status_code != 200:
+                logging.error(f"Enroll API Error: {response.status_code} @ {endpoint}")
+                return None
+            return response
+        except requests.exceptions.SSLError as e:
+            logging.error(f"SSL Error during enroll request: {e}. MITM Protection active.")
+            return None
+        except requests.RequestException as e:
+            logging.error(f"Enroll request failed @ {endpoint}: {e}")
+            return None
+        finally:
+            # Sirri RAM'den dusur (§5 zero-footprint).
+            secret = headers = _k = _dx = _agt = _url = None
+
+    def list_boards(self, corporate_code):
+        """Kurulumda kurumun tahta listesi (v5 /boards, X-Enroll-Secret). [{boardId, name, aktif}] doner."""
+        result = self._result(self._enroll_request("boards", {"corporateCode": str(corporate_code)}))
+        if result is None:
+            return None
+        return result.get("boards")
+
+    def enroll(self, corporate_code, board_id, board_name):
+        """Cihaz token'i uret (v5 /enroll, X-Enroll-Secret). Token YALNIZCA bir kez doner."""
+        result = self._result(self._enroll_request("enroll", {
+            "corporateCode": str(corporate_code),
+            "boardId": int(board_id),
+            "boardName": board_name,
+        }))
+        if result is None:
+            return None
+        return result.get("token") or None
 
     def _result(self, response):
         """v5 zarfi {status, desc, httpStatus, result} -> result doner; status false/parse hatasi -> None."""
