@@ -8,6 +8,8 @@ import configparser
 import logging
 import random
 import shutil
+import hmac
+import struct
 import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
@@ -373,6 +375,106 @@ def validate_dynamic_password(entered_password: str) -> bool:
         except:
             pass
         return False
+
+# ============================================================================
+# v6 Çevrimdışı (internetsiz) şifre — tahta-özel TOTP
+# ----------------------------------------------------------------------------
+# Eski `Y·d·m·85` formülü öğrenciler tarafından çözülmüştü (tek bilinmeyen dakika, tahta-özel sır YOK).
+# v6: her tahtanın device_token'ından türetilen özel sır + zaman-tabanlı OTP (RFC 4226/6238).
+#
+# ⚠️ DETERMİNİZM: Bu blok, SUNUCU üretimiyle (v5 helpers/offlineOtp.js) BİREBİR aynı 6 haneyi
+#    üretmek zorunda. Sabitler (LABEL, adım=60sn, HMAC-SHA256, kırpma, mod 10^6, sıfır-doldurma)
+#    tek taraflı değiştirilemez. Test vektörü (v5 ile ortak):
+#    token=a1b2...ff00 → H=83418260... → unix=1800000000 → şifre="637221".
+# ============================================================================
+_OTP_LABEL = b"mebre-offline-otp-v1"
+_OTP_STEP = 60          # adım (saniye)
+_OTP_WINDOW = 15        # doğrulama penceresi: [Cb-15 .. Cb+15] = ±15 dk saat toleransı
+_OTP_MAX_FAILS = 5      # bu kadar üst üste yanlıştan sonra kilit
+_OTP_LOCK_SECONDS = 300 # kilit süresi (5 dk)
+
+def _otp_secret_from_token(device_token: str) -> bytes:
+    """offline_secret = HMAC-SHA256(key=H, msg=LABEL); H = sha256(device_token) hex."""
+    H = hashlib.sha256(device_token.encode("utf-8")).hexdigest()
+    return hmac.new(H.encode("utf-8"), _OTP_LABEL, hashlib.sha256).digest()
+
+def _hotp(secret: bytes, counter: int) -> str:
+    """RFC 4226 HOTP: 6 haneli, sıfır-doldurulmuş."""
+    c = struct.pack(">Q", counter)  # 8-byte big-endian
+    mac = hmac.new(secret, c, hashlib.sha256).digest()
+    off = mac[-1] & 0x0F
+    p = ((mac[off] & 0x7F) << 24) | (mac[off + 1] << 16) | (mac[off + 2] << 8) | mac[off + 3]
+    return str(p % 1000000).zfill(6)
+
+def validate_totp_password(entered_password: str, unix_time: int = None) -> bool:
+    """Tahta-özel TOTP doğrula (±15 dk pencere). device_token yoksa False (v6 tahtası değil)."""
+    token = get_setting('device_token', '')
+    if not token:
+        return False
+    try:
+        secret = _otp_secret_from_token(token)
+        if unix_time is None:
+            unix_time = int(time.time())
+        cb = unix_time // _OTP_STEP
+        for c in range(cb - _OTP_WINDOW, cb + _OTP_WINDOW + 1):
+            if hmac.compare_digest(_hotp(secret, c), entered_password):
+                return True
+        return False
+    except Exception as e:
+        logging.error(f"TOTP validation error: {e}")
+        return False
+
+def validate_offline_password(entered_password: str) -> bool:
+    """v6 tahta (device_token var) → TOTP; yoksa eski formül (C#/eski Pardus uyumu)."""
+    if get_setting('device_token', ''):
+        return validate_totp_password(entered_password)
+    return validate_dynamic_password(entered_password)
+
+# --- Kaba kuvvet kilidi (6 hane = 10^6; kilit olmadan taranabilir) ---
+# Durum config.ini'de tutulur → tahtayı kapat-aç ile sıfırlanamaz.
+def offline_lock_remaining() -> int:
+    """Kalan kilit saniyesi (0 = kilit yok)."""
+    try:
+        until = int(SETTINGS.get('otp_lock_until', '0') or '0')
+    except ValueError:
+        until = 0
+    rem = until - int(time.time())
+    return rem if rem > 0 else 0
+
+def _otp_persist(key: str, value) -> None:
+    """SETTINGS + config.ini'ye yaz (reboot'a dayanıklı kilit durumu)."""
+    SETTINGS[key] = str(value)
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read(CONFIG_PATH)
+        if 'settings' not in cfg:
+            cfg.add_section('settings')
+        cfg.set('settings', key, str(value))
+        with open(CONFIG_PATH, 'w') as f:
+            cfg.write(f)
+    except Exception as e:
+        logging.warning(f"OTP kilit durumu yazılamadı: {e}")
+
+def offline_register_failure() -> None:
+    """Yanlış deneme say; eşiğe gelince kilitle."""
+    try:
+        fails = int(SETTINGS.get('otp_fail_count', '0') or '0')
+    except ValueError:
+        fails = 0
+    fails += 1
+    if fails >= _OTP_MAX_FAILS:
+        _otp_persist('otp_lock_until', int(time.time()) + _OTP_LOCK_SECONDS)
+        _otp_persist('otp_fail_count', 0)
+        logging.warning(f"Çok fazla yanlış şifre — {_OTP_LOCK_SECONDS//60} dk kilitlendi.")
+    else:
+        _otp_persist('otp_fail_count', fails)
+
+def offline_register_success() -> None:
+    """Başarılı açılışta sayaç + kilit sıfırla."""
+    if SETTINGS.get('otp_fail_count', '0') != '0':
+        _otp_persist('otp_fail_count', 0)
+    if SETTINGS.get('otp_lock_until', '0') != '0':
+        _otp_persist('otp_lock_until', 0)
 
 # --- Generate User-Key like C# Tools.userKey() ---
 # Key oluşturma kurum koduna bağlı yapıldı
@@ -3820,11 +3922,19 @@ class FatihClientApp(QWidget):
 
     def validate_admin_password(self, password):
         """
-        Şifre doğrulama - Önce config'deki admin şifresi, sonra Mebrecep dinamik şifre
-        
+        Şifre doğrulama - Önce config'deki admin şifresi, sonra Mebrecep çevrimdışı şifre
+
         1. Config'deki admin_password ile kontrol
-        2. Dinamik şifre (Mebrecep) ile kontrol
+        2. Çevrimdışı şifre (v6 TOTP, yoksa eski formül)
+
+        Kaba kuvvet kilidi: 5 üst üste yanlıştan sonra 5 dk. Her iki şifreyi de korur.
         """
+        # Kilitliyse hiçbir denemeyi kontrol etme (6 hane taranamasın)
+        rem = offline_lock_remaining()
+        if rem > 0:
+            logging.warning(f"Şifre denemesi kilitli, {rem} sn kaldı.")
+            return False
+
         # Önce config'deki admin şifresi ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
         # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
@@ -3832,14 +3942,17 @@ class FatihClientApp(QWidget):
             config_password = '803580'
         if password == config_password:
             logging.info("Password validated via config admin_password")
+            offline_register_success()
             return True
 
-        # Dinamik şifre kontrolü (sunucu ve Mebrecep aynı algoritmayı kullanıyor)
-        if validate_dynamic_password(password):
-            logging.info("Password validated via dynamic algorithm (Mebrecep)")
+        # Çevrimdışı şifre kontrolü (v6 tahta → TOTP; değilse eski formül)
+        if validate_offline_password(password):
+            logging.info("Password validated via offline algorithm (Mebrecep)")
+            offline_register_success()
             return True
-        
-        logging.warning("Invalid password - does not match config or dynamic algorithm")
+
+        logging.warning("Invalid password - does not match config or offline algorithm")
+        offline_register_failure()
         return False
 
     def show_context_menu(self, position):
@@ -4749,25 +4862,34 @@ class FatihKioskMode(QMainWindow):
     def attempt_unlock(self, password, dialog):
         """
         Kiosk modunda şifre ile kilit açma
-        Mebrecep'ten alınan dinamik şifre ile çalışır
+        Mebrecep'ten alınan çevrimdışı şifre ile çalışır (v6 → TOTP, değilse eski formül)
         """
         logging.info(f"Kiosk: Unlock attempt with password length={len(password)}")
-        
+
         if not password or len(password) == 0:
             QMessageBox.warning(dialog, "Hata", "Lütfen şifre giriniz!")
             return
-        
-        # Dinamik şifre kontrolü (C# pctrl.pc() karşılığı)
-        if validate_dynamic_password(password):
-            logging.info("Kiosk mode unlocked with dynamic password (Mebrecep)")
+
+        # Kaba kuvvet kilidi: kilitliyse denemeyi hiç kontrol etme
+        rem = offline_lock_remaining()
+        if rem > 0:
+            dk = (rem + 59) // 60
+            QMessageBox.warning(dialog, "Kilitli",
+                                f"Çok fazla yanlış deneme. {dk} dakika sonra tekrar deneyin.")
+            return
+
+        # Çevrimdışı şifre kontrolü (v6 → TOTP; değilse eski formül). Orijinal davranış korunur:
+        # kiosk yalnızca çevrimdışı şifreyi kabul eder (admin şifresi burada KABUL EDİLMEZ —
+        # varsayılan 803580 herkesçe bilindiği için kilit ekranını açmamalı).
+        if validate_offline_password(password):
+            logging.info("Kiosk mode unlocked with offline password (Mebrecep)")
+            offline_register_success()
             dialog.accept()
             self.unlock_and_exit()
         else:
-            # Show what the expected password would be for debugging
-            from datetime import datetime as dt_class
-            now = dt_class.now()
-            expected = generate_dynamic_password(now, 0)
-            logging.warning(f"Failed kiosk unlock attempt - entered len={len(password)}, expected={expected}")
+            # GÜVENLİK: beklenen şifre ASLA log'a yazılmaz (log'u okuyan açabilir).
+            offline_register_failure()
+            logging.warning(f"Failed kiosk unlock attempt - entered len={len(password)}")
             QMessageBox.warning(dialog, "Hata", "Yanlış şifre!\nMebrecep uygulamasından güncel şifreyi alın.")
 
     def unlock_and_exit(self):
