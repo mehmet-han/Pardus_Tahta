@@ -1149,7 +1149,7 @@ class LoginDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
-        login_btn = QPushButton("Giriş")
+        login_btn = QPushButton("Tahtayı Aç")
         login_btn.clicked.connect(self.attempt_login)
         login_btn.setDefault(True)
         button_layout.addWidget(login_btn)
@@ -2455,6 +2455,134 @@ class NetworkClient:
 
 
 # --- Main Application Window ---
+# --- Feature 5: "Bu Haftanin Aferinleri" paneli stili ---
+# Qt zengin-metin (QLabel RichText) gradient/flex desteklemez; bu yuzden panel QFrame + QSS + layout
+# olarak kuruluyor. QSS qlineargradient ve border-radius destekler -> podyum hissi verebiliyoruz.
+# Sinif tahtasinin arkasindan okunabilmesi icin punto ve kontrast bilerek yuksek tutuldu.
+AFERIN_PANEL_QSS = """
+QFrame#aferinPanel {
+    background-color: rgba(10, 17, 34, 238);
+    border: 2px solid rgba(255, 193, 71, 190);
+    border-radius: 22px;
+}
+QLabel { background: transparent; }
+QLabel#aferinTitle {
+    color: #FFD35C;
+    font-family: 'DejaVu Sans';
+    font-size: 17px;
+    font-weight: bold;
+}
+QLabel#aferinSubtitle {
+    color: rgba(190, 205, 230, 190);
+    font-family: 'DejaVu Sans';
+    font-size: 11px;
+}
+QFrame#aferinRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(255,193,71,220), stop:0.65 rgba(255,193,71,60), stop:1 rgba(255,193,71,0));
+    border: none;
+    border-radius: 1px;
+}
+/* Lider satiri: hafif altin parilti */
+QFrame#aferinRowTop {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(255,193,71,46), stop:1 rgba(255,193,71,8));
+    border: 1px solid rgba(255,193,71,90);
+    border-radius: 12px;
+}
+QFrame#aferinRow {
+    background-color: rgba(255, 255, 255, 14);
+    border: 1px solid rgba(255, 255, 255, 20);
+    border-radius: 12px;
+}
+QLabel#aferinName {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#aferinNameTop {
+    color: #FFF3D0;
+    font-family: 'DejaVu Sans';
+    font-size: 16px;
+    font-weight: bold;
+}
+QLabel#aferinNo {
+    color: rgba(178, 195, 222, 205);
+    font-family: 'DejaVu Sans';
+    font-size: 11px;
+}
+QLabel#aferinCount {
+    color: #1E1605;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FFE082, stop:1 #FFB300);
+    border-radius: 13px;
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+}
+QLabel#aferinCountPlain {
+    color: #EAF1FF;
+    background-color: rgba(255, 255, 255, 30);
+    border-radius: 13px;
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+}
+"""
+
+# Ilk uc sira icin madalya rozeti renkleri: (gradient ust, gradient alt, yazi rengi)
+AFERIN_RANK_COLORS = [
+    ('#FFE485', '#F0A500', '#3A2A05'),   # altin
+    ('#F2F6FA', '#AEBCC9', '#252C33'),   # gumus
+    ('#EBB278', '#B9743A', '#3A2110'),   # bronz
+]
+
+# --- Feature 1: "Iyi ki dogdun" kutlama paneli stili ---
+# Ekranin ORTASINDA gosterilir (kullanici karari) — dogum gunu nadir bir olay oldugu icin
+# merkezdeki gorseli o gune ozel kapatmasi kabul edildi. Sadece o sinifta bugun dogan varsa gorunur.
+BIRTHDAY_PANEL_QSS = """
+QFrame#birthdayPanel {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(58, 18, 74, 246), stop:0.55 rgba(30, 16, 66, 246), stop:1 rgba(16, 20, 58, 246));
+    border: 3px solid rgba(255, 158, 205, 215);
+    border-radius: 30px;
+}
+QLabel { background: transparent; }
+QLabel#bdayEmoji {
+    font-size: 40px;
+}
+QLabel#bdayTitle {
+    color: #FFD9EC;
+    font-family: 'DejaVu Sans';
+    font-size: 29px;
+    font-weight: bold;
+}
+QLabel#bdayName {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 33px;
+    font-weight: bold;
+}
+QLabel#bdayAge {
+    color: #FFD35C;
+    font-family: 'DejaVu Sans';
+    font-size: 18px;
+    font-weight: bold;
+}
+QLabel#bdaySub {
+    color: rgba(223, 205, 240, 200);
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+}
+QFrame#bdayRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(255,158,205,0), stop:0.5 rgba(255,158,205,190), stop:1 rgba(255,158,205,0));
+    border: none;
+}
+"""
+
+
 class FatihClientApp(QWidget):
     # Signal emitted from background thread when password validation completes.
     _validation_result = pyqtSignal(bool)
@@ -2465,7 +2593,8 @@ class FatihClientApp(QWidget):
     # NEW: Signal to trigger UI updates for network status changes
     network_status_signal = pyqtSignal(bool)
 
-    # Feature 5: /display verisi arka plan thread'inden UI thread'ine (aferinTop5 listesi ya da None)
+    # /display verisi arka plan thread'inden UI thread'ine (tum sonuc sozlugu ya da None).
+    # Icinden hem aferinTop5 (Feature 5) hem dogumGunleri (Feature 1) beslenir.
     _display_ready = pyqtSignal(object)
 
     def __init__(self):
@@ -2473,7 +2602,7 @@ class FatihClientApp(QWidget):
         # Connect the command signal to process_commands
         self.command_signal.connect(self.process_commands)
         self.network_status_signal.connect(self.update_network_status_ui)
-        self._display_ready.connect(self._render_aferin_panel)
+        self._display_ready.connect(self._render_display)
         
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
         self.keyboard_locker = None
@@ -2627,26 +2756,83 @@ class FatihClientApp(QWidget):
         self.board_id_label.setMinimumHeight(label_height)
         self.update_board_id_display()
 
-        # --- Feature 5: "Bu Haftanın İlk 5 Aferini" paneli (sol-alt, surum etiketinin ustunde) ---
+        # --- Feature 5: "Bu Haftanın Aferinleri" paneli (sol-alt, surum etiketinin ustunde) ---
         # Sunucudan (v5 /display) gelir; sinif bazli, bu haftanin en cok aferin alan 5 ogrencisi.
         # Veri yoksa (isim eslesmedi / bu hafta aferin yok / ag yok) panel gizli kalir.
-        self.aferin_panel = QLabel(self)
-        self.aferin_panel.setTextFormat(Qt.RichText)
-        self.aferin_panel.setWordWrap(True)
-        self.aferin_panel.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.aferin_panel.setStyleSheet("""
-            QLabel {
-                color: white;
-                background-color: rgba(0, 0, 0, 190);
-                padding: 18px 22px;
-                border-radius: 15px;
-                border: 2px solid #ffb300;
-                font-size: 16px;
-            }
-        """)
-        _ap_w, _ap_h = 380, 340
-        self.aferin_panel.setGeometry(10, self.height() - _ap_h - 70, _ap_w, _ap_h)
+        # Yapі: QFrame + QSS (gradient/radius icin) -> satirlar _render_aferin_panel'de kurulur.
+        self.aferin_panel = QFrame(self)
+        self.aferin_panel.setObjectName("aferinPanel")
+        self.aferin_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.aferin_panel.setStyleSheet(AFERIN_PANEL_QSS)
+        self.aferin_panel.setFixedWidth(452)
+
+        _ap_lay = QVBoxLayout(self.aferin_panel)
+        _ap_lay.setContentsMargins(24, 19, 24, 21)
+        _ap_lay.setSpacing(3)
+
+        self.aferin_title = QLabel("🏆  BU HAFTANIN AFERİNLERİ", self.aferin_panel)
+        self.aferin_title.setObjectName("aferinTitle")
+        _ap_lay.addWidget(self.aferin_title)
+
+        self.aferin_subtitle = QLabel("", self.aferin_panel)
+        self.aferin_subtitle.setObjectName("aferinSubtitle")
+        _ap_lay.addWidget(self.aferin_subtitle)
+
+        _ap_rule = QFrame(self.aferin_panel)
+        _ap_rule.setObjectName("aferinRule")
+        _ap_rule.setFixedHeight(3)
+        _ap_lay.addSpacing(9)
+        _ap_lay.addWidget(_ap_rule)
+        _ap_lay.addSpacing(11)
+
+        # Ogrenci satirlarinin kabi — her yenilemede yeniden doldurulur.
+        self.aferin_rows_layout = QVBoxLayout()
+        self.aferin_rows_layout.setSpacing(8)
+        _ap_lay.addLayout(self.aferin_rows_layout)
+
         self.aferin_panel.hide()
+
+        # --- Feature 1: doğum günü kutlama paneli (ekran ortasi) ---
+        # Sadece tahtanin sinifinda BUGUN dogum gunu olan varsa gorunur.
+        self.birthday_panel = QFrame(self)
+        self.birthday_panel.setObjectName("birthdayPanel")
+        self.birthday_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.birthday_panel.setStyleSheet(BIRTHDAY_PANEL_QSS)
+        self.birthday_panel.setFixedWidth(760)
+
+        _bd_lay = QVBoxLayout(self.birthday_panel)
+        _bd_lay.setContentsMargins(46, 32, 46, 36)
+        _bd_lay.setSpacing(4)
+
+        self.bday_emoji = QLabel("🎉🎂🎈", self.birthday_panel)
+        self.bday_emoji.setObjectName("bdayEmoji")
+        self.bday_emoji.setAlignment(Qt.AlignCenter)
+        _bd_lay.addWidget(self.bday_emoji)
+
+        self.bday_title = QLabel("İYİ Kİ DOĞDUN!", self.birthday_panel)
+        self.bday_title.setObjectName("bdayTitle")
+        self.bday_title.setAlignment(Qt.AlignCenter)
+        _bd_lay.addWidget(self.bday_title)
+
+        _bd_rule = QFrame(self.birthday_panel)
+        _bd_rule.setObjectName("bdayRule")
+        _bd_rule.setFixedHeight(2)
+        _bd_lay.addSpacing(14)
+        _bd_lay.addWidget(_bd_rule)
+        _bd_lay.addSpacing(16)
+
+        # Kutlanan ogrencilerin kabi — her yenilemede yeniden doldurulur.
+        self.bday_rows_layout = QVBoxLayout()
+        self.bday_rows_layout.setSpacing(12)
+        _bd_lay.addLayout(self.bday_rows_layout)
+
+        _bd_lay.addSpacing(14)
+        self.bday_sub = QLabel("", self.birthday_panel)
+        self.bday_sub.setObjectName("bdaySub")
+        self.bday_sub.setAlignment(Qt.AlignCenter)
+        _bd_lay.addWidget(self.bday_sub)
+
+        self.birthday_panel.hide()
 
         # Status message label
         self.message_label = QLabel("", self)
@@ -2732,7 +2918,7 @@ class FatihClientApp(QWidget):
         cancel_btn.pressed.connect(self._login_cancel)
         btn_layout.addWidget(cancel_btn)
 
-        login_btn = QPushButton("Giriş")
+        login_btn = QPushButton("Tahtayı Aç")
         login_btn.setStyleSheet("background-color: #0066cc; color: white;")
         login_btn.pressed.connect(self._login_attempt)
         btn_layout.addWidget(login_btn)
@@ -3188,42 +3374,141 @@ class FatihClientApp(QWidget):
         def _worker():
             try:
                 data = self.network_client.get_display()
-                top5 = data.get("aferinTop5") if isinstance(data, dict) else None
             except Exception as e:
                 logging.error(f"/display cekimi basarisiz: {e}")
-                top5 = None
-            self._display_ready.emit(top5)
+                data = None
+            self._display_ready.emit(data)
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _render_display(self, data):
+        """/display sonucunu ilgili panellere dagitir (UI thread)."""
+        d = data if isinstance(data, dict) else {}
+        self._render_aferin_panel(d.get("aferinTop5"))
+        self._render_birthday_panel(d.get("dogumGunleri"))
+
+    def _clear_layout(self, layout):
+        """Bir layout'un tum widget'larini temizler (paneller her yenilemede yeniden kurulur)."""
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
+    def _render_birthday_panel(self, dogumGunleri):
+        """Bugun dogum gunu olan ogrencileri ekran ortasinda kutlar. Bos/None -> gizle."""
+        if not dogumGunleri:
+            self.birthday_panel.hide()
+            return
+
+        self._clear_layout(self.bday_rows_layout)
+
+        for r in dogumGunleri:
+            adi = str(r.get('adi', '') or '')
+            yas = r.get('yas')
+
+            name_lbl = QLabel(adi, self.birthday_panel)
+            name_lbl.setObjectName("bdayName")
+            name_lbl.setAlignment(Qt.AlignCenter)
+            self.bday_rows_layout.addWidget(name_lbl)
+
+            if yas:
+                age_lbl = QLabel(f"bugün {int(yas)} yaşında 🎂", self.birthday_panel)
+                age_lbl.setObjectName("bdayAge")
+                age_lbl.setAlignment(Qt.AlignCenter)
+                self.bday_rows_layout.addWidget(age_lbl)
+
+        sinif = SETTINGS.get('board_name', '') or ''
+        self.bday_sub.setText(
+            f"{sinif} sınıfı seninle gurur duyuyor" if sinif else "Doğum günün kutlu olsun"
+        )
+
+        # Ekranin ortasina yerlestir
+        self.birthday_panel.adjustSize()
+        bw, bh = 760, self.birthday_panel.sizeHint().height()
+        self.birthday_panel.setGeometry((self.width() - bw) // 2, (self.height() - bh) // 2, bw, bh)
+        self.birthday_panel.show()
+        self.birthday_panel.raise_()
+
+    def _clear_aferin_rows(self):
+        """Panel satirlarini temizler (her yenilemede yeniden kurulur)."""
+        while self.aferin_rows_layout.count():
+            item = self.aferin_rows_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
     def _render_aferin_panel(self, top5):
-        """Bu haftanin ilk-5 aferin listesini sol-alt panelde gosterir (UI thread). Bos/None -> gizle."""
+        """Bu haftanin ilk-5 aferin listesini sol-alt panelde cizer (UI thread). Bos/None -> gizle.
+        Sira SUNUCUDAN gelir (aferin cok->az, esitlikte alfabetik); burada sadece cizim yapilir."""
         if not top5:
             self.aferin_panel.hide()
             return
 
-        def _esc(s):
-            return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        self._clear_aferin_rows()
 
-        medals = ['🥇', '🥈', '🥉', '4.', '5.']
-        rows_html = []
+        sinif = SETTINGS.get('board_name', '') or ''
+        self.aferin_subtitle.setText(f"{sinif} sınıfı  •  bu hafta" if sinif else "bu hafta")
+
         for i, r in enumerate(top5[:5]):
-            medal = medals[i] if i < len(medals) else f"{i + 1}."
-            numara = _esc(r.get('numara', ''))
-            adi = _esc(r.get('adi', ''))
+            numara = str(r.get('numara', '') or '')
+            adi = str(r.get('adi', '') or '')
             aferin = int(r.get('aferin', 0) or 0)
-            no_part = f"<b>No {numara}</b> " if numara else ""
-            rows_html.append(
-                f"<div style='margin:6px 0;'>{medal} {no_part}{adi} "
-                f"<span style='color:#ffd700;'>— {aferin} ⭐</span></div>"
-            )
+            is_top = (i == 0)
 
-        html = (
-            "<div style='font-size:20px;font-weight:bold;color:#ffd700;margin-bottom:8px;'>"
-            "🏆 Bu Haftanın Aferinleri</div>"
-            + "".join(rows_html)
-        )
-        self.aferin_panel.setText(html)
+            row = QFrame(self.aferin_panel)
+            row.setObjectName("aferinRowTop" if is_top else "aferinRow")
+            row.setAttribute(Qt.WA_StyledBackground, True)
+            row_lay = QHBoxLayout(row)
+            row_lay.setContentsMargins(11, 9, 13, 9)
+            row_lay.setSpacing(13)
+
+            # Sira rozeti — ilk uc madalya renginde, 4-5 sade
+            badge = QLabel(str(i + 1), row)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setFixedSize(38, 38)
+            if i < len(AFERIN_RANK_COLORS):
+                c_top, c_bottom, c_text = AFERIN_RANK_COLORS[i]
+                badge.setStyleSheet(
+                    f"color:{c_text}; font-family:'DejaVu Sans'; font-size:16px; font-weight:bold;"
+                    f"border-radius:19px; background-color: qlineargradient("
+                    f"x1:0, y1:0, x2:0, y2:1, stop:0 {c_top}, stop:1 {c_bottom});"
+                )
+            else:
+                badge.setStyleSheet(
+                    "color:#C7D4E8; font-family:'DejaVu Sans'; font-size:15px; font-weight:bold;"
+                    "border-radius:19px; background-color: rgba(255,255,255,26);"
+                )
+            row_lay.addWidget(badge)
+
+            # Ad + numara (alt alta)
+            name_box = QVBoxLayout()
+            name_box.setSpacing(1)
+            name_lbl = QLabel(adi, row)
+            name_lbl.setObjectName("aferinNameTop" if is_top else "aferinName")
+            name_box.addWidget(name_lbl)
+            if numara:
+                no_lbl = QLabel(f"No {numara}", row)
+                no_lbl.setObjectName("aferinNo")
+                name_box.addWidget(no_lbl)
+            row_lay.addLayout(name_box)
+            row_lay.addStretch(1)
+
+            # Aferin sayisi rozeti
+            cnt = QLabel(f"{aferin} ★", row)
+            cnt.setObjectName("aferinCount" if is_top else "aferinCountPlain")
+            cnt.setAlignment(Qt.AlignCenter)
+            cnt.setFixedSize(58, 26)
+            row_lay.addWidget(cnt)
+
+            self.aferin_rows_layout.addWidget(row)
+
+        # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir
+        self.aferin_panel.adjustSize()
+        ph = self.aferin_panel.sizeHint().height()
+        self.aferin_panel.setGeometry(16, self.height() - ph - 78, 452, ph)
         self.aferin_panel.show()
         self.aferin_panel.raise_()
 
@@ -4999,7 +5284,7 @@ class FatihKioskMode(QMainWindow):
         cancel_btn.pressed.connect(dialog.reject)
         button_layout.addWidget(cancel_btn)
 
-        login_btn = QPushButton("Giriş")
+        login_btn = QPushButton("Tahtayı Aç")
         login_btn.setMinimumHeight(50)
         login_btn.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
         login_btn.pressed.connect(lambda: self.attempt_unlock(password_field.text(), dialog))
