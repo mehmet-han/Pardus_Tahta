@@ -2465,11 +2465,15 @@ class FatihClientApp(QWidget):
     # NEW: Signal to trigger UI updates for network status changes
     network_status_signal = pyqtSignal(bool)
 
+    # Feature 5: /display verisi arka plan thread'inden UI thread'ine (aferinTop5 listesi ya da None)
+    _display_ready = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         # Connect the command signal to process_commands
         self.command_signal.connect(self.process_commands)
         self.network_status_signal.connect(self.update_network_status_ui)
+        self._display_ready.connect(self._render_aferin_panel)
         
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
         self.keyboard_locker = None
@@ -2525,6 +2529,7 @@ class FatihClientApp(QWidget):
         self.init_maintenance_timer()
         self.init_time_timer()
         self.init_schedule_timer() # New timer for scheduling
+        self.init_display_timer()  # Feature 5: ilk-5 aferin paneli
 
         # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
         PowerManager.disable_sleep()
@@ -2621,6 +2626,27 @@ class FatihClientApp(QWidget):
         self.board_id_label.setGeometry(label_x, 20, label_width, label_height)
         self.board_id_label.setMinimumHeight(label_height)
         self.update_board_id_display()
+
+        # --- Feature 5: "Bu Haftanın İlk 5 Aferini" paneli (sol-alt, surum etiketinin ustunde) ---
+        # Sunucudan (v5 /display) gelir; sinif bazli, bu haftanin en cok aferin alan 5 ogrencisi.
+        # Veri yoksa (isim eslesmedi / bu hafta aferin yok / ag yok) panel gizli kalir.
+        self.aferin_panel = QLabel(self)
+        self.aferin_panel.setTextFormat(Qt.RichText)
+        self.aferin_panel.setWordWrap(True)
+        self.aferin_panel.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.aferin_panel.setStyleSheet("""
+            QLabel {
+                color: white;
+                background-color: rgba(0, 0, 0, 190);
+                padding: 18px 22px;
+                border-radius: 15px;
+                border: 2px solid #ffb300;
+                font-size: 16px;
+            }
+        """)
+        _ap_w, _ap_h = 380, 340
+        self.aferin_panel.setGeometry(10, self.height() - _ap_h - 70, _ap_w, _ap_h)
+        self.aferin_panel.hide()
 
         # Status message label
         self.message_label = QLabel("", self)
@@ -3146,6 +3172,60 @@ class FatihClientApp(QWidget):
         self.schedule_timer.timeout.connect(self.check_schedule)
         self.schedule_timer.start(20000)  # Check every 20 seconds
         logging.info("Schedule check timer started with 20 second interval")
+
+    def init_display_timer(self):
+        """Feature 5: kilit ekrani gosterim verisi (ilk-5 aferin) icin timer.
+        Veri yavas degisir -> 5 dk. Ilk cekim biraz gecikmeli (ag/token otursun)."""
+        self.display_timer = QTimer(self)
+        self.display_timer.timeout.connect(self.refresh_display)
+        self.display_timer.start(300000)  # 5 dakika
+        QTimer.singleShot(2500, self.refresh_display)
+        logging.info("Display (aferin panel) timer started with 5 minute interval")
+
+    def refresh_display(self):
+        """Gosterim verisini (v5 /display) ARKA PLAN thread'inde ceker; sonucu _display_ready
+        sinyaliyle UI thread'ine tasir. Boylece ag gecikmesi kilit ekranini dondurmaz."""
+        def _worker():
+            try:
+                data = self.network_client.get_display()
+                top5 = data.get("aferinTop5") if isinstance(data, dict) else None
+            except Exception as e:
+                logging.error(f"/display cekimi basarisiz: {e}")
+                top5 = None
+            self._display_ready.emit(top5)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _render_aferin_panel(self, top5):
+        """Bu haftanin ilk-5 aferin listesini sol-alt panelde gosterir (UI thread). Bos/None -> gizle."""
+        if not top5:
+            self.aferin_panel.hide()
+            return
+
+        def _esc(s):
+            return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        medals = ['🥇', '🥈', '🥉', '4.', '5.']
+        rows_html = []
+        for i, r in enumerate(top5[:5]):
+            medal = medals[i] if i < len(medals) else f"{i + 1}."
+            numara = _esc(r.get('numara', ''))
+            adi = _esc(r.get('adi', ''))
+            aferin = int(r.get('aferin', 0) or 0)
+            no_part = f"<b>No {numara}</b> " if numara else ""
+            rows_html.append(
+                f"<div style='margin:6px 0;'>{medal} {no_part}{adi} "
+                f"<span style='color:#ffd700;'>— {aferin} ⭐</span></div>"
+            )
+
+        html = (
+            "<div style='font-size:20px;font-weight:bold;color:#ffd700;margin-bottom:8px;'>"
+            "🏆 Bu Haftanın Aferinleri</div>"
+            + "".join(rows_html)
+        )
+        self.aferin_panel.setText(html)
+        self.aferin_panel.show()
+        self.aferin_panel.raise_()
 
     def perform_maintenance(self):
         """
