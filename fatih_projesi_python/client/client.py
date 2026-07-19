@@ -3419,10 +3419,17 @@ class FatihClientApp(QWidget):
                 age_lbl.setAlignment(Qt.AlignCenter)
                 self.bday_rows_layout.addWidget(age_lbl)
 
+        # Tekil/cogul: iki ogrencinin ayni gun dogum gunu olabilir.
+        cogul = len(dogumGunleri) > 1
+        self.bday_title.setText("İYİ Kİ DOĞDUNUZ!" if cogul else "İYİ Kİ DOĞDUN!")
+
         sinif = SETTINGS.get('board_name', '') or ''
-        self.bday_sub.setText(
-            f"{sinif} sınıfı seninle gurur duyuyor" if sinif else "Doğum günün kutlu olsun"
-        )
+        if sinif:
+            self.bday_sub.setText(
+                f"{sinif} sınıfı {'sizinle' if cogul else 'seninle'} gurur duyuyor"
+            )
+        else:
+            self.bday_sub.setText("Doğum gününüz kutlu olsun" if cogul else "Doğum günün kutlu olsun")
 
         # Ekranin ortasina yerlestir
         self.birthday_panel.adjustSize()
