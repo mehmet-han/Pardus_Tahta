@@ -8,6 +8,8 @@ import configparser
 import logging
 import random
 import shutil
+import hmac
+import struct
 import urllib3
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLineEdit,
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
@@ -26,7 +28,8 @@ NO_LOCK_MODE = '--no-lock' in sys.argv
 if NO_LOCK_MODE:
     print("[NO-LOCK] Development mode - locking disabled")
 
-# Disable SSL warnings since we're using verify=False for testing
+# v6: tum sunucu istekleri verify=True ile yapilir (MITM korumasi, project_rules §8).
+# Asagidaki satir artik no-op (guvensiz istek yok) ama zararsiz; birakildi.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Autostart dosya içeriği (watchdog ve client ortak kullanır) ---
@@ -372,6 +375,106 @@ def validate_dynamic_password(entered_password: str) -> bool:
         except:
             pass
         return False
+
+# ============================================================================
+# v6 Çevrimdışı (internetsiz) şifre — tahta-özel TOTP
+# ----------------------------------------------------------------------------
+# Eski `Y·d·m·85` formülü öğrenciler tarafından çözülmüştü (tek bilinmeyen dakika, tahta-özel sır YOK).
+# v6: her tahtanın device_token'ından türetilen özel sır + zaman-tabanlı OTP (RFC 4226/6238).
+#
+# ⚠️ DETERMİNİZM: Bu blok, SUNUCU üretimiyle (v5 helpers/offlineOtp.js) BİREBİR aynı 6 haneyi
+#    üretmek zorunda. Sabitler (LABEL, adım=60sn, HMAC-SHA256, kırpma, mod 10^6, sıfır-doldurma)
+#    tek taraflı değiştirilemez. Test vektörü (v5 ile ortak):
+#    token=a1b2...ff00 → H=83418260... → unix=1800000000 → şifre="637221".
+# ============================================================================
+_OTP_LABEL = b"mebre-offline-otp-v1"
+_OTP_STEP = 60          # adım (saniye)
+_OTP_WINDOW = 15        # doğrulama penceresi: [Cb-15 .. Cb+15] = ±15 dk saat toleransı
+_OTP_MAX_FAILS = 5      # bu kadar üst üste yanlıştan sonra kilit
+_OTP_LOCK_SECONDS = 300 # kilit süresi (5 dk)
+
+def _otp_secret_from_token(device_token: str) -> bytes:
+    """offline_secret = HMAC-SHA256(key=H, msg=LABEL); H = sha256(device_token) hex."""
+    H = hashlib.sha256(device_token.encode("utf-8")).hexdigest()
+    return hmac.new(H.encode("utf-8"), _OTP_LABEL, hashlib.sha256).digest()
+
+def _hotp(secret: bytes, counter: int) -> str:
+    """RFC 4226 HOTP: 6 haneli, sıfır-doldurulmuş."""
+    c = struct.pack(">Q", counter)  # 8-byte big-endian
+    mac = hmac.new(secret, c, hashlib.sha256).digest()
+    off = mac[-1] & 0x0F
+    p = ((mac[off] & 0x7F) << 24) | (mac[off + 1] << 16) | (mac[off + 2] << 8) | mac[off + 3]
+    return str(p % 1000000).zfill(6)
+
+def validate_totp_password(entered_password: str, unix_time: int = None) -> bool:
+    """Tahta-özel TOTP doğrula (±15 dk pencere). device_token yoksa False (v6 tahtası değil)."""
+    token = get_setting('device_token', '')
+    if not token:
+        return False
+    try:
+        secret = _otp_secret_from_token(token)
+        if unix_time is None:
+            unix_time = int(time.time())
+        cb = unix_time // _OTP_STEP
+        for c in range(cb - _OTP_WINDOW, cb + _OTP_WINDOW + 1):
+            if hmac.compare_digest(_hotp(secret, c), entered_password):
+                return True
+        return False
+    except Exception as e:
+        logging.error(f"TOTP validation error: {e}")
+        return False
+
+def validate_offline_password(entered_password: str) -> bool:
+    """v6 tahta (device_token var) → TOTP; yoksa eski formül (C#/eski Pardus uyumu)."""
+    if get_setting('device_token', ''):
+        return validate_totp_password(entered_password)
+    return validate_dynamic_password(entered_password)
+
+# --- Kaba kuvvet kilidi (6 hane = 10^6; kilit olmadan taranabilir) ---
+# Durum config.ini'de tutulur → tahtayı kapat-aç ile sıfırlanamaz.
+def offline_lock_remaining() -> int:
+    """Kalan kilit saniyesi (0 = kilit yok)."""
+    try:
+        until = int(SETTINGS.get('otp_lock_until', '0') or '0')
+    except ValueError:
+        until = 0
+    rem = until - int(time.time())
+    return rem if rem > 0 else 0
+
+def _otp_persist(key: str, value) -> None:
+    """SETTINGS + config.ini'ye yaz (reboot'a dayanıklı kilit durumu)."""
+    SETTINGS[key] = str(value)
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read(CONFIG_PATH)
+        if 'settings' not in cfg:
+            cfg.add_section('settings')
+        cfg.set('settings', key, str(value))
+        with open(CONFIG_PATH, 'w') as f:
+            cfg.write(f)
+    except Exception as e:
+        logging.warning(f"OTP kilit durumu yazılamadı: {e}")
+
+def offline_register_failure() -> None:
+    """Yanlış deneme say; eşiğe gelince kilitle."""
+    try:
+        fails = int(SETTINGS.get('otp_fail_count', '0') or '0')
+    except ValueError:
+        fails = 0
+    fails += 1
+    if fails >= _OTP_MAX_FAILS:
+        _otp_persist('otp_lock_until', int(time.time()) + _OTP_LOCK_SECONDS)
+        _otp_persist('otp_fail_count', 0)
+        logging.warning(f"Çok fazla yanlış şifre — {_OTP_LOCK_SECONDS//60} dk kilitlendi.")
+    else:
+        _otp_persist('otp_fail_count', fails)
+
+def offline_register_success() -> None:
+    """Başarılı açılışta sayaç + kilit sıfırla."""
+    if SETTINGS.get('otp_fail_count', '0') != '0':
+        _otp_persist('otp_fail_count', 0)
+    if SETTINGS.get('otp_lock_until', '0') != '0':
+        _otp_persist('otp_lock_until', 0)
 
 # --- Generate User-Key like C# Tools.userKey() ---
 # Key oluşturma kurum koduna bağlı yapıldı
@@ -1232,6 +1335,7 @@ class BoardConfigWidget(QWidget):
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
         self.status_label.setText("")
+
         corporate_code = self.corporate_code_field.text().strip()
         if not corporate_code:
             self.status_label.setStyleSheet("color: #ff5555;")
@@ -1271,38 +1375,38 @@ class BoardConfigWidget(QWidget):
         self.status_label.setText("Sunucuya bağlanılıyor, lütfen bekleyin...")
         QApplication.processEvents() # UI'ı güncelle
 
-        # Temporarily update the network client's settings for this request
-        original_code = self.network_client.settings.get('corporate_code')
-        self.network_client.settings['corporate_code'] = corporate_code
-        
+        # v6: liste kurulum-ani /boards'tan gelir (X-Enroll-Secret). Cihaz token'i henuz yok.
         try:
-            items = self.network_client.get_values()
-            # Restore original corporate code after request
-            self.network_client.settings['corporate_code'] = original_code
+            items = self.network_client.list_boards(corporate_code)
 
             if items is not None:
                 if items and len(items) > 0:
                     self.boards = items
                     self.board_list_widget.clear()
                     for board in items:
-                        board_name = board.get('Name', f'Tahta {board.get("id", "N/A")}')
-                        item = QListWidgetItem(f'{board.get("id", "N/A")} - {board_name}')
-                        item.setData(Qt.UserRole, board.get("id"))
+                        board_id = board.get("boardId", "N/A")
+                        board_name = board.get("name") or f"Tahta {board_id}"
+                        pasif = "" if board.get("aktif", 1) else " (pasif)"
+                        item = QListWidgetItem(f"{board_id} - {board_name}{pasif}")
+                        item.setData(Qt.UserRole, board_id)
                         self.board_list_widget.addItem(item)
-                    
+
                     self.board_list_widget.setCurrentRow(0)
-                    
+
                     self.status_label.setStyleSheet("color: #55ff55;")
                     self.status_label.setText(f"Başarılı! {len(items)} tahta bulundu. Lütfen sağdan seçin.")
                 else:
                     self.status_label.setStyleSheet("color: #ffaa00;")
                     self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
+            elif not get_setting('enroll_secret', ''):
+                # Sik yapilan saha hatasi: kurulum medyasinda secret.txt yoktu.
+                self.status_label.setStyleSheet("color: #ff5555;")
+                self.status_label.setText("Hata: Kurulum sırrı yok. Tahta yeniden kurulmalı.")
             else:
                 self.status_label.setStyleSheet("color: #ff5555;")
                 self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
         except Exception as e:
-            # Restore original code in case of error
-            self.network_client.settings['corporate_code'] = original_code
+            logging.error(f"[BoardConfig] fetch_boards failed: {e}")
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Ağ hatası oluştu.")
 
@@ -1321,19 +1425,38 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Listeden bir tahta seçiniz!")
             return
 
-        # Update configuration
-        config = configparser.ConfigParser()
-        config.read(CONFIG_PATH)
-        config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
-        config.set('settings', 'board_id', str(selected_board_id))
-
         # Find board name
         board_name = "Pardus Tahta"
         for board in self.boards:
-            if board.get("id") == selected_board_id:
-                board_name = board.get("Name", f"Tahta {selected_board_id}")
+            if board.get("boardId") == selected_board_id:
+                board_name = board.get("name") or f"Tahta {selected_board_id}"
                 break
+
+        corporate_code = self.corporate_code_field.text().strip()
+
+        # v6: tahta secildi -> cihaz token'i uret (/enroll). Token OLMADAN config yazMA;
+        # yarim yazilirsa tahta kimliksiz kalir ve fail-safe ile kilitli acilir (sebebi de gorunmez).
+        self.status_label.setStyleSheet("color: #00aaff;")
+        self.status_label.setText("Tahta tanıtılıyor, lütfen bekleyin...")
+        QApplication.processEvents()
+
+        device_token = self.network_client.enroll(corporate_code, selected_board_id, board_name)
+        if not device_token:
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Tahta tanıtılamadı! Ayarlar kaydedilmedi.")
+            return
+
+        token_enc = 'ENC:' + _b64.b64encode(device_token.encode('utf-8')).decode('ascii')
+        device_token = None  # zero-footprint: token'i RAM'de tutma, config'ten okunacak
+
+        # Update configuration
+        config = configparser.ConfigParser()
+        config.read(CONFIG_PATH)
+        config.set('settings', 'corporate_code', corporate_code)
+        config.set('settings', 'board_id', str(selected_board_id))
         config.set('settings', 'board_name', board_name)
+        config.set('settings', 'device_token', token_enc)
+        config.remove_option('settings', 'enroll_secret')
 
         try:
             with open(CONFIG_PATH, 'w') as configfile:
@@ -1346,9 +1469,11 @@ class BoardConfigWidget(QWidget):
                 sys_config.read(system_config_path)
                 if 'settings' not in sys_config:
                     sys_config.add_section('settings')
-                sys_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                sys_config.set('settings', 'corporate_code', corporate_code)
                 sys_config.set('settings', 'board_id', str(selected_board_id))
                 sys_config.set('settings', 'board_name', board_name)
+                sys_config.set('settings', 'device_token', token_enc)
+                sys_config.remove_option('settings', 'enroll_secret')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
                 logging.info(f"System-wide config updated at {system_config_path}")
@@ -1363,9 +1488,11 @@ class BoardConfigWidget(QWidget):
                 os.makedirs(kiosk_dir, exist_ok=True)
                 kiosk_config = configparser.ConfigParser()
                 kiosk_config.read(system_config_path)  # Sistem config'ini baz al
-                kiosk_config.set('settings', 'corporate_code', self.corporate_code_field.text().strip())
+                kiosk_config.set('settings', 'corporate_code', corporate_code)
                 kiosk_config.set('settings', 'board_id', str(selected_board_id))
                 kiosk_config.set('settings', 'board_name', board_name)
+                kiosk_config.set('settings', 'device_token', token_enc)
+                kiosk_config.remove_option('settings', 'enroll_secret')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
                 logging.info(f"Kiosk user config updated at {kiosk_config_path}")
@@ -1373,9 +1500,16 @@ class BoardConfigWidget(QWidget):
                 logging.warning(f"Could not update kiosk user config: {e}")
 
             # Update current SETTINGS in memory
-            SETTINGS['corporate_code'] = self.corporate_code_field.text().strip()
+            SETTINGS['corporate_code'] = corporate_code
             SETTINGS['board_id'] = str(selected_board_id)
             SETTINGS['board_name'] = board_name
+            # Token hemen devreye girsin (yeniden baslatma beklemeden poll calissin).
+            SETTINGS['device_token'] = token_enc
+            # Sir gorevini tamamladi: bellekten de dusur (artik cihaza ozel token var).
+            try:
+                del SETTINGS['enroll_secret']
+            except KeyError:
+                pass
 
             # Update board ID display on main window
             if hasattr(self.parent, 'update_board_id_display'):
@@ -2100,209 +2234,224 @@ class NetworkClient:
     def __init__(self, settings):
         self.settings = settings
 
-    def _get_headers(self, core_code: str) -> dict:
-        """Generates the required headers for an API request."""
-        def cFnc_original(code_str: str) -> str:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            s = f"{code_str}?{timestamp}"
-            replacements = {
-                "0":"!g", "1":"gt", "2":"_a", "3":"me", "4":"?b", 
-                "5":"_z", "6":"fi", "7":"+d", "8":"da", "9":"|k",
-                " ":"kz", ".":"?u", ":":"wa"
-            }
-            for old, new in replacements.items(): 
-                s = s.replace(old, new)
-            return s
-            
+    def _base_url(self):
+        """v5 cihaz taban URL'i (XOR gizli, project_rules §1). Endpoint basina yol eklenir."""
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        u = _dx("1815061406491d1f53464806545c09101140551c554e1d4f06165a105e595758555f00190d191f5b6f46574904002d071c1b534a")
+        _k = _dx = None
+        return u
+
+    def _headers(self):
+        """v6 cihaz auth: Bearer cihaz token'i (config'te ENC'li device_token) + X-Timestamp (replay).
+        v4'teki Basic + User-Key + UserCore(fnc) semasi KALDIRILDI (pardusv6_project_rules §5)."""
         _k = "pardus2026!"
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         _agt = _dx("1106170a012c615d534455320e131611")
-        
+        token = get_setting('device_token', '') or None
         headers = {
-            "User-Agent": _agt, 
-            "User-Key": generate_user_key(), 
-            "UserCore": cFnc_original(core_code)
+            "User-Agent": _agt,
+            "X-Timestamp": str(int(time.time())),
         }
-        
-        _k = _dx = _agt = None
-        logging.debug(f"Request headers: {headers}")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        _k = _dx = _agt = token = None
         return headers
 
-    def _make_request(self, core_code: str, data: dict, timeout: int = 100):
-        """Makes a POST request to the server. Timeout 100s matches C# WebClient default."""
+    def _make_request(self, endpoint: str, data: dict = None, method: str = "POST", timeout: int = 100):
+        """v5 cihaz endpoint'ine JSON istek. endpoint: poll|ack|schedule|log|log_reset|version."""
         if not self.check_network():
             logging.warning("Network is unavailable. Aborting request.")
             return None
-        
-        headers = self._get_headers(core_code)
-        
-        _k = "pardus2026!"
-        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
-        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
-        _usr = _dx("1802002f112c40")
-        _pwd = _dx("32503f114a24587713714046")
 
+        headers = self._headers()
+        if "Authorization" not in headers:
+            logging.error("Cihaz token'i yok (config'te device_token tanimli degil) — enrollment gerekli.")
+            return None
+
+        _url = self._base_url() + "/" + endpoint
         try:
-            response = requests.post(
-                _url, 
-                headers=headers, 
-                data=data,
-                auth=(_usr, _pwd), 
-                timeout=timeout,
-                verify=True
-            )
-            _url = _usr = _pwd = _k = _dx = None
-            
+            if method == "GET":
+                response = requests.get(_url, headers=headers, timeout=timeout, verify=True)
+            else:
+                response = requests.post(_url, headers=headers, json=(data or {}), timeout=timeout, verify=True)
+            _url = None
+
             if response.status_code != 200:
-                logging.error(f"API Error: {response.status_code} with data {data}.")
+                logging.error(f"API Error: {response.status_code} @ {endpoint}")
                 return None
             return response
         except requests.exceptions.SSLError as e:
-            _url = _usr = _pwd = _k = _dx = None
+            _url = None
             logging.error(f"SSL Error during network request: {e}. MITM Protection active.")
             return None
         except requests.RequestException as e:
-            _url = _usr = _pwd = _k = _dx = None
-            logging.error(f"Network request failed: {e}")
+            _url = None
+            logging.error(f"Network request failed @ {endpoint}: {e}")
             return None
 
-    def check_network(self):
-        """Check if network is available. Made specifically for Fatih internet."""
+    def _enroll_request(self, endpoint: str, data: dict, timeout: int = 60):
+        """Kurulum-ani istek: cihaz token'i HENUZ YOK, X-Enroll-Secret ile kimlik dogrulanir.
+        Sir config'e setup.sh tarafindan ENC'li yazilir (kurulum medyasindaki secret.txt'ten) ve
+        enroll basarili olur olmaz silinir (bkz. BoardConfig._strip_enroll_secret)."""
+        secret = get_setting('enroll_secret', '')
+        if not secret:
+            logging.error("enroll_secret config'te yok — kurulum medyasinda secret.txt eksik olabilir.")
+            return None
+
+        if not self.check_network():
+            logging.warning("Network is unavailable. Aborting enroll request.")
+            return None
+
         _k = "pardus2026!"
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
-        _url = _dx("1815061406491d1f5346485e0c170607161c535d5b0f04135d12415c416f5044555e111a14")
+        _agt = _dx("1106170a012c615d534455320e131611")
+        headers = {
+            "User-Agent": _agt,
+            "X-Enroll-Secret": secret,
+            "X-Timestamp": str(int(time.time())),
+        }
+        _url = self._base_url() + "/" + endpoint
+        try:
+            response = requests.post(_url, headers=headers, json=data, timeout=timeout, verify=True)
+            if response.status_code != 200:
+                logging.error(f"Enroll API Error: {response.status_code} @ {endpoint}")
+                return None
+            return response
+        except requests.exceptions.SSLError as e:
+            logging.error(f"SSL Error during enroll request: {e}. MITM Protection active.")
+            return None
+        except requests.RequestException as e:
+            logging.error(f"Enroll request failed @ {endpoint}: {e}")
+            return None
+        finally:
+            # Sirri RAM'den dusur (§5 zero-footprint).
+            secret = headers = _k = _dx = _agt = _url = None
+
+    def list_boards(self, corporate_code):
+        """Kurulumda kurumun tahta listesi (v5 /boards, X-Enroll-Secret). [{boardId, name, aktif}] doner."""
+        result = self._result(self._enroll_request("boards", {"corporateCode": str(corporate_code)}))
+        if result is None:
+            return None
+        return result.get("boards")
+
+    def enroll(self, corporate_code, board_id, board_name):
+        """Cihaz token'i uret (v5 /enroll, X-Enroll-Secret). Token YALNIZCA bir kez doner."""
+        result = self._result(self._enroll_request("enroll", {
+            "corporateCode": str(corporate_code),
+            "boardId": int(board_id),
+            "boardName": board_name,
+        }))
+        if result is None:
+            return None
+        return result.get("token") or None
+
+    def _result(self, response):
+        """v5 zarfi {status, desc, httpStatus, result} -> result doner; status false/parse hatasi -> None."""
+        if not response:
+            return None
+        try:
+            body = response.json()
+        except ValueError:
+            logging.error(f"JSON decode failed: {response.text[:200]}")
+            return None
+        if body.get("status") is not True:
+            logging.error(f"API status false: {body.get('desc')}")
+            return None
+        return body.get("result")
+
+    def check_network(self):
+        """Ag var mi? v5 kok host'una (apiv5) bakar. Host XOR'lu; plaintext host YOK (§5.1)."""
+        _k = "pardus2026!"
+        _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+        _url = _dx("1815061406491d1f53464806545c09101140551c554e1d4f0616")
 
         try:
             import requests
-            response = requests.get(_url, timeout=3, verify=True)
+            requests.get(_url, timeout=3, verify=True)
             _url = _k = _dx = None
             return True
         except requests.exceptions.RequestException:
-            _url = _k = _dx = None
             import socket
+            from urllib.parse import urlparse
+            _host = urlparse(_url).hostname
+            _url = _k = _dx = None
             try:
-                from urllib.parse import urlparse
-                socket.create_connection(("api.mebre.com.tr", 443), timeout=3)
+                socket.create_connection((_host, 443), timeout=3)
                 return True
             except OSError:
                 return False
 
     def ctrl_post(self):
-        """
-        Fetches control commands from the server.
-        Equivalent to C# CtrlPost().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "t_na": self.settings.get('board_name', 'Pardus Board')
-        }
-        response = self._make_request("5567", data)
-        return response.text if response else None
+        """Yoklama (v5 /poll). Kimlik token'dan gelir; govde bos.
+        process_commands ile uyum icin LISTE doner: [openClose, message, shutdown, systemRemove, logIstek]
+        (hepsi str; mesaj bos ise '0' = v4 default davranisi). Kayit yoksa v5 fail-safe KILITLI doner."""
+        result = self._result(self._make_request("poll", {}))
+        if result is None:
+            return None
+        msg = result.get("message", "")
+        return [
+            str(result.get("openClose", 1)),
+            msg if msg else "0",
+            str(result.get("shutdown", 0)),
+            str(result.get("systemRemove", 0)),
+            str(result.get("logIstek", 0)),
+        ]
 
     def set_value(self, column, value):
-        """
-        Updates a specific value on the server.
-        Equivalent to C# SetValue().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'), 
-            "t_n": self.settings.get('board_id'), 
-            "fnc": "3480", 
-            "c_l": column, 
-            "value": value
-        }
-        response = self._make_request("5566", data)
-        if response:
+        """Komut ACK'i (v5 /ack). Kolon whitelist: open_close/shutdown/system_Remove/log_istek/message."""
+        result = self._result(self._make_request("ack", {"column": column, "value": str(value)}))
+        if result is not None:
             logging.info(f"Acknowledged command: set {column}={value}")
-        return response is not None
+            return True
+        return False
 
     def save_log(self, log_name, vog_name):
-        """
-        Sends a log entry to the server.
-        Equivalent to C# LogSave().
-        """
+        """Hata/olay logu (v5 /log)."""
         if vog_name == "logistek":
             self.log_request()
 
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "log": f"{self.settings.get('version')}-{self.settings.get('sub_version')}:{log_name}",
-            "vog": vog_name
-        }
-        response = self._make_request("5571", data)
-        if response:
+        log_str = f"{self.settings.get('version')}-{self.settings.get('sub_version')}:{log_name}"
+        result = self._result(self._make_request("log", {"logName": log_str, "vog": vog_name}))
+        if result is not None:
             logging.info(f"Log saved: {vog_name} - {log_name}")
-        return response is not None
+            return True
+        return False
 
     def log_request(self):
-        """
-        Sends a special log request.
-        Equivalent to C# logRequest().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id')
-        }
-        response = self._make_request("5574", data)
-        if response:
+        """log_istek bayragini sifirla (v5 /log_reset)."""
+        result = self._result(self._make_request("log_reset", {}))
+        if result is not None:
             logging.info("Log request sent successfully.")
-        return response is not None
+            return True
+        return False
 
     def get_values(self):
-        """
-        Retrieves board configurations/schedules.
-        Equivalent to C# GetValues().
-        C# kodu t_n göndermez - sunucu tüm tahtaları döndürür.
-        Filtreleme client-side yapılır (tg flag'ine göre).
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480"
-        }
-        response = self._make_request("5563", data)
-        if response:
-            try:
-                return response.json()
-            except ValueError:
-                logging.error(f"Failed to decode JSON from GetValues: {response.text}")
-                return None
-        return None
-
-    def get_inspc(self, st, gn):
-        """
-        Gets inspection data.
-        Equivalent to C# GetInspc().
-        """
-        data = {
-            "corporate_code": self.settings.get('corporate_code'),
-            "fnc": "3480",
-            "t_n": self.settings.get('board_id'),
-            "s_t": str(st),
-            "g_n": str(gn)
-        }
-        response = self._make_request("5573", data)
-        return response.text if response else ""
+        """Calisma saatleri (v5 /schedule). result.schedule (parse edilmis JSON) doner.
+        NOT: kurulumdaki tahta LISTELEME artik buradan gelmez (Secenek A); onu provisioning araci yapar."""
+        result = self._result(self._make_request("schedule", {}))
+        if result is None:
+            return None
+        return result.get("schedule")
 
     def check_version(self):
-        """
-        Checks for a new client version.
-        Equivalent to C# vck().
-        """
+        """Guncel istemci surumu (v5 GET /version)."""
         current_version = self.settings.get('version')
-        data = {"fnc": "3480"}
-        response = self._make_request("5570", data)
-        if response and response.text:
-            nw = response.text.strip()
-            # C# logic: if Nw != "" && Nw != null && Nw.Length < 6 && Nw != ClassVariable.Vercion
-            if len(nw) < 6:
+        result = self._result(self._make_request("version", method="GET"))
+        if result:
+            nw = str(result.get("version", "")).strip()
+            if nw and len(nw) < 6:
                 return nw
         return current_version
+
+    def get_display(self):
+        """Kilit ekrani gosterim verisi (v5 /display). Kimlik token'dan; govde bos.
+        result.aferinTop5 = [{numara, adi, aferin}] (bu haftanin sinif ilk-5'i). Isim eslesmezse
+        veya bu hafta aferin yoksa bos liste; sunucu hatasinda None. Sonraki feature'lar ayni objede."""
+        result = self._result(self._make_request("display", {}))
+        if result is None:
+            return None
+        return result
 
 
 # --- Main Application Window ---
@@ -3256,37 +3405,13 @@ class FatihClientApp(QWidget):
         except Exception as e:
             logging.error(f"Error in USB status check: {e}")
         
-    def _get_headers(self, core_code: str) -> dict:
-        def cFnc_original(code_str: str) -> str:
-            """
-            A direct Python port of the original C# cFnc function.
-            It includes the problematic '?' and a formatted timestamp.
-            """
-            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            s = f"{code_str}?{timestamp}"
-            
-            # the original replacement map.
-            replacements = {
-                "0":"!g", "1":"gt", "2":"_a", "3":"me", "4":"?b", 
-                "5":"_z", "6":"fi", "7":"+d", "8":"da", "9":"|k",
-                " ":"kz", ".":"?u", ":":"wa"
-            }
-            for old, new in replacements.items(): 
-                s = s.replace(old, new)
-            return s
-            
-        headers = {
-            "User-Agent": get_setting('user_agent'), 
-            "User-Key": generate_user_key(), 
-            "UserCore": cFnc_original(core_code)
-        }
-        logging.debug(f"Sending request with ORIGINAL headers: {headers}")
-        return headers
+    # NOT: Eski v4-tarzi _get_headers (User-Key/UserCore/cFnc) KALDIRILDI — kullanilmiyordu.
+    # v6 runtime'inin tum sunucu iletisimi NetworkClient uzerinden v5'e (Bearer + X-Timestamp) gider.
 
     def poll_server(self):
         def _poll_task():
-            response_text = self.network_client.ctrl_post()
-            if response_text is not None:
+            commands = self.network_client.ctrl_post()
+            if commands is not None:
                 logging.info("Successfully polled server.")
                 self.network_status_signal.emit(True)
                 
@@ -3301,7 +3426,7 @@ class FatihClientApp(QWidget):
                         logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
                         return
                 
-                commands = response_text.split(',')
+                # ctrl_post artik liste donuyor (v5 JSON'dan); split gerekmiyor.
                 # Safely emit to main thread instead of lambda QTimer which gets garbage collected
                 self.command_signal.emit(commands)
             else:
@@ -3806,11 +3931,19 @@ class FatihClientApp(QWidget):
 
     def validate_admin_password(self, password):
         """
-        Şifre doğrulama - Önce config'deki admin şifresi, sonra Mebrecep dinamik şifre
-        
+        Şifre doğrulama - Önce config'deki admin şifresi, sonra Mebrecep çevrimdışı şifre
+
         1. Config'deki admin_password ile kontrol
-        2. Dinamik şifre (Mebrecep) ile kontrol
+        2. Çevrimdışı şifre (v6 TOTP, yoksa eski formül)
+
+        Kaba kuvvet kilidi: 5 üst üste yanlıştan sonra 5 dk. Her iki şifreyi de korur.
         """
+        # Kilitliyse hiçbir denemeyi kontrol etme (6 hane taranamasın)
+        rem = offline_lock_remaining()
+        if rem > 0:
+            logging.warning(f"Şifre denemesi kilitli, {rem} sn kaldı.")
+            return False
+
         # Önce config'deki admin şifresi ile kontrol et
         config_password = SETTINGS.get('admin_password', '803580')
         # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
@@ -3818,14 +3951,17 @@ class FatihClientApp(QWidget):
             config_password = '803580'
         if password == config_password:
             logging.info("Password validated via config admin_password")
+            offline_register_success()
             return True
 
-        # Dinamik şifre kontrolü (sunucu ve Mebrecep aynı algoritmayı kullanıyor)
-        if validate_dynamic_password(password):
-            logging.info("Password validated via dynamic algorithm (Mebrecep)")
+        # Çevrimdışı şifre kontrolü (v6 tahta → TOTP; değilse eski formül)
+        if validate_offline_password(password):
+            logging.info("Password validated via offline algorithm (Mebrecep)")
+            offline_register_success()
             return True
-        
-        logging.warning("Invalid password - does not match config or dynamic algorithm")
+
+        logging.warning("Invalid password - does not match config or offline algorithm")
+        offline_register_failure()
         return False
 
     def show_context_menu(self, position):
@@ -4282,6 +4418,9 @@ class FatihKioskMode(QMainWindow):
     and remote shutdown command.
     Normal modla aynı görünümde çalışır (duvar kağıdı, saat, tahta adı).
     """
+    # Arka plan thread'i /display verisini getirdiginde UI thread'ine tasir (aferinTop5 listesi ya da None).
+    _display_ready = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Fatih Sistem Kilidi")
@@ -4400,6 +4539,38 @@ class FatihKioskMode(QMainWindow):
         self.help_guide_label.setGeometry(self.width() - 430, 110, 400, 320)
         self.help_guide_label.hide() # Varsayılan olarak gizli
 
+        # --- Feature 5: "Bu Haftanın İlk 5 Aferini" paneli (sol-alt köşe) ---
+        # Sunucudan (v5 /display) gelir; sınıf bazlı, bu haftanın en çok aferin alan 5 öğrencisi.
+        # Veri yoksa (isim eşleşmedi / bu hafta aferin yok / ağ yok) panel gizli kalır.
+        self.aferin_panel = QLabel(self)
+        self.aferin_panel.setTextFormat(Qt.RichText)
+        self.aferin_panel.setWordWrap(True)
+        self.aferin_panel.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.aferin_panel.setStyleSheet("""
+            QLabel {
+                color: white;
+                background-color: rgba(0, 0, 0, 190);
+                padding: 18px 22px;
+                border-radius: 15px;
+                border: 2px solid #ffb300;
+                font-size: 16px;
+            }
+        """)
+        panel_w = 380
+        panel_h = 340
+        self.aferin_panel.setGeometry(30, self.height() - panel_h - 70, panel_w, panel_h)
+        self.aferin_panel.hide()
+
+        # /display verisi geldiğinde paneli UI thread'inde güncelle.
+        self._display_ready.connect(self._render_aferin_panel)
+
+        # Gösterim verisi timer'ı (5 dk) — yavaş değişir, poll'dan seyrek. İlk çekim biraz gecikmeli
+        # (ağ/token otursun diye), sonra periyodik.
+        self.display_timer = QTimer(self)
+        self.display_timer.timeout.connect(self.refresh_display)
+        self.display_timer.start(300000)  # 5 dakika
+        QTimer.singleShot(2500, self.refresh_display)
+
         # Keyboard locker
         self.keyboard_locker = KeyboardLocker()
         self.keyboard_locker.start()
@@ -4428,6 +4599,51 @@ class FatihKioskMode(QMainWindow):
         time_str = current_time.strftime("%d/%m/%Y %H:%M:%S")
         self.time_label.setText(time_str)
 
+    def refresh_display(self):
+        """Kilit ekrani gosterim verisini (v5 /display) ARKA PLAN thread'inde ceker; sonucu
+        _display_ready sinyaliyle UI thread'ine tasir. Boylece ag gecikmesi kilit ekranini dondurmaz."""
+        def _worker():
+            try:
+                data = self.network_client.get_display()
+                top5 = data.get("aferinTop5") if isinstance(data, dict) else None
+            except Exception as e:
+                logging.error(f"Kiosk: /display cekimi basarisiz: {e}")
+                top5 = None
+            self._display_ready.emit(top5)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _render_aferin_panel(self, top5):
+        """Bu haftanin ilk-5 aferin listesini sol-alt panelde gosterir (UI thread). Bos/None -> gizle."""
+        if not top5:
+            self.aferin_panel.hide()
+            return
+
+        def _esc(s):
+            return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        medals = ['🥇', '🥈', '🥉', '4.', '5.']
+        rows_html = []
+        for i, r in enumerate(top5[:5]):
+            medal = medals[i] if i < len(medals) else f"{i + 1}."
+            numara = _esc(r.get('numara', ''))
+            adi = _esc(r.get('adi', ''))
+            aferin = int(r.get('aferin', 0) or 0)
+            no_part = f"<b>No {numara}</b> " if numara else ""
+            rows_html.append(
+                f"<div style='margin:6px 0;'>{medal} {no_part}{adi} "
+                f"<span style='color:#ffd700;'>— {aferin} ⭐</span></div>"
+            )
+
+        html = (
+            "<div style='font-size:20px;font-weight:bold;color:#ffd700;margin-bottom:8px;'>"
+            "🏆 Bu Haftanın Aferinleri</div>"
+            + "".join(rows_html)
+        )
+        self.aferin_panel.setText(html)
+        self.aferin_panel.show()
+        self.aferin_panel.raise_()
+
     def check_usb_for_unlock(self):
         """Check USB for unlock password"""
         usb_password = check_usb_password()
@@ -4441,9 +4657,8 @@ class FatihKioskMode(QMainWindow):
         tahta_lock=0 → unlock, shutDown=1 → shutdown
         """
         try:
-            response_text = self.network_client.ctrl_post()
-            if response_text:
-                commands = response_text.split(',')
+            commands = self.network_client.ctrl_post()
+            if commands:
                 if len(commands) >= 5:
                     tahta_lock = int(commands[0])
                     shut_down = int(commands[2])
@@ -4736,25 +4951,34 @@ class FatihKioskMode(QMainWindow):
     def attempt_unlock(self, password, dialog):
         """
         Kiosk modunda şifre ile kilit açma
-        Mebrecep'ten alınan dinamik şifre ile çalışır
+        Mebrecep'ten alınan çevrimdışı şifre ile çalışır (v6 → TOTP, değilse eski formül)
         """
         logging.info(f"Kiosk: Unlock attempt with password length={len(password)}")
-        
+
         if not password or len(password) == 0:
             QMessageBox.warning(dialog, "Hata", "Lütfen şifre giriniz!")
             return
-        
-        # Dinamik şifre kontrolü (C# pctrl.pc() karşılığı)
-        if validate_dynamic_password(password):
-            logging.info("Kiosk mode unlocked with dynamic password (Mebrecep)")
+
+        # Kaba kuvvet kilidi: kilitliyse denemeyi hiç kontrol etme
+        rem = offline_lock_remaining()
+        if rem > 0:
+            dk = (rem + 59) // 60
+            QMessageBox.warning(dialog, "Kilitli",
+                                f"Çok fazla yanlış deneme. {dk} dakika sonra tekrar deneyin.")
+            return
+
+        # Çevrimdışı şifre kontrolü (v6 → TOTP; değilse eski formül). Orijinal davranış korunur:
+        # kiosk yalnızca çevrimdışı şifreyi kabul eder (admin şifresi burada KABUL EDİLMEZ —
+        # varsayılan 803580 herkesçe bilindiği için kilit ekranını açmamalı).
+        if validate_offline_password(password):
+            logging.info("Kiosk mode unlocked with offline password (Mebrecep)")
+            offline_register_success()
             dialog.accept()
             self.unlock_and_exit()
         else:
-            # Show what the expected password would be for debugging
-            from datetime import datetime as dt_class
-            now = dt_class.now()
-            expected = generate_dynamic_password(now, 0)
-            logging.warning(f"Failed kiosk unlock attempt - entered len={len(password)}, expected={expected}")
+            # GÜVENLİK: beklenen şifre ASLA log'a yazılmaz (log'u okuyan açabilir).
+            offline_register_failure()
+            logging.warning(f"Failed kiosk unlock attempt - entered len={len(password)}")
             QMessageBox.warning(dialog, "Hata", "Yanlış şifre!\nMebrecep uygulamasından güncel şifreyi alın.")
 
     def unlock_and_exit(self):

@@ -96,17 +96,40 @@ BOARD_ID="0"
 BOARD_NAME="Pardus Board"
 ADMIN_PASSWORD="803580"
 PASSWORD_CHANGED="false"
+DEVICE_TOKEN=""
 
 if [ -f "$EXISTING_CONFIG" ]; then
     BOARD_ID=$(sed -nr 's/^board_id\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
     BOARD_NAME=$(sed -nr 's/^board_name\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
     ADMIN_PASSWORD=$(sed -nr 's/^admin_password\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
     PASSWORD_CHANGED=$(sed -nr 's/^password_changed\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
-    
+    # v6: zaten tanitilmis bir tahtaya yeniden kurulum yapiliyorsa token'i KORU;
+    # silinirse tahta kimliksiz kalir ve tekrar tanitilmasi gerekir.
+    DEVICE_TOKEN=$(sed -nr 's/^device_token\s*=\s*(.*)/\1/p' "$EXISTING_CONFIG")
+
     [ -z "$BOARD_ID" ] && BOARD_ID="0"
     [ -z "$BOARD_NAME" ] && BOARD_NAME="Pardus Board"
     [ -z "$ADMIN_PASSWORD" ] && ADMIN_PASSWORD="803580"
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
+fi
+
+# --- v6: Enroll sirri (kurulum medyasindaki secret.txt) ---
+# Sir teknisyene GOSTERILMEZ ve elle yazilmaz: setup.sh yanindaki secret.txt'ten okunur,
+# config'e ENC'li gomulur ve tahta tanitilir tanitilmaz istemci tarafindan SILINIR.
+# NOT: secret.txt USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
+ENROLL_SECRET_ENC=""
+if [ -f "./secret.txt" ]; then
+    _SECRET=$(tr -d ' \t\n\r' < ./secret.txt)
+    if [ -n "$_SECRET" ]; then
+        ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_SECRET" | base64 -w0)"
+        echo "  ✅ Kurulum sırrı okundu ve yapılandırmaya gömüldü."
+    else
+        echo "  ⚠ secret.txt boş! Tahta tanıtılamaz."
+    fi
+    _SECRET=""
+elif [ -z "$DEVICE_TOKEN" ]; then
+    echo "  ⚠ UYARI: secret.txt bulunamadı ve tahta daha önce tanıtılmamış."
+    echo "     Tahta kilitli açılır. secret.txt'i setup.sh'ın yanına koyup tekrar kurun."
 fi
 
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
@@ -124,6 +147,10 @@ board_name = $BOARD_NAME
 admin_password = $ADMIN_PASSWORD
 password_changed = $PASSWORD_CHANGED
 EOF
+
+# Kosullu alanlar (bos degerle yazilirsa istemci bos sir/token okur -> ekle-veya-ekleme).
+[ -n "$DEVICE_TOKEN" ] && echo "device_token = $DEVICE_TOKEN" >> "$INSTALL_DIR/config.ini"
+[ -n "$ENROLL_SECRET_ENC" ] && echo "enroll_secret = $ENROLL_SECRET_ENC" >> "$INSTALL_DIR/config.ini"
 
 if [ ! -z "$CORPORATE_CODE" ]; then
     # Kullanıcı klasörüne kopyala
