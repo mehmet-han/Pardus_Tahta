@@ -3315,14 +3315,19 @@ class FatihClientApp(QWidget):
             return
         if self.help_guide_label.isVisible():
             self.help_guide_label.hide()
+            # Kılavuz kapandı -> bilgi panellerini geri getir
+            self._restore_info_panels()
             logging.info("Help guide hidden")
         else:
+            # Yardım kılavuzu doğum günü / aferin panellerinin üstüne binmesin -> önce onları gizle
+            self._hide_info_panels()
             # Ekran koordinatlarına göre konumlandır (sağ üst köşe)
             guide_w, guide_h = 400, 320
             guide_x = self.width() - guide_w - 30
             guide_y = 110  # (i) butonunun altı
             self.help_guide_label.setGeometry(guide_x, guide_y, guide_w, guide_h)
             self.help_guide_label.show()
+            self.help_guide_label.raise_()
             logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
