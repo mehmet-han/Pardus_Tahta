@@ -102,6 +102,22 @@ config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 SETTINGS = config['settings']
 
+# --- Surum: TEK DOGRULUK KAYNAGI version.txt ---
+# config.ini'deki 'version' bayat kalabiliyor (setup.sh bir donem oraya sabit "V2.13"
+# yaziyordu; kilit ekrani version.txt'ten okudugu icin dogru gorunurken sunucuya YANLIS
+# surum bildiriliyordu). version.txt her kurulumda paketten taze kopyalanir; varsa o kazanir.
+for _vf in ("/opt/fatih-client/version.txt",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")):
+    try:
+        if os.path.exists(_vf):
+            with open(_vf, 'r', encoding='utf-8') as _f:
+                _v = _f.read().strip()
+            if _v:
+                SETTINGS['version'] = _v
+                break
+    except Exception:
+        pass
+
 # --- Credential Deobfuscation (compiled into .so binary) ---
 def _deo(v):
     """Decode obfuscated config values (ENC: prefix = base64)"""

@@ -135,10 +135,17 @@ fi
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
 # Tamamen Fatih Client'in içinde XOR şifresiyle çalışma zamanında deşifre edilecek.
 
+# Surum TEK KAYNAKTAN: paketteki version.txt. Burada SABIT yazmak, tahtanin sunucuya
+# yanlis surum bildirmesine yol aciyordu ("V2.13" kalintisi) — kilit ekrani version.txt'ten
+# okudugu icin dogru gorunuyor, sunucuya giden deger ise config.ini'den gelip bayat kaliyordu.
+_PKG_VERSION=$(tr -d ' \t\n\r' < fatih_projesi_python/client/version.txt 2>/dev/null)
+[ -z "$_PKG_VERSION" ] && _PKG_VERSION="V6.00.00"
+echo "  → Kurulan sürüm: $_PKG_VERSION"
+
 # Config dosyasını oluştur (Sadece yetkisiz kurum ve tahta bilgisi, parola saklaması BİTTİ)
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
-version = V2.13
+version = $_PKG_VERSION
 sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
 ntp_servers = time.windows.com,time.google.com,time.cloudflare.com,time.apple.com
