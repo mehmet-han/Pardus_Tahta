@@ -4214,16 +4214,62 @@ class FatihClientApp(QWidget):
         threading.Thread(target=send_ack, daemon=True).start()
 
     def remove_system(self):
+        """Uzaktan kaldirma (ynt5 -> system_Remove=1).
+
+        Temizligi KENDIMIZ yapmiyoruz: kurulumla gelen resmi kaldirma betigini
+        (/usr/local/bin/fatih-uninstall) --force ile calistiriyoruz. Boylece uzaktan
+        kaldirma ile teknisyenin elle kaldirmasi BIREBIR ayni islemi yapar; iki ayri
+        temizlik listesi tutulmaz. (Eskiden burada sadece 3 dosya siliniyordu; autostart
+        kopyalari, rfkill, ses, gsettings ve sudoers artiklari geride kaliyordu ->
+        tahta "program kalkti ama internetim/sesim yok, hala kilitleniyor" durumunda kaliyordu.)
+        """
         logging.info("SYSTEM REMOVE command received. Uninstalling...")
+
         # KRİTİK: ACK'i SENKRON yap — dosyalar silinmeden önce sunucu bilgilendirilmeli
         try:
             self.network_client.set_value("system_Remove", "0")
         except Exception as ack_err:
             logging.error(f"Remove ACK hatası: {ack_err}")
-        os.system("rm -f /etc/xdg/autostart/fatih-client-autostart.desktop")
-        os.system("rm -rf /opt/fatih-client")
-        os.system("rm -f /etc/fatih-client/config.ini")
-        logging.info("Uninstallation complete. Exiting.")
+
+        uninstaller = "/usr/local/bin/fatih-uninstall"
+        if os.path.exists(uninstaller):
+            try:
+                # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
+                # biz olsek de temizlik sonuna kadar devam etsin.
+                _subprocess.Popen(
+                    [uninstaller, "--force"],
+                    start_new_session=True,
+                    stdout=_subprocess.DEVNULL,
+                    stderr=_subprocess.DEVNULL,
+                )
+                logging.info("fatih-uninstall --force started (detached). Exiting.")
+                QApplication.quit()
+                return
+            except Exception as e:
+                logging.error(f"Uninstaller calistirilamadi: {e} — satir ici temizlige dusuluyor")
+        else:
+            logging.warning(f"{uninstaller} bulunamadi — satir ici temizlige dusuluyor")
+
+        # --- Yedek plan: betik yoksa/calismazsa en azindan tam temizligi burada yap ---
+        # (Betikle ayni adimlar; ikisi degisirse birlikte guncellenmeli.)
+        for cmd in (
+            "rm -f /etc/xdg/autostart/fatih-client-autostart.desktop",
+            "rm -f /home/etapadmin/.config/autostart/fatih-client.desktop",
+            "rm -f /home/fatih-kiosk/.config/autostart/fatih-kiosk.desktop",
+            "rfkill unblock all",
+            "pactl set-sink-mute @DEFAULT_SINK@ 0",
+            "gsettings set org.gnome.desktop.lockdown disable-command-line false",
+            "rm -f /etc/sudoers.d/fatih-client",
+            "rm -f /etc/sudoers.d/fatih-kiosk",
+            "rm -rf /opt/fatih-client",
+            "rm -f /etc/fatih-client/config.ini",
+        ):
+            try:
+                os.system(cmd + " 2>/dev/null")
+            except Exception:
+                pass
+
+        logging.info("Uninstallation complete (fallback). Exiting.")
         QApplication.quit()
 
     # --- NEW: Log saving method that uses the network client ---

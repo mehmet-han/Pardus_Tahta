@@ -10,22 +10,35 @@ echo ""
 echo "Bu işlemi sadece yetkili personel yapabilir."
 echo ""
 
-# Şifre hash kontrolü (SHA-256)
-_PH="f64291c52c5da6c3842d2d8601c3443d70829083ab8eb6c600d5620c2d26881e"
-
-read -s -p "Lütfen Kaldırma Şifresini Girin: " USER_INPUT_PASSWORD
-echo ""
-
-# Girilen şifreyi SHA-256 hash'le ve karşılaştır
-INPUT_HASH=$(echo -n "$USER_INPUT_PASSWORD" | sha256sum | awk '{print $1}')
-
-if [ "$INPUT_HASH" != "$_PH" ]; then
-    echo "❌ HATA: Yanlış şifre! Kaldırma işlemi iptal edildi."
-    echo "Sistem koruması devam ediyor."
-    exit 1
+# --force: UZAKTAN kaldırma modu (ynt5 -> sunucu -> system_Remove bayrağı).
+# Şifre SORULMAZ çünkü yetkilendirme zaten sunucuda yapıldı: istemci cihaz token'ıyla
+# kimlik doğrulayıp komutu sunucudan aldı. Bu modu SADECE client.py remove_system()
+# çağırır; teknisyen elle kaldırırken şifre kapısı aynen devam eder.
+FORCE_MODE=0
+if [ "$1" = "--force" ] || [ "$FATIH_UNINSTALL_FORCE" = "1" ]; then
+    FORCE_MODE=1
 fi
 
-echo "✅ Şifre doğru. Kaldırma işlemi başlatılıyor..."
+if [ "$FORCE_MODE" = "1" ]; then
+    echo "🔓 Uzaktan kaldırma (sunucu yetkilendirdi) — şifre sorulmuyor."
+else
+    # Şifre hash kontrolü (SHA-256)
+    _PH="f64291c52c5da6c3842d2d8601c3443d70829083ab8eb6c600d5620c2d26881e"
+
+    read -s -p "Lütfen Kaldırma Şifresini Girin: " USER_INPUT_PASSWORD
+    echo ""
+
+    # Girilen şifreyi SHA-256 hash'le ve karşılaştır
+    INPUT_HASH=$(echo -n "$USER_INPUT_PASSWORD" | sha256sum | awk '{print $1}')
+
+    if [ "$INPUT_HASH" != "$_PH" ]; then
+        echo "❌ HATA: Yanlış şifre! Kaldırma işlemi iptal edildi."
+        echo "Sistem koruması devam ediyor."
+        exit 1
+    fi
+
+    echo "✅ Şifre doğru. Kaldırma işlemi başlatılıyor..."
+fi
 
 # 1. Çalışan uygulamayı durdur
 echo "[-] Çalışan servisler durduruluyor..."
