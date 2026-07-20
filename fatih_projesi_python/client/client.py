@@ -2383,10 +2383,16 @@ class NetworkClient:
                 return False
 
     def ctrl_post(self):
-        """Yoklama (v5 /poll). Kimlik token'dan gelir; govde bos.
+        """Yoklama (v5 /poll). Kimlik token'dan gelir; govdede SADECE surum bilgisi var.
         process_commands ile uyum icin LISTE doner: [openClose, message, shutdown, systemRemove, logIstek]
-        (hepsi str; mesaj bos ise '0' = v4 default davranisi). Kayit yoksa v5 fail-safe KILITLI doner."""
-        result = self._result(self._make_request("poll", {}))
+        (hepsi str; mesaj bos ise '0' = v4 default davranisi). Kayit yoksa v5 fail-safe KILITLI doner.
+
+        Surum bildirimi: sunucu tahtanin hangi istemci surumunde oldugunu bilmiyordu. ynt5'teki
+        'Programi Kaldir' butonu yalnizca TAM temizlik yapabilen surumlerde (V6.00.12+) aktif
+        olacagi icin bu bilgi gerekli. Sunucu throttle'li yazar; her yoklamada DB'ye gitmez."""
+        result = self._result(self._make_request("poll", {
+            "version": str(self.settings.get('version') or ''),
+        }))
         if result is None:
             return None
         msg = result.get("message", "")
