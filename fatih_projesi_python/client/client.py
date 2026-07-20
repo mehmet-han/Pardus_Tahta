@@ -3365,9 +3365,11 @@ class FatihClientApp(QWidget):
         Veri yavas degisir -> 5 dk. Ilk cekim biraz gecikmeli (ag/token otursun)."""
         self.display_timer = QTimer(self)
         self.display_timer.timeout.connect(self.refresh_display)
-        self.display_timer.start(300000)  # 5 dakika
+        # 2 dakika: /poll zaten 5 saniyede bir calisiyor (saatte ~720 istek), /display'in
+        # saatte 30 istegi bunun yaninda ihmal edilebilir. Sunucuda 60sn cache tepe yuku emiyor.
+        self.display_timer.start(120000)
         QTimer.singleShot(2500, self.refresh_display)
-        logging.info("Display (aferin panel) timer started with 5 minute interval")
+        logging.info("Display (aferin panel) timer started with 2 minute interval")
 
     def refresh_display(self):
         """Gosterim verisini (v5 /display) ARKA PLAN thread'inde ceker; sonucu _display_ready
@@ -3436,12 +3438,14 @@ class FatihClientApp(QWidget):
             name_lbl.setObjectName("bdayName")
             name_lbl.setAlignment(Qt.AlignCenter)
             self.bday_rows_layout.addWidget(name_lbl)
+            name_lbl.show()   # bkz. _render_aferin_panel: gorunur parent'a eklenen cocuk otomatik gosterilmez
 
             if yas:
                 age_lbl = QLabel(f"bugün {int(yas)} yaşında 🎂", self.birthday_panel)
                 age_lbl.setObjectName("bdayAge")
                 age_lbl.setAlignment(Qt.AlignCenter)
                 self.bday_rows_layout.addWidget(age_lbl)
+                age_lbl.show()
 
         # Tekil/cogul: iki ogrencinin ayni gun dogum gunu olabilir.
         cogul = len(dogumGunleri) > 1
@@ -3567,6 +3571,10 @@ class FatihClientApp(QWidget):
             row_lay.addWidget(cnt)
 
             self.aferin_rows_layout.addWidget(row)
+            # KRITIK: parent (panel) ZATEN GORUNURSE Qt yeni cocugu otomatik GOSTERMEZ.
+            # show() cagrilmazsa satir gizli kalir, layout'ta yer kaplamaz ve panel
+            # "baslik var govde yok" halinde kucuk cizilir (V6.00.08-10'daki bos liste bug'i).
+            row.show()
 
         # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir.
         # Layout ZORLA guncellenir: satirlar yeni eklendigi icin sizeHint() aksi halde
@@ -4056,11 +4064,15 @@ class FatihClientApp(QWidget):
 
             QApplication.processEvents()
 
-            # Bilgi panellerini son veriyle hemen ciz (5 dk'lik timer'i bekleme).
-            # KRITIK: bu cagri show()+processEvents()'ten SONRA olmali — pencere
-            # gorunmeden cizilirse layout oturmamis olur, sizeHint() eski yuksekligi
-            # dondurur ve panel satirlari KIRPILIR (V6.00.08'de yasanan bug).
+            # Bilgi panellerini once SON VERIYLE ciz -> ekran aninda dolu gelsin.
+            # (Bu cagri show()+processEvents() SONRASINDA olmali; pencere gorunmeden
+            #  cizilirse layout dogru oturmaz.)
             self._restore_info_panels()
+
+            # Ardindan TAZE veri iste: ders icinde verilen aferin / girilen dogum gunu
+            # tahta kilitlenir kilitlenmez gorunsun. Arka planda calisir, ~1 sn sonra
+            # panelleri tazeler; ekran bu sirada bos kalmaz (yukarida zaten cizildi).
+            self.refresh_display()
 
             # Cinnamon panel'i altımıza göm: xdotool ile kilit ekranını en üste al
             QTimer.singleShot(500, self._force_on_top)
