@@ -2605,6 +2605,7 @@ class FatihClientApp(QWidget):
         self._display_ready.connect(self._render_display)
         
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
+        self._last_display_data = None  # /display son yaniti (panelleri aga gitmeden geri cizmek icin)
         self.keyboard_locker = None
         self.usb_check_timer = None
         # NEW: Instantiate the NetworkClient
@@ -3383,7 +3384,30 @@ class FatihClientApp(QWidget):
 
     def _render_display(self, data):
         """/display sonucunu ilgili panellere dagitir (UI thread)."""
-        d = data if isinstance(data, dict) else {}
+        # Son veriyi sakla: giris ekrani kapaninca ag'a tekrar gitmeden geri cizebilelim.
+        self._last_display_data = data if isinstance(data, dict) else None
+
+        # Sifre/giris paneli aciksa panelleri CIZME — numpad'i kapatmasinlar.
+        if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
+            self._hide_info_panels()
+            return
+
+        d = self._last_display_data or {}
+        self._render_aferin_panel(d.get("aferinTop5"))
+        self._render_birthday_panel(d.get("dogumGunleri"))
+
+    def _hide_info_panels(self):
+        """Aferin + dogum gunu panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
+        if getattr(self, 'aferin_panel', None) is not None:
+            self.aferin_panel.hide()
+        if getattr(self, 'birthday_panel', None) is not None:
+            self.birthday_panel.hide()
+
+    def _restore_info_panels(self):
+        """Gizlenen panelleri son veriyle yeniden cizer (ag'a gitmeden)."""
+        if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
+            return  # hala giris ekrani acik
+        d = getattr(self, '_last_display_data', None) or {}
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_birthday_panel(d.get("dogumGunleri"))
 
@@ -3992,6 +4016,10 @@ class FatihClientApp(QWidget):
             self.acknowledge_command("tahtaLock", "1")
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
+            # Kilit ekrani geri geldi -> bilgi panellerini son veriyle hemen ciz
+            # (5 dk'lik yenileme timer'ini bekleme).
+            self._restore_info_panels()
+
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
             PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
             VolumeControl.mute()         # Ses kapat (C# VD)
@@ -4225,6 +4253,9 @@ class FatihClientApp(QWidget):
         panel_y = (self.height() - panel_h) // 2
         self.login_panel.setGeometry(panel_x, panel_y, panel_w, panel_h)
         
+        # Bilgi panelleri (aferin/dogum gunu) giris ekranini ve numpad'i kapatmasin.
+        self._hide_info_panels()
+
         self.login_panel.show()
         # Force window to stay on top and regain focus if Cinnamon dropped it
         self.raise_()
@@ -4309,6 +4340,8 @@ class FatihClientApp(QWidget):
     def _login_cancel(self):
         """Gömülü giriş panelini kapat"""
         self.login_panel.hide()
+        # Giris kapandi -> bilgi panellerini son veriyle geri getir (ag'a gitmeden)
+        self._restore_info_panels()
         # C# stms=true'ya dönüş (iptal edildi)
         self.start_work = True
         logging.info("Login panel cancelled - start_work=True restored")
