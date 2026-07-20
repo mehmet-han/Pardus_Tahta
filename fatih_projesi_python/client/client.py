@@ -2560,6 +2560,78 @@ AFERIN_RANK_COLORS = [
     ('#EBB278', '#B9743A', '#3A2110'),   # bronz
 ]
 
+# --- Feature 4: "Bugun Gelmeyenler" (yoklama yok listesi) paneli stili ---
+# Sag-alt kosede (aferin sol-altta -> simetrik). Kirmizi tema = devamsizlik.
+# O sinifin bugunku EN SON yoklamasindaki gelmeyenler (numara + isim).
+YOKLAMA_PANEL_QSS = """
+QFrame#yoklamaPanel {
+    background-color: rgba(30, 12, 14, 240);
+    border: 2px solid rgba(239, 83, 80, 200);
+    border-radius: 22px;
+}
+QLabel { background: transparent; }
+QLabel#yoklamaTitle {
+    color: #FF8A80;
+    font-family: 'DejaVu Sans';
+    font-size: 17px;
+    font-weight: bold;
+}
+QLabel#yoklamaSubtitle {
+    color: rgba(230, 200, 200, 190);
+    font-family: 'DejaVu Sans';
+    font-size: 11px;
+}
+QFrame#yoklamaRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(239,83,80,220), stop:0.65 rgba(239,83,80,60), stop:1 rgba(239,83,80,0));
+    border: none;
+    border-radius: 1px;
+}
+QFrame#yoklamaRow {
+    background-color: rgba(255, 255, 255, 14);
+    border: 1px solid rgba(255, 120, 120, 40);
+    border-radius: 12px;
+}
+QLabel#yoklamaName {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#yoklamaNo {
+    color: #1A0A0B;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FF8A80, stop:1 #E53935);
+    border-radius: 13px;
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+}
+QLabel#yoklamaTamKatilim {
+    color: #A5D6A7;
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+}
+/* Durum etiketleri: geç (turuncu) ve nöbetçi (mavi). Yok'ta etiket gösterilmez. */
+QLabel#yoklamaTagGec {
+    color: #3A2600;
+    background-color: #FFB74D;
+    border-radius: 8px;
+    font-family: 'DejaVu Sans';
+    font-size: 11px;
+    font-weight: bold;
+}
+QLabel#yoklamaTagNbt {
+    color: #06222E;
+    background-color: #4FC3F7;
+    border-radius: 8px;
+    font-family: 'DejaVu Sans';
+    font-size: 11px;
+    font-weight: bold;
+}
+"""
+
 # --- Feature 1: "Iyi ki dogdun" kutlama paneli stili ---
 # Ekranin ORTASINDA gosterilir (kullanici karari) — dogum gunu nadir bir olay oldugu icin
 # merkezdeki gorseli o gune ozel kapatmasi kabul edildi. Sadece o sinifta bugun dogan varsa gorunur.
@@ -2856,6 +2928,40 @@ class FatihClientApp(QWidget):
         _bd_lay.addWidget(self.bday_sub)
 
         self.birthday_panel.hide()
+
+        # --- Feature 4: "Bugün Gelmeyenler" (yoklama yok) paneli (sağ-alt köşe) ---
+        # O sınıfın bugünkü EN SON yoklamasındaki gelmeyenler (numara + isim). Yoklama
+        # alınmadıysa gizli; alındıysa ama gelmeyen yoksa "Tam katılım" gösterir.
+        self.yoklama_panel = QFrame(self)
+        self.yoklama_panel.setObjectName("yoklamaPanel")
+        self.yoklama_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.yoklama_panel.setStyleSheet(YOKLAMA_PANEL_QSS)
+        self.yoklama_panel.setFixedWidth(400)
+
+        _yk_lay = QVBoxLayout(self.yoklama_panel)
+        _yk_lay.setContentsMargins(24, 19, 24, 21)
+        _yk_lay.setSpacing(3)
+
+        self.yoklama_title = QLabel("🚫  BUGÜN GELMEYENLER", self.yoklama_panel)
+        self.yoklama_title.setObjectName("yoklamaTitle")
+        _yk_lay.addWidget(self.yoklama_title)
+
+        self.yoklama_sub = QLabel("", self.yoklama_panel)
+        self.yoklama_sub.setObjectName("yoklamaSubtitle")
+        _yk_lay.addWidget(self.yoklama_sub)
+
+        _yk_rule = QFrame(self.yoklama_panel)
+        _yk_rule.setObjectName("yoklamaRule")
+        _yk_rule.setFixedHeight(3)
+        _yk_lay.addSpacing(9)
+        _yk_lay.addWidget(_yk_rule)
+        _yk_lay.addSpacing(11)
+
+        self.yoklama_rows_layout = QVBoxLayout()
+        self.yoklama_rows_layout.setSpacing(8)
+        _yk_lay.addLayout(self.yoklama_rows_layout)
+
+        self.yoklama_panel.hide()
 
         # Status message label
         self.message_label = QLabel("", self)
@@ -3424,13 +3530,16 @@ class FatihClientApp(QWidget):
         d = self._last_display_data or {}
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        self._render_yoklama_panel(d.get("yoklamaYok"))
 
     def _hide_info_panels(self):
-        """Aferin + dogum gunu panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
+        """Aferin + dogum gunu + yoklama panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
         if getattr(self, 'aferin_panel', None) is not None:
             self.aferin_panel.hide()
         if getattr(self, 'birthday_panel', None) is not None:
             self.birthday_panel.hide()
+        if getattr(self, 'yoklama_panel', None) is not None:
+            self.yoklama_panel.hide()
 
     def _restore_info_panels(self):
         """Gizlenen panelleri son veriyle yeniden cizer (ag'a gitmeden)."""
@@ -3439,6 +3548,7 @@ class FatihClientApp(QWidget):
         d = getattr(self, '_last_display_data', None) or {}
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        self._render_yoklama_panel(d.get("yoklamaYok"))
 
     def _clear_layout(self, layout):
         """Bir layout'un tum widget'larini temizler (paneller her yenilemede yeniden kurulur)."""
@@ -3508,6 +3618,100 @@ class FatihClientApp(QWidget):
         self.birthday_panel.move(bx, (self.height() - bh) // 2)
         self.birthday_panel.show()
         self.birthday_panel.raise_()
+
+    def _render_yoklama_panel(self, yoklamaYok):
+        """Bugünkü EN SON yoklamada gelmeyenleri sağ-alt panelde gösterir (UI thread).
+        yoklamaYok None -> bugün yoklama alınmamış -> gizle.
+        gelmeyenler boş -> yoklama alındı, gelmeyen yok -> 'Tam katılım'."""
+        if not yoklamaYok or not isinstance(yoklamaYok, dict):
+            self.yoklama_panel.hide()
+            return
+
+        self._clear_layout(self.yoklama_rows_layout)
+
+        sinif = str(yoklamaYok.get('sinif') or SETTINGS.get('board_name', '') or '')
+        ders = str(yoklamaYok.get('ders') or '')
+        alt = " • ".join([x for x in (sinif, ders) if x]) or "bugünkü yoklama"
+        self.yoklama_sub.setText(alt)
+
+        gelmeyenler = yoklamaYok.get('gelmeyenler') or []
+        if not gelmeyenler:
+            # Yoklama alınmış ama gelmeyen yok -> tam katılım (yeşil satır).
+            lbl = QLabel("✅  Tam katılım — gelmeyen yok", self.yoklama_panel)
+            lbl.setObjectName("yoklamaTamKatilim")
+            self.yoklama_rows_layout.addWidget(lbl)
+            lbl.show()
+        else:
+            # Ekran taşmasın: en fazla 12 satır, gerisi "+N daha".
+            MAX_SATIR = 12
+            gosterilecek = gelmeyenler[:MAX_SATIR]
+            for r in gosterilecek:
+                numara = str(r.get('numara', '') or '')
+                adi = str(r.get('adi', '') or '')
+                durum = str(r.get('durum', 'yok') or 'yok')
+
+                row = QFrame(self.yoklama_panel)
+                row.setObjectName("yoklamaRow")
+                row.setAttribute(Qt.WA_StyledBackground, True)
+                row_lay = QHBoxLayout(row)
+                row_lay.setContentsMargins(11, 8, 13, 8)
+                row_lay.setSpacing(12)
+
+                no = QLabel(numara or "—", row)
+                no.setObjectName("yoklamaNo")
+                no.setAlignment(Qt.AlignCenter)
+                no.setFixedSize(46, 26)
+                row_lay.addWidget(no)
+
+                name_lbl = QLabel(adi, row)
+                name_lbl.setObjectName("yoklamaName")
+                row_lay.addWidget(name_lbl)
+                row_lay.addStretch(1)
+
+                # Durum etiketi: geç / nöbetçi. Gerçekten gelmeyende (yok) etiket yok.
+                if durum == 'gec':
+                    tag = QLabel("GEÇ", row)
+                    tag.setObjectName("yoklamaTagGec")
+                    tag.setAlignment(Qt.AlignCenter)
+                    tag.setFixedSize(42, 22)
+                    row_lay.addWidget(tag)
+                elif durum == 'nbt':
+                    tag = QLabel("NÖBETÇİ", row)
+                    tag.setObjectName("yoklamaTagNbt")
+                    tag.setAlignment(Qt.AlignCenter)
+                    tag.setFixedSize(66, 22)
+                    row_lay.addWidget(tag)
+
+                self.yoklama_rows_layout.addWidget(row)
+                row.show()
+
+            kalan = len(gelmeyenler) - len(gosterilecek)
+            if kalan > 0:
+                more = QLabel(f"+{kalan} öğrenci daha", self.yoklama_panel)
+                more.setObjectName("yoklamaSubtitle")
+                more.setAlignment(Qt.AlignCenter)
+                self.yoklama_rows_layout.addWidget(more)
+                more.show()
+
+        # Alt başlık: sınıf • ders • sayım. "gelmeyen" = gerçekten YOK (geç/nöbetçi hariç);
+        # geç/nöbetçi varsa ayrıca eklenir ki sayı doğru okunsun.
+        if gelmeyenler:
+            yok_s = sum(1 for r in gelmeyenler if str(r.get('durum', 'yok')) == 'yok')
+            gec_s = sum(1 for r in gelmeyenler if str(r.get('durum')) == 'gec')
+            nbt_s = sum(1 for r in gelmeyenler if str(r.get('durum')) == 'nbt')
+            parts = []
+            if yok_s: parts.append(f"{yok_s} gelmeyen")
+            if gec_s: parts.append(f"{gec_s} geç")
+            if nbt_s: parts.append(f"{nbt_s} nöbetçi")
+            self.yoklama_sub.setText(f"{alt}  •  " + ", ".join(parts) if parts else alt)
+
+        # İçeriğe göre yükseklik; sağ-alt köşeye yerleştir (aferin sol-altta -> simetrik).
+        self._fit_panel_height(self.yoklama_panel)
+        yh = self.yoklama_panel.height()
+        yw = self.yoklama_panel.width()
+        self.yoklama_panel.move(self.width() - yw - 16, self.height() - yh - 78)
+        self.yoklama_panel.show()
+        self.yoklama_panel.raise_()
 
     @staticmethod
     def _fit_panel_height(panel):
