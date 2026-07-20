@@ -3465,14 +3465,30 @@ class FatihClientApp(QWidget):
         bw = max(420, min(760, avail - 32))
         self.birthday_panel.setFixedWidth(bw)
 
-        self.birthday_panel.adjustSize()
-        bh = self.birthday_panel.sizeHint().height()
+        self._fit_panel_height(self.birthday_panel)
+        bh = self.birthday_panel.height()
         bx = left_bound + max(0, (avail - bw) // 2)
         # Ekrandan tasmasin
         bx = min(bx, max(0, self.width() - bw))
-        self.birthday_panel.setGeometry(bx, (self.height() - bh) // 2, bw, bh)
+        self.birthday_panel.move(bx, (self.height() - bh) // 2)
         self.birthday_panel.show()
         self.birthday_panel.raise_()
+
+    @staticmethod
+    def _fit_panel_height(panel):
+        """Paneli icerigine gore boyutlandirir.
+
+        Qt tuzagi: bir layout'a widget eklendikten hemen sonra sizeHint() ONBELLEKTEKI
+        (eski) degeri dondurebilir. Panel o eski yukseklikte sabitlenirse yeni satirlar
+        KIRPILIR ve gorunmez olur. invalidate()+activate() ile layout'u zorla yeniden
+        hesaplatip oyle adjustSize() cagiriyoruz.
+        """
+        lay = panel.layout()
+        if lay is not None:
+            lay.invalidate()
+            lay.activate()
+        panel.updateGeometry()
+        panel.adjustSize()
 
     def _clear_aferin_rows(self):
         """Panel satirlarini temizler (her yenilemede yeniden kurulur)."""
@@ -3548,10 +3564,12 @@ class FatihClientApp(QWidget):
 
             self.aferin_rows_layout.addWidget(row)
 
-        # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir
-        self.aferin_panel.adjustSize()
-        ph = self.aferin_panel.sizeHint().height()
-        self.aferin_panel.setGeometry(16, self.height() - ph - 78, 452, ph)
+        # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir.
+        # Layout ZORLA guncellenir: satirlar yeni eklendigi icin sizeHint() aksi halde
+        # eski (satirsiz) yuksekligi dondurup paneli kirpabiliyor.
+        self._fit_panel_height(self.aferin_panel)
+        ph = self.aferin_panel.height()
+        self.aferin_panel.move(16, self.height() - ph - 78)
         self.aferin_panel.show()
         self.aferin_panel.raise_()
 
@@ -4016,10 +4034,6 @@ class FatihClientApp(QWidget):
             self.acknowledge_command("tahtaLock", "1")
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
-            # Kilit ekrani geri geldi -> bilgi panellerini son veriyle hemen ciz
-            # (5 dk'lik yenileme timer'ini bekleme).
-            self._restore_info_panels()
-
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
             PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
             VolumeControl.mute()         # Ses kapat (C# VD)
@@ -4035,8 +4049,14 @@ class FatihClientApp(QWidget):
             self.raise_()
             self.activateWindow()
             self.login_button.setFocus()
-            
+
             QApplication.processEvents()
+
+            # Bilgi panellerini son veriyle hemen ciz (5 dk'lik timer'i bekleme).
+            # KRITIK: bu cagri show()+processEvents()'ten SONRA olmali — pencere
+            # gorunmeden cizilirse layout oturmamis olur, sizeHint() eski yuksekligi
+            # dondurur ve panel satirlari KIRPILIR (V6.00.08'de yasanan bug).
+            self._restore_info_panels()
 
             # Cinnamon panel'i altımıza göm: xdotool ile kilit ekranını en üste al
             QTimer.singleShot(500, self._force_on_top)
