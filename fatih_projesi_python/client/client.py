@@ -4253,45 +4253,57 @@ class FatihClientApp(QWidget):
         except Exception as ack_err:
             logging.error(f"Remove ACK hatası: {ack_err}")
 
+        # Istemci etapadmin olarak calisir, kaldirma ise ROOT isi -> sudo sart.
+        # setup.sh yalnizca bu betik icin NOPASSWD kurali tanimlar (/etc/sudoers.d/fatih-client).
+        # `-n`: sifre sorma, soracaksa hemen basarisiz ol (kilit ekraninda prompt bekleyemeyiz).
         uninstaller = "/usr/local/bin/fatih-uninstall"
-        if os.path.exists(uninstaller):
-            try:
-                # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
-                # biz olsek de temizlik sonuna kadar devam etsin.
-                _subprocess.Popen(
-                    [uninstaller, "--force"],
-                    start_new_session=True,
-                    stdout=_subprocess.DEVNULL,
-                    stderr=_subprocess.DEVNULL,
-                )
-                logging.info("fatih-uninstall --force started (detached). Exiting.")
-                QApplication.quit()
-                return
-            except Exception as e:
-                logging.error(f"Uninstaller calistirilamadi: {e} — satir ici temizlige dusuluyor")
-        else:
-            logging.warning(f"{uninstaller} bulunamadi — satir ici temizlige dusuluyor")
+        try:
+            # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
+            # biz olsek de temizlik sonuna kadar devam etsin.
+            _subprocess.Popen(
+                ["sudo", "-n", uninstaller, "--force"],
+                start_new_session=True,
+                stdout=_subprocess.DEVNULL,
+                stderr=_subprocess.DEVNULL,
+            )
+            logging.info("sudo fatih-uninstall --force started (detached). Exiting.")
+            QApplication.quit()
+            return
+        except Exception as e:
+            logging.error(f"Uninstaller calistirilamadi: {e} — satir ici temizlige dusuluyor")
 
-        # --- Yedek plan: betik yoksa/calismazsa en azindan tam temizligi burada yap ---
-        # (Betikle ayni adimlar; ikisi degisirse birlikte guncellenmeli.)
+        # --- Yedek plan: betik cagrilamadiysa ayni adimlari burada dene ---
+        # Bunlar da root isi -> hepsi `sudo -n` ile. (Betikle ayni liste; birlikte guncellenmeli.)
         for cmd in (
             "rm -f /etc/xdg/autostart/fatih-client-autostart.desktop",
             "rm -f /home/etapadmin/.config/autostart/fatih-client.desktop",
             "rm -f /home/fatih-kiosk/.config/autostart/fatih-kiosk.desktop",
             "rfkill unblock all",
-            "pactl set-sink-mute @DEFAULT_SINK@ 0",
-            "gsettings set org.gnome.desktop.lockdown disable-command-line false",
-            "rm -f /etc/sudoers.d/fatih-client",
             "rm -f /etc/sudoers.d/fatih-kiosk",
             "rm -rf /opt/fatih-client",
             "rm -f /etc/fatih-client/config.ini",
+        ):
+            try:
+                os.system(f"sudo -n {cmd} 2>/dev/null")
+            except Exception:
+                pass
+        # Bunlar kullanici oturumuna ait, sudo'suz calisir.
+        for cmd in (
+            "pactl set-sink-mute @DEFAULT_SINK@ 0",
+            "gsettings set org.gnome.desktop.lockdown disable-command-line false",
         ):
             try:
                 os.system(cmd + " 2>/dev/null")
             except Exception:
                 pass
 
-        logging.info("Uninstallation complete (fallback). Exiting.")
+        # DURUST RAPOR: eskiden temizlik basarisiz olsa bile "complete" yaziliyordu
+        # (Errno 13'te tam bu oldu) -> gercekten gitti mi kontrol et.
+        if os.path.exists("/opt/fatih-client"):
+            logging.error("KALDIRMA BASARISIZ: /opt/fatih-client hala duruyor (yetki sorunu?). "
+                          "Tahta elle kaldirilmali: sudo /usr/local/bin/fatih-uninstall")
+        else:
+            logging.info("Uninstallation complete (fallback). Exiting.")
         QApplication.quit()
 
     # --- NEW: Log saving method that uses the network client ---
