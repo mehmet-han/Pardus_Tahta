@@ -3431,10 +3431,22 @@ class FatihClientApp(QWidget):
         else:
             self.bday_sub.setText("Doğum gününüz kutlu olsun" if cogul else "Doğum günün kutlu olsun")
 
-        # Ekranin ortasina yerlestir
+        # Yerlesim: aferin paneli gorunurse ONUN SAGINDAKI bos alana ortala (uzerine binmesin),
+        # gorunmuyorsa ekranin tam ortasina. Dar ekranlarda panel genisligi kisilir.
+        left_bound = 0
+        if self.aferin_panel.isVisible():
+            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + 24
+
+        avail = max(0, self.width() - left_bound)
+        bw = max(420, min(760, avail - 32))
+        self.birthday_panel.setFixedWidth(bw)
+
         self.birthday_panel.adjustSize()
-        bw, bh = 760, self.birthday_panel.sizeHint().height()
-        self.birthday_panel.setGeometry((self.width() - bw) // 2, (self.height() - bh) // 2, bw, bh)
+        bh = self.birthday_panel.sizeHint().height()
+        bx = left_bound + max(0, (avail - bw) // 2)
+        # Ekrandan tasmasin
+        bx = min(bx, max(0, self.width() - bw))
+        self.birthday_panel.setGeometry(bx, (self.height() - bh) // 2, bw, bh)
         self.birthday_panel.show()
         self.birthday_panel.raise_()
 
