@@ -3457,8 +3457,12 @@ class FatihClientApp(QWidget):
 
         # Yerlesim: aferin paneli gorunurse ONUN SAGINDAKI bos alana ortala (uzerine binmesin),
         # gorunmuyorsa ekranin tam ortasina. Dar ekranlarda panel genisligi kisilir.
+        # Aferin paneli DOLU mu? isVisible() KULLANMA: Qt'de alt widget'in isVisible()'i
+        # pencere henuz gosterilmemisse .show() cagrilmis olsa bile False doner -> panel
+        # "yok" sanilip kutlama karti tam ortaya konuyor ve uzerine biniyordu (V6.00.08 bug'i).
+        # Icerik sayisi pencere gorunurlugunden bagimsizdir, guvenilir olcut budur.
         left_bound = 0
-        if self.aferin_panel.isVisible():
+        if self.aferin_rows_layout.count() > 0:
             left_bound = self.aferin_panel.x() + self.aferin_panel.width() + 24
 
         avail = max(0, self.width() - left_bound)
