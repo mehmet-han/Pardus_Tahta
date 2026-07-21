@@ -2676,6 +2676,73 @@ QFrame#bdayRule {
 }
 """
 
+# --- Duyuru (announcement) slider paneli — ORTA PANO (kullanici karari: orta pano = DUYURU PANOSU) ---
+# Sinif + ders saati hedefli; v5 /display'den `duyurular` alaninda gelir. Dogum gunu varsa ilk 10 dk
+# kutlama gosterilir, sonra (ya da dogum gunu yoksa direkt) burada slider olarak oynar. Ogretmen
+# "Durdur" ile bu tahtada bu ders saati boyunca gizleyebilir. Duyuru yoksa panel kapali kalir.
+# Renk: birthday moru/pembesinden AYRI, otoriter mavi (duyuru/bilgi hissi).
+DUYURU_PANEL_QSS = """
+QFrame#duyuruPanel {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(12, 44, 78, 248), stop:0.55 rgba(10, 54, 88, 248), stop:1 rgba(8, 40, 72, 248));
+    border: 3px solid rgba(120, 200, 255, 220);
+    border-radius: 30px;
+}
+QLabel { background: transparent; }
+QLabel#duyuruKicker {
+    color: #8FD3FF;
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#duyuruGonderen {
+    color: rgba(184, 216, 242, 210);
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+}
+QFrame#duyuruRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(120,200,255,0), stop:0.5 rgba(120,200,255,190), stop:1 rgba(120,200,255,0));
+    border: none;
+}
+QLabel#duyuruBaslik {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 30px;
+    font-weight: bold;
+}
+QLabel#duyuruMesaj {
+    color: #EAF4FF;
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+}
+QLabel#duyuruDots {
+    color: rgba(150, 200, 240, 230);
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 3px;
+}
+QPushButton#duyuruStop {
+    background-color: rgba(255, 255, 255, 28);
+    color: #EAF4FF;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+    border: 1px solid rgba(160, 210, 245, 150);
+    border-radius: 16px;
+    padding: 8px 22px;
+}
+QPushButton#duyuruStop:pressed {
+    background-color: rgba(255, 255, 255, 64);
+}
+"""
+
+# Dogum gunu -> slider gecis kapisi (dk) ve slayt sure (ms).
+DUYURU_BIRTHDAY_GATE_MIN = 10
+DUYURU_SLIDE_MS = 8000
+
 
 class FatihClientApp(QWidget):
     # Signal emitted from background thread when password validation completes.
@@ -2746,6 +2813,16 @@ class FatihClientApp(QWidget):
         self.last_schedule_day = -1  # Gün değişince exit_time_locked sıfırlanacak
         # --- END SCHEDULING ---
 
+        # --- DUYURU (sınıf+ders saati hedefli, orta pano slider) ---
+        # /display'den gelen ham liste; aktif periyoda göre süzülüp slider'da oynatılır.
+        self._duyuru_active = []          # şu anki ders saatine ait, gösterilecek duyurular
+        self._duyuru_index = 0            # slider'da gösterilen slayt
+        self._duyuru_period = None        # slider'ın bağlı olduğu ders saati (periyot no)
+        # Öğretmen "Durdur" derse: sadece BU tahtada, BU ders saati boyunca gizle (lokal).
+        self._duyuru_stopped_periods = set()
+        self._duyuru_stopped_day = -1     # gün değişince durdurma hafızası sıfırlanır
+        # --- END DUYURU ---
+
         self.init_ui()
         self.init_network_timer()
         self.init_usb_monitor()
@@ -2754,6 +2831,7 @@ class FatihClientApp(QWidget):
         self.init_time_timer()
         self.init_schedule_timer() # New timer for scheduling
         self.init_display_timer()  # Feature 5: ilk-5 aferin paneli
+        self.init_duyuru_timers()  # Duyuru: durum değerlendirme + slayt geçişi
 
         # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
         PowerManager.disable_sleep()
@@ -2931,6 +3009,71 @@ class FatihClientApp(QWidget):
         _bd_lay.addWidget(self.bday_sub)
 
         self.birthday_panel.hide()
+
+        # --- Duyuru slider paneli (ORTA PANO) ---
+        # Sınıf+ders saati hedefli duyurular burada slider olarak oynar (birthday ile aynı
+        # merkezi alan; ikisi aynı anda gösterilmez — _update_duyuru_state karar verir).
+        self.duyuru_panel = QFrame(self)
+        self.duyuru_panel.setObjectName("duyuruPanel")
+        self.duyuru_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.duyuru_panel.setStyleSheet(DUYURU_PANEL_QSS)
+        self.duyuru_panel.setFixedWidth(760)
+
+        _dy_lay = QVBoxLayout(self.duyuru_panel)
+        _dy_lay.setContentsMargins(36, 26, 36, 26)
+        _dy_lay.setSpacing(5)
+
+        self.duyuru_kicker = QLabel("📢  SINIF DUYURUSU", self.duyuru_panel)
+        self.duyuru_kicker.setObjectName("duyuruKicker")
+        self.duyuru_kicker.setAlignment(Qt.AlignCenter)
+        _dy_lay.addWidget(self.duyuru_kicker)
+
+        self.duyuru_gonderen = QLabel("", self.duyuru_panel)
+        self.duyuru_gonderen.setObjectName("duyuruGonderen")
+        self.duyuru_gonderen.setAlignment(Qt.AlignCenter)
+        self.duyuru_gonderen.setWordWrap(True)
+        _dy_lay.addWidget(self.duyuru_gonderen)
+
+        _dy_rule = QFrame(self.duyuru_panel)
+        _dy_rule.setObjectName("duyuruRule")
+        _dy_rule.setFixedHeight(2)
+        _dy_lay.addSpacing(12)
+        _dy_lay.addWidget(_dy_rule)
+        _dy_lay.addSpacing(16)
+
+        self.duyuru_baslik = QLabel("", self.duyuru_panel)
+        self.duyuru_baslik.setObjectName("duyuruBaslik")
+        self.duyuru_baslik.setAlignment(Qt.AlignCenter)
+        self.duyuru_baslik.setWordWrap(True)  # uzun başlık dar kartta kesilmesin
+        _dy_lay.addWidget(self.duyuru_baslik)
+
+        _dy_lay.addSpacing(10)
+        self.duyuru_mesaj = QLabel("", self.duyuru_panel)
+        self.duyuru_mesaj.setObjectName("duyuruMesaj")
+        self.duyuru_mesaj.setAlignment(Qt.AlignCenter)
+        self.duyuru_mesaj.setWordWrap(True)
+        _dy_lay.addWidget(self.duyuru_mesaj)
+
+        _dy_lay.addSpacing(18)
+        # Slayt noktaları (birden fazla duyuru varsa) — ortalı.
+        self.duyuru_dots = QLabel("", self.duyuru_panel)
+        self.duyuru_dots.setObjectName("duyuruDots")
+        self.duyuru_dots.setAlignment(Qt.AlignCenter)
+        _dy_lay.addWidget(self.duyuru_dots)
+
+        _dy_lay.addSpacing(10)
+        # "Durdur" butonu — ortalı bir satırda.
+        _dy_btn_row = QHBoxLayout()
+        _dy_btn_row.addStretch(1)
+        self.duyuru_stop_btn = QPushButton("⏸  Durdur", self.duyuru_panel)
+        self.duyuru_stop_btn.setObjectName("duyuruStop")
+        self.duyuru_stop_btn.setCursor(Qt.PointingHandCursor)
+        self.duyuru_stop_btn.clicked.connect(self._on_duyuru_stop)
+        _dy_btn_row.addWidget(self.duyuru_stop_btn)
+        _dy_btn_row.addStretch(1)
+        _dy_lay.addLayout(_dy_btn_row)
+
+        self.duyuru_panel.hide()
 
         # --- Feature 4: "Bugün Gelmeyenler" (yoklama yok) paneli (sağ-alt köşe) ---
         # O sınıfın bugünkü EN SON yoklamasındaki gelmeyenler (numara + isim). Yoklama
@@ -3536,6 +3679,8 @@ class FatihClientApp(QWidget):
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_yoklama_panel(d.get("yoklamaYok"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        # Duyuru: aktif ders saati + doğum günü kapısına göre slider'ı yönet (birthday'den SONRA).
+        self._update_duyuru_state()
 
     def _hide_info_panels(self):
         """Aferin + dogum gunu + yoklama panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
@@ -3545,6 +3690,7 @@ class FatihClientApp(QWidget):
             self.birthday_panel.hide()
         if getattr(self, 'yoklama_panel', None) is not None:
             self.yoklama_panel.hide()
+        self._hide_duyuru_panel(keep_state=True)
 
     def _restore_info_panels(self):
         """Gizlenen panelleri son veriyle yeniden cizer (ag'a gitmeden)."""
@@ -3554,6 +3700,7 @@ class FatihClientApp(QWidget):
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_yoklama_panel(d.get("yoklamaYok"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        self._update_duyuru_state()
 
     def _clear_layout(self, layout):
         """Bir layout'un tum widget'larini temizler (paneller her yenilemede yeniden kurulur)."""
@@ -3640,6 +3787,222 @@ class FatihClientApp(QWidget):
         self.birthday_panel.move(bx, (self.height() - bh) // 2)
         self.birthday_panel.show()
         self.birthday_panel.raise_()
+
+    # ----------------------------------------------------------------------------
+    # DUYURU (sınıf+ders saati hedefli, orta pano slider)
+    # ----------------------------------------------------------------------------
+    def init_duyuru_timers(self):
+        """İki timer: (1) durum değerlendirme — periyot değişimi + 10dk doğum günü kapısı
+        için 10 sn'de bir; (2) slayt geçişi — sadece slider görünürken çalışır."""
+        self.duyuru_state_timer = QTimer(self)
+        self.duyuru_state_timer.timeout.connect(self._update_duyuru_state)
+        self.duyuru_state_timer.start(10000)
+
+        self.duyuru_slide_timer = QTimer(self)
+        self.duyuru_slide_timer.timeout.connect(self._advance_duyuru_slide)
+        # start/stop _update_duyuru_state içinde yönetilir (yalnız >1 duyuru varken çalışır).
+
+    def _period_bounds(self, hours_data, dow, period):
+        """Bir günün (dow=1..7) belirli ders saatinin (period=1..18) ham (start,end) metnini
+        döner; check_schedule ile aynı iki format (list / dict) desteklenir. Yoksa (None,None)."""
+        try:
+            if isinstance(hours_data, list):
+                if dow < len(hours_data):
+                    day_schedule = hours_data[dow]
+                    if period < len(day_schedule):
+                        pd = day_schedule[period]
+                        if isinstance(pd, list) and len(pd) >= 3:
+                            return (pd[1] or "", pd[2] or "")
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(dow), {})
+                slot = day_schedule.get(str(period))
+                if isinstance(slot, list) and len(slot) >= 3:
+                    return (slot[1] or "", slot[2] or "")
+                elif isinstance(slot, dict):
+                    return (slot.get('1', '') or "", slot.get('2', '') or "")
+        except Exception:
+            pass
+        return (None, None)
+
+    def _current_period_no(self):
+        """Şu an aktif olan ders saatini (1..18) ve o saatin başlangıcından bu yana geçen
+        dakikayı döner. Aktif ders saati yoksa / program yoksa (None, 0.0)."""
+        if not self.schedule or 'hours' not in self.schedule:
+            return None, 0.0
+        now = datetime.now()
+        dow = now.isoweekday()  # 1=Pzt ... 7=Paz (check_schedule ile aynı)
+        hours_data = self.schedule['hours']
+        for period in range(1, 19):
+            s_raw, e_raw = self._period_bounds(hours_data, dow, period)
+            if not s_raw or not e_raw or s_raw == "0" or e_raw == "0":
+                continue
+            s_str = self._format_time(s_raw)
+            e_str = self._format_time(e_raw)
+            if not s_str or not e_str or len(s_str) != 5 or len(e_str) != 5:
+                continue
+            try:
+                s_t = datetime.strptime(s_str, "%H:%M")
+                e_t = datetime.strptime(e_str, "%H:%M")
+            except Exception:
+                continue
+            start_dt = now.replace(hour=s_t.hour, minute=s_t.minute, second=0, microsecond=0)
+            end_dt = now.replace(hour=e_t.hour, minute=e_t.minute, second=0, microsecond=0)
+            if start_dt <= now <= end_dt:
+                return period, (now - start_dt).total_seconds() / 60.0
+        return None, 0.0
+
+    def _update_duyuru_state(self):
+        """Orta panonun tek karar merciisi: aktif ders saati + doğum günü kapısı + durdurma
+        durumuna göre duyuru slider'ını gösterir/gizler, doğum günü ile çakışmayı çözer.
+
+        Akış: aktif duyuru yok/durdurulmuş -> slider kapalı (doğum günü varsa görünsün).
+              doğum günü var + periyodun ilk 10 dk'sı -> doğum günü öne çıkar, slider bekler.
+              aksi halde -> doğum günü gizle, slider oynasın."""
+        if not hasattr(self, 'duyuru_slide_timer'):
+            return  # timerlar henüz kurulmadı (erken çağrı koruması)
+
+        # Şifre/giriş paneli açıkken hiçbir pano gösterme (numpad'i kapatmasın).
+        if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
+            self._hide_duyuru_panel()
+            return
+
+        d = getattr(self, '_last_display_data', None) or {}
+        duyurular = d.get('duyurular') or []
+
+        # Gün değişince "durdurma" hafızasını sıfırla.
+        dow = datetime.now().isoweekday()
+        if dow != self._duyuru_stopped_day:
+            self._duyuru_stopped_day = dow
+            self._duyuru_stopped_periods = set()
+
+        period, mins_in = self._current_period_no()
+
+        # Aktif ders saatine ait duyurular (ders saati eşleşmesi).
+        active = []
+        if period is not None:
+            active = [x for x in duyurular
+                      if isinstance(x, dict) and int(x.get('dersSaati') or 0) == period]
+
+        # Aktif ders saati yok / duyuru yok / bu periyot durdurulmuş -> slider kapalı.
+        # "Duyuru yoksa kapansın": slider gizlenir, doğum günü (varsa) yeniden görünür.
+        if period is None or not active or period in self._duyuru_stopped_periods:
+            self._hide_duyuru_panel()
+            self._restore_birthday_if_needed(d)
+            return
+
+        # Doğum günü kapısı: bugün doğum günü VAR ve periyodun ilk 10 dk'sındaysak, kutlama
+        # öne çıksın; slider beklesin (state korunur ki 10 dk sonra taze kurulsun).
+        if d.get('dogumGunleri') and mins_in < DUYURU_BIRTHDAY_GATE_MIN:
+            self._hide_duyuru_panel(keep_state=True)
+            return
+
+        # Slider devralıyor. Periyot ya da liste değiştiyse baştan kur.
+        active_ids = [x.get('id') for x in active]
+        if period != self._duyuru_period or active_ids != [x.get('id') for x in self._duyuru_active]:
+            self._duyuru_period = period
+            self._duyuru_active = active
+            self._duyuru_index = 0
+
+        # Doğum günü panelini gizle (orta panoyu slider devralır).
+        if getattr(self, 'birthday_panel', None) is not None:
+            self.birthday_panel.hide()
+
+        self._render_duyuru_slide()
+
+        # Slayt geçişi yalnız birden fazla duyuru varken.
+        if len(self._duyuru_active) > 1:
+            if not self.duyuru_slide_timer.isActive():
+                self.duyuru_slide_timer.start(DUYURU_SLIDE_MS)
+        else:
+            if self.duyuru_slide_timer.isActive():
+                self.duyuru_slide_timer.stop()
+
+    def _restore_birthday_if_needed(self, d):
+        """Slider kapandığında, doğum günü verisi varsa ve panel gizliyse tekrar çizer.
+        (Slider'ı biz gizlemiş olabiliriz.) isVisible() çalışma anında güvenilir."""
+        bd = d.get('dogumGunleri')
+        bp = getattr(self, 'birthday_panel', None)
+        if bd and bp is not None and not bp.isVisible():
+            self._render_birthday_panel(bd)
+
+    def _hide_duyuru_panel(self, keep_state=False):
+        """Slider'ı gizler + slayt timer'ını durdurur. keep_state=False durumunda slider
+        bağlamını (periyot/liste/index) da sıfırlar."""
+        if getattr(self, 'duyuru_panel', None) is not None:
+            self.duyuru_panel.hide()
+        if hasattr(self, 'duyuru_slide_timer') and self.duyuru_slide_timer.isActive():
+            self.duyuru_slide_timer.stop()
+        if not keep_state:
+            self._duyuru_period = None
+            self._duyuru_active = []
+            self._duyuru_index = 0
+
+    def _advance_duyuru_slide(self):
+        """Sonraki slayta geç (slayt timer'ından)."""
+        if not self._duyuru_active:
+            return
+        self._duyuru_index = (self._duyuru_index + 1) % len(self._duyuru_active)
+        self._render_duyuru_slide()
+
+    def _render_duyuru_slide(self):
+        """Geçerli slaytı (başlık/mesaj/gönderen/noktalar) çizer ve paneli konumlandırır."""
+        if not self._duyuru_active:
+            self._hide_duyuru_panel()
+            return
+        n = len(self._duyuru_active)
+        if self._duyuru_index >= n:
+            self._duyuru_index = 0
+        item = self._duyuru_active[self._duyuru_index]
+
+        self.duyuru_baslik.setText(str(item.get('baslik', '') or ''))
+        self.duyuru_mesaj.setText(str(item.get('mesaj', '') or ''))
+
+        gonderen = str(item.get('gonderenAd', '') or '').strip()
+        self.duyuru_gonderen.setText(f"— {gonderen}" if gonderen else "")
+        self.duyuru_gonderen.setVisible(bool(gonderen))
+
+        if n > 1:
+            self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
+                                                 for i in range(n)))
+            self.duyuru_dots.show()
+        else:
+            self.duyuru_dots.setText("")
+            self.duyuru_dots.hide()
+
+        # Aferin (sol) ile yoklama (sağ) panelleri arasına ortala (birthday ile aynı mantık).
+        self._position_center_panel(self.duyuru_panel, max_w=920)
+        self.duyuru_panel.show()
+        self.duyuru_panel.raise_()
+
+    def _position_center_panel(self, panel, max_w=920):
+        """Orta panoyu (aferin sol + yoklama sağ arasındaki boşluğa) ortalar; genişliği o
+        boşluğa sığdırır, yüksekliği word-wrap'i sayarak hesaplar. Birthday konumlama
+        mantığının slider için ortak sürümü."""
+        GAP = 24
+        left_bound = 0
+        if self.aferin_rows_layout.count() > 0:
+            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + GAP
+        right_bound = self.width()
+        if self.yoklama_rows_layout.count() > 0:
+            right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
+        avail = max(0, right_bound - left_bound)
+        bw = max(380, min(max_w, avail - 32))
+        panel.setFixedWidth(bw)
+        self._fit_panel_height(panel)
+        bh = panel.height()
+        bx = left_bound + max(0, (avail - bw) // 2)
+        bx = min(bx, max(0, self.width() - bw))
+        panel.move(bx, (self.height() - bh) // 2)
+
+    def _on_duyuru_stop(self):
+        """Öğretmen 'Durdur' dedi: sadece BU tahtada, BU ders saati boyunca gizle (lokal;
+        sunucuya dokunmaz, başka sınıf/tahta etkilenmez). Gün/periyot değişince tekrar oynar."""
+        if self._duyuru_period is not None:
+            self._duyuru_stopped_periods.add(self._duyuru_period)
+            logging.info(f"Duyuru öğretmen tarafından durduruldu (ders saati {self._duyuru_period}).")
+        self._hide_duyuru_panel()
+        # Slider kapandı -> doğum günü (varsa) tekrar görünsün.
+        self._restore_birthday_if_needed(getattr(self, '_last_display_data', None) or {})
 
     def _render_yoklama_panel(self, yoklamaYok):
         """Bugünkü EN SON yoklamada gelmeyenleri sağ-alt panelde gösterir (UI thread).
