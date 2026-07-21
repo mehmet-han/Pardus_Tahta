@@ -2859,7 +2859,7 @@ class FatihClientApp(QWidget):
         self.aferin_panel.setObjectName("aferinPanel")
         self.aferin_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.aferin_panel.setStyleSheet(AFERIN_PANEL_QSS)
-        self.aferin_panel.setFixedWidth(452)
+        self.aferin_panel.setFixedWidth(400)  # yan listeler dar: orta (dogum gunu/duyuru) panosu one ciksin
 
         _ap_lay = QVBoxLayout(self.aferin_panel)
         _ap_lay.setContentsMargins(24, 19, 24, 21)
@@ -2896,7 +2896,9 @@ class FatihClientApp(QWidget):
         self.birthday_panel.setFixedWidth(760)
 
         _bd_lay = QVBoxLayout(self.birthday_panel)
-        _bd_lay.setContentsMargins(46, 32, 46, 36)
+        # Yan ic bosluk 46->30: dar ekranda (iki panelin arasindaki bosluk kucuk) ada
+        # isme daha cok yer kalsin. Genis tahtada da estetik bozulmaz.
+        _bd_lay.setContentsMargins(30, 30, 30, 34)
         _bd_lay.setSpacing(4)
 
         self.bday_emoji = QLabel("🎉🎂🎈", self.birthday_panel)
@@ -2907,6 +2909,7 @@ class FatihClientApp(QWidget):
         self.bday_title = QLabel("İYİ Kİ DOĞDUN!", self.birthday_panel)
         self.bday_title.setObjectName("bdayTitle")
         self.bday_title.setAlignment(Qt.AlignCenter)
+        self.bday_title.setWordWrap(True)  # dar kartta kirpilmasin, gerekirse alt satira kaysin
         _bd_lay.addWidget(self.bday_title)
 
         _bd_rule = QFrame(self.birthday_panel)
@@ -2936,7 +2939,7 @@ class FatihClientApp(QWidget):
         self.yoklama_panel.setObjectName("yoklamaPanel")
         self.yoklama_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.yoklama_panel.setStyleSheet(YOKLAMA_PANEL_QSS)
-        self.yoklama_panel.setFixedWidth(452)  # aferin paneliyle simetrik (sol-sag esit genislik)
+        self.yoklama_panel.setFixedWidth(400)  # aferin paneliyle simetrik (sol-sag esit dar liste)
 
         _yk_lay = QVBoxLayout(self.yoklama_panel)
         _yk_lay.setContentsMargins(24, 19, 24, 21)
@@ -3576,6 +3579,9 @@ class FatihClientApp(QWidget):
             name_lbl = QLabel(adi, self.birthday_panel)
             name_lbl.setObjectName("bdayName")
             name_lbl.setAlignment(Qt.AlignCenter)
+            # Uzun ad (ör. "ANIL TOPRAK KARABULUT") dar kartta yatayda kirpiliyordu;
+            # word-wrap ile alt satira kayar, hicbir genislikte kesilmez.
+            name_lbl.setWordWrap(True)
             self.bday_rows_layout.addWidget(name_lbl)
             name_lbl.show()   # bkz. _render_aferin_panel: gorunur parent'a eklenen cocuk otomatik gosterilmez
 
@@ -3619,12 +3625,23 @@ class FatihClientApp(QWidget):
             right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
 
         avail = max(0, right_bound - left_bound)
-        # Bosluga sigacak kadar; tercihen 760, ama iki panelin arasindaki bosluktan tasmasin.
-        # Dar ekranda (dev laptop) 380'e kadar kucululur ki yan panellere binmesin.
-        bw = max(380, min(760, avail - 32))
+        # Orta pano ONE CIKAR (ileride duyuru panosu): yan listeler 400px'e daraltildi,
+        # burada tavan 880'e cikarildi ki genis tahtada baskin dursun. Iki panelin
+        # arasindaki bosluktan tasmaz; dar ekranda 380'e kadar kucululur.
+        bw = max(380, min(880, avail - 32))
         self.birthday_panel.setFixedWidth(bw)
 
-        self._fit_panel_height(self.birthday_panel)
+        # Yuksekligi bw genisliginde ACIKCA hesapla: word-wrap'li isim/baslik etiketlerinde
+        # adjustSize() sarilan satirlari saymayip paneli KISA cizebiliyor -> dikey kirpma.
+        # QVBoxLayout.heightForWidth() sarilan yuksekligi dogru dondurur (hfw cocuk varsa).
+        _bl = self.birthday_panel.layout()
+        _bl.invalidate()
+        _bl.activate()
+        _hfw = _bl.heightForWidth(bw)
+        if _hfw and _hfw > 0:
+            self.birthday_panel.setFixedHeight(_hfw)
+        else:
+            self._fit_panel_height(self.birthday_panel)
         bh = self.birthday_panel.height()
         bx = left_bound + max(0, (avail - bw) // 2)
         # Ekrandan tasmasin
