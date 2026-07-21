@@ -64,13 +64,38 @@ sudo rm -f /home/fatih-kiosk/.config/autostart/fatih-kiosk.desktop 2>/dev/null
 # 4. Kısayolları ve ses kısıtlamalarını geri al
 echo "[-] Sistem kısıtlamaları kaldırılıyor..."
 sudo rfkill unblock all 2>/dev/null
-pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null
-gsettings set org.gnome.Terminal.Legacy.Settings confirm-close false 2>/dev/null
-gsettings set org.gnome.desktop.lockdown disable-command-line false 2>/dev/null
+
+# Ses ve gsettings, ROOT değil KULLANICI (etapadmin) oturumuna gitmeli. Betik uzaktan
+# kaldırmada sudo ile root olarak calisir; 'pactl' root'ta calisirsa etapadmin'in ses
+# oturumunu bulamaz (ses kapali kalir -> saha sikayeti). Dogru XDG/DBUS ortamiyla
+# etapadmin adina calistiriyoruz.
+_RUSER="etapadmin"
+_RUID=$(id -u "$_RUSER" 2>/dev/null)
+run_as_user() {
+    if [ -n "$_RUID" ]; then
+        sudo -u "$_RUSER" \
+            XDG_RUNTIME_DIR="/run/user/$_RUID" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$_RUID/bus" \
+            "$@" 2>/dev/null
+    else
+        "$@" 2>/dev/null
+    fi
+}
+# Sesi aç: tüm çıkışları unmute + sesi duyulur seviyeye getir.
+run_as_user pactl set-sink-mute @DEFAULT_SINK@ 0
+run_as_user pactl set-sink-volume @DEFAULT_SINK@ 60%
+# Yedek: bazı sistemlerde ALSA master ayrı kısılıyor.
+run_as_user amixer -q set Master unmute
+run_as_user amixer -q set Master 60%
+# Terminal/komut satırı kısıtlarını geri al.
+run_as_user gsettings set org.gnome.Terminal.Legacy.Settings confirm-close false
+run_as_user gsettings set org.gnome.desktop.lockdown disable-command-line false
 
 # 5. Uygulama dosyalarını sil
 echo "[-] Uygulama dosyaları siliniyor..."
 sudo rm -rf /opt/fatih-client 2>/dev/null
+# ~ = /root olabilir (betik root'ta calisiyor) -> kullanicinin config'ini ACIK yolla sil.
+sudo rm -rf "/home/$_RUSER/.config/fatih-client" 2>/dev/null
 rm -rf ~/.config/fatih-client 2>/dev/null
 
 # 6. Sudoers temizliği

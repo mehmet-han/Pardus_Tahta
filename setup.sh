@@ -81,7 +81,27 @@ cp fatih_projesi_python/client/version.txt "$INSTALL_DIR/version.txt" 2>/dev/nul
 
 # uninstall.sh'i root dizinine veya güvenli bir yere kopyala
 cp uninstall.sh /usr/local/bin/fatih-uninstall
+chown root:root /usr/local/bin/fatih-uninstall
 chmod 700 /usr/local/bin/fatih-uninstall
+
+# --- Uzaktan kaldirma icin sinirli sudo yetkisi ---
+# Istemci etapadmin olarak calisiyor; kaldirma ise root isi. Bu kural olmadan
+# ynt5'ten gelen "programi kaldir" komutu ACK'leniyor ama HICBIR SEY silinmiyordu
+# (Errno 13). Yetki BILEREK dar tutuldu: sadece bu tek betik, baska hicbir komut.
+# Betik root:700 oldugu icin etapadmin ICERIGINI DEGISTIREMEZ, yalnizca calistirabilir.
+# Bedeli kabul edildi: tahtada terminale erisebilen biri kaldirmayi tetikleyebilir —
+# asil koruma kiosk'un terminali kapatmasi.
+_SUDOERS_FILE="/etc/sudoers.d/fatih-client"
+echo "etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall" > "$_SUDOERS_FILE"
+chmod 440 "$_SUDOERS_FILE"
+chown root:root "$_SUDOERS_FILE"
+# Bozuk bir sudoers dosyasi TUM sudo'yu kilitler -> dogrula, gecersizse geri al.
+if visudo -c -f "$_SUDOERS_FILE" >/dev/null 2>&1; then
+    echo "  ✅ Uzaktan kaldırma yetkisi tanımlandı (yalnızca fatih-uninstall)"
+else
+    rm -f "$_SUDOERS_FILE"
+    echo "  ⚠ sudoers kuralı geçersiz, kaldırıldı — uzaktan kaldırma çalışmayacak."
+fi
 
 # İzinleri ayarla
 chmod -R 755 "$INSTALL_DIR"
@@ -135,10 +155,17 @@ fi
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
 # Tamamen Fatih Client'in içinde XOR şifresiyle çalışma zamanında deşifre edilecek.
 
+# Surum TEK KAYNAKTAN: paketteki version.txt. Burada SABIT yazmak, tahtanin sunucuya
+# yanlis surum bildirmesine yol aciyordu ("V2.13" kalintisi) — kilit ekrani version.txt'ten
+# okudugu icin dogru gorunuyor, sunucuya giden deger ise config.ini'den gelip bayat kaliyordu.
+_PKG_VERSION=$(tr -d ' \t\n\r' < fatih_projesi_python/client/version.txt 2>/dev/null)
+[ -z "$_PKG_VERSION" ] && _PKG_VERSION="V6.00.00"
+echo "  → Kurulan sürüm: $_PKG_VERSION"
+
 # Config dosyasını oluştur (Sadece yetkisiz kurum ve tahta bilgisi, parola saklaması BİTTİ)
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
-version = V2.13
+version = $_PKG_VERSION
 sub_version = 1
 corporate_code = ${CORPORATE_CODE:-0}
 ntp_servers = time.windows.com,time.google.com,time.cloudflare.com,time.apple.com

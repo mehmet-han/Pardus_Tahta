@@ -102,6 +102,22 @@ config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 SETTINGS = config['settings']
 
+# --- Surum: TEK DOGRULUK KAYNAGI version.txt ---
+# config.ini'deki 'version' bayat kalabiliyor (setup.sh bir donem oraya sabit "V2.13"
+# yaziyordu; kilit ekrani version.txt'ten okudugu icin dogru gorunurken sunucuya YANLIS
+# surum bildiriliyordu). version.txt her kurulumda paketten taze kopyalanir; varsa o kazanir.
+for _vf in ("/opt/fatih-client/version.txt",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")):
+    try:
+        if os.path.exists(_vf):
+            with open(_vf, 'r', encoding='utf-8') as _f:
+                _v = _f.read().strip()
+            if _v:
+                SETTINGS['version'] = _v
+                break
+    except Exception:
+        pass
+
 # --- Credential Deobfuscation (compiled into .so binary) ---
 def _deo(v):
     """Decode obfuscated config values (ENC: prefix = base64)"""
@@ -2475,13 +2491,13 @@ QLabel { background: transparent; }
 QLabel#aferinTitle {
     color: #FFD35C;
     font-family: 'DejaVu Sans';
-    font-size: 17px;
+    font-size: 15px;
     font-weight: bold;
 }
 QLabel#aferinSubtitle {
     color: rgba(190, 205, 230, 190);
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
 }
 QFrame#aferinRule {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -2504,35 +2520,35 @@ QFrame#aferinRow {
 QLabel#aferinName {
     color: #FFFFFF;
     font-family: 'DejaVu Sans';
-    font-size: 15px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#aferinNameTop {
     color: #FFF3D0;
     font-family: 'DejaVu Sans';
-    font-size: 16px;
+    font-size: 14px;
     font-weight: bold;
 }
 QLabel#aferinNo {
     color: rgba(178, 195, 222, 205);
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
 }
 QLabel#aferinCount {
     color: #1E1605;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #FFE082, stop:1 #FFB300);
-    border-radius: 13px;
+    border-radius: 12px;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#aferinCountPlain {
     color: #EAF1FF;
     background-color: rgba(255, 255, 255, 30);
-    border-radius: 13px;
+    border-radius: 12px;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 """
@@ -2543,6 +2559,78 @@ AFERIN_RANK_COLORS = [
     ('#F2F6FA', '#AEBCC9', '#252C33'),   # gumus
     ('#EBB278', '#B9743A', '#3A2110'),   # bronz
 ]
+
+# --- Feature 4: "Bugun Gelmeyenler" (yoklama yok listesi) paneli stili ---
+# Sag-alt kosede (aferin sol-altta -> simetrik). Kirmizi tema = devamsizlik.
+# O sinifin bugunku EN SON yoklamasindaki gelmeyenler (numara + isim).
+YOKLAMA_PANEL_QSS = """
+QFrame#yoklamaPanel {
+    background-color: rgba(30, 12, 14, 240);
+    border: 2px solid rgba(239, 83, 80, 200);
+    border-radius: 22px;
+}
+QLabel { background: transparent; }
+QLabel#yoklamaTitle {
+    color: #FF8A80;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#yoklamaSubtitle {
+    color: rgba(230, 200, 200, 190);
+    font-family: 'DejaVu Sans';
+    font-size: 10px;
+}
+QFrame#yoklamaRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(239,83,80,220), stop:0.65 rgba(239,83,80,60), stop:1 rgba(239,83,80,0));
+    border: none;
+    border-radius: 1px;
+}
+QFrame#yoklamaRow {
+    background-color: rgba(255, 255, 255, 14);
+    border: 1px solid rgba(255, 120, 120, 40);
+    border-radius: 12px;
+}
+QLabel#yoklamaName {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 13px;
+    font-weight: bold;
+}
+QLabel#yoklamaNo {
+    color: #1A0A0B;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FF8A80, stop:1 #E53935);
+    border-radius: 12px;
+    font-family: 'DejaVu Sans';
+    font-size: 13px;
+    font-weight: bold;
+}
+QLabel#yoklamaTamKatilim {
+    color: #A5D6A7;
+    font-family: 'DejaVu Sans';
+    font-size: 13px;
+    font-weight: bold;
+}
+/* Durum etiketleri: geç (turuncu) ve nöbetçi (mavi). Yok'ta etiket gösterilmez. */
+QLabel#yoklamaTagGec {
+    color: #3A2600;
+    background-color: #FFB74D;
+    border-radius: 8px;
+    font-family: 'DejaVu Sans';
+    font-size: 10px;
+    font-weight: bold;
+}
+QLabel#yoklamaTagNbt {
+    color: #06222E;
+    background-color: #4FC3F7;
+    border-radius: 8px;
+    font-family: 'DejaVu Sans';
+    font-size: 10px;
+    font-weight: bold;
+}
+"""
 
 # --- Feature 1: "Iyi ki dogdun" kutlama paneli stili ---
 # Ekranin ORTASINDA gosterilir (kullanici karari) — dogum gunu nadir bir olay oldugu icin
@@ -2587,6 +2675,73 @@ QFrame#bdayRule {
     border: none;
 }
 """
+
+# --- Duyuru (announcement) slider paneli — ORTA PANO (kullanici karari: orta pano = DUYURU PANOSU) ---
+# Sinif + ders saati hedefli; v5 /display'den `duyurular` alaninda gelir. Dogum gunu varsa ilk 10 dk
+# kutlama gosterilir, sonra (ya da dogum gunu yoksa direkt) burada slider olarak oynar. Ogretmen
+# "Durdur" ile bu tahtada bu ders saati boyunca gizleyebilir. Duyuru yoksa panel kapali kalir.
+# Renk: birthday moru/pembesinden AYRI, otoriter mavi (duyuru/bilgi hissi).
+DUYURU_PANEL_QSS = """
+QFrame#duyuruPanel {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(12, 44, 78, 248), stop:0.55 rgba(10, 54, 88, 248), stop:1 rgba(8, 40, 72, 248));
+    border: 3px solid rgba(120, 200, 255, 220);
+    border-radius: 30px;
+}
+QLabel { background: transparent; }
+QLabel#duyuruKicker {
+    color: #8FD3FF;
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#duyuruGonderen {
+    color: rgba(184, 216, 242, 210);
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+}
+QFrame#duyuruRule {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(120,200,255,0), stop:0.5 rgba(120,200,255,190), stop:1 rgba(120,200,255,0));
+    border: none;
+}
+QLabel#duyuruBaslik {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 30px;
+    font-weight: bold;
+}
+QLabel#duyuruMesaj {
+    color: #EAF4FF;
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+}
+QLabel#duyuruDots {
+    color: rgba(150, 200, 240, 230);
+    font-family: 'DejaVu Sans';
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 3px;
+}
+QPushButton#duyuruStop {
+    background-color: rgba(255, 255, 255, 28);
+    color: #EAF4FF;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+    border: 1px solid rgba(160, 210, 245, 150);
+    border-radius: 16px;
+    padding: 8px 22px;
+}
+QPushButton#duyuruStop:pressed {
+    background-color: rgba(255, 255, 255, 64);
+}
+"""
+
+# Dogum gunu -> slider gecis kapisi (dk) ve slayt sure (ms).
+DUYURU_BIRTHDAY_GATE_MIN = 10
+DUYURU_SLIDE_MS = 8000
 
 
 class FatihClientApp(QWidget):
@@ -2658,6 +2813,16 @@ class FatihClientApp(QWidget):
         self.last_schedule_day = -1  # Gün değişince exit_time_locked sıfırlanacak
         # --- END SCHEDULING ---
 
+        # --- DUYURU (sınıf+ders saati hedefli, orta pano slider) ---
+        # /display'den gelen ham liste; aktif periyoda göre süzülüp slider'da oynatılır.
+        self._duyuru_active = []          # şu anki ders saatine ait, gösterilecek duyurular
+        self._duyuru_index = 0            # slider'da gösterilen slayt
+        self._duyuru_period = None        # slider'ın bağlı olduğu ders saati (periyot no)
+        # Öğretmen "Durdur" derse: sadece BU tahtada, BU ders saati boyunca gizle (lokal).
+        self._duyuru_stopped_periods = set()
+        self._duyuru_stopped_day = -1     # gün değişince durdurma hafızası sıfırlanır
+        # --- END DUYURU ---
+
         self.init_ui()
         self.init_network_timer()
         self.init_usb_monitor()
@@ -2666,6 +2831,7 @@ class FatihClientApp(QWidget):
         self.init_time_timer()
         self.init_schedule_timer() # New timer for scheduling
         self.init_display_timer()  # Feature 5: ilk-5 aferin paneli
+        self.init_duyuru_timers()  # Duyuru: durum değerlendirme + slayt geçişi
 
         # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
         PowerManager.disable_sleep()
@@ -2771,7 +2937,7 @@ class FatihClientApp(QWidget):
         self.aferin_panel.setObjectName("aferinPanel")
         self.aferin_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.aferin_panel.setStyleSheet(AFERIN_PANEL_QSS)
-        self.aferin_panel.setFixedWidth(452)
+        self.aferin_panel.setFixedWidth(370)  # yan listeler dar: orta (dogum gunu/duyuru) panosu one ciksin
 
         _ap_lay = QVBoxLayout(self.aferin_panel)
         _ap_lay.setContentsMargins(24, 19, 24, 21)
@@ -2808,7 +2974,9 @@ class FatihClientApp(QWidget):
         self.birthday_panel.setFixedWidth(760)
 
         _bd_lay = QVBoxLayout(self.birthday_panel)
-        _bd_lay.setContentsMargins(46, 32, 46, 36)
+        # Yan ic bosluk 46->30: dar ekranda (iki panelin arasindaki bosluk kucuk) ada
+        # isme daha cok yer kalsin. Genis tahtada da estetik bozulmaz.
+        _bd_lay.setContentsMargins(30, 30, 30, 34)
         _bd_lay.setSpacing(4)
 
         self.bday_emoji = QLabel("🎉🎂🎈", self.birthday_panel)
@@ -2819,6 +2987,7 @@ class FatihClientApp(QWidget):
         self.bday_title = QLabel("İYİ Kİ DOĞDUN!", self.birthday_panel)
         self.bday_title.setObjectName("bdayTitle")
         self.bday_title.setAlignment(Qt.AlignCenter)
+        self.bday_title.setWordWrap(True)  # dar kartta kirpilmasin, gerekirse alt satira kaysin
         _bd_lay.addWidget(self.bday_title)
 
         _bd_rule = QFrame(self.birthday_panel)
@@ -2840,6 +3009,105 @@ class FatihClientApp(QWidget):
         _bd_lay.addWidget(self.bday_sub)
 
         self.birthday_panel.hide()
+
+        # --- Duyuru slider paneli (ORTA PANO) ---
+        # Sınıf+ders saati hedefli duyurular burada slider olarak oynar (birthday ile aynı
+        # merkezi alan; ikisi aynı anda gösterilmez — _update_duyuru_state karar verir).
+        self.duyuru_panel = QFrame(self)
+        self.duyuru_panel.setObjectName("duyuruPanel")
+        self.duyuru_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.duyuru_panel.setStyleSheet(DUYURU_PANEL_QSS)
+        self.duyuru_panel.setFixedWidth(760)
+
+        _dy_lay = QVBoxLayout(self.duyuru_panel)
+        _dy_lay.setContentsMargins(36, 26, 36, 26)
+        _dy_lay.setSpacing(5)
+
+        self.duyuru_kicker = QLabel("📢  SINIF DUYURUSU", self.duyuru_panel)
+        self.duyuru_kicker.setObjectName("duyuruKicker")
+        self.duyuru_kicker.setAlignment(Qt.AlignCenter)
+        _dy_lay.addWidget(self.duyuru_kicker)
+
+        self.duyuru_gonderen = QLabel("", self.duyuru_panel)
+        self.duyuru_gonderen.setObjectName("duyuruGonderen")
+        self.duyuru_gonderen.setAlignment(Qt.AlignCenter)
+        self.duyuru_gonderen.setWordWrap(True)
+        _dy_lay.addWidget(self.duyuru_gonderen)
+
+        _dy_rule = QFrame(self.duyuru_panel)
+        _dy_rule.setObjectName("duyuruRule")
+        _dy_rule.setFixedHeight(2)
+        _dy_lay.addSpacing(12)
+        _dy_lay.addWidget(_dy_rule)
+        _dy_lay.addSpacing(16)
+
+        self.duyuru_baslik = QLabel("", self.duyuru_panel)
+        self.duyuru_baslik.setObjectName("duyuruBaslik")
+        self.duyuru_baslik.setAlignment(Qt.AlignCenter)
+        self.duyuru_baslik.setWordWrap(True)  # uzun başlık dar kartta kesilmesin
+        _dy_lay.addWidget(self.duyuru_baslik)
+
+        _dy_lay.addSpacing(10)
+        self.duyuru_mesaj = QLabel("", self.duyuru_panel)
+        self.duyuru_mesaj.setObjectName("duyuruMesaj")
+        self.duyuru_mesaj.setAlignment(Qt.AlignCenter)
+        self.duyuru_mesaj.setWordWrap(True)
+        _dy_lay.addWidget(self.duyuru_mesaj)
+
+        _dy_lay.addSpacing(18)
+        # Slayt noktaları (birden fazla duyuru varsa) — ortalı.
+        self.duyuru_dots = QLabel("", self.duyuru_panel)
+        self.duyuru_dots.setObjectName("duyuruDots")
+        self.duyuru_dots.setAlignment(Qt.AlignCenter)
+        _dy_lay.addWidget(self.duyuru_dots)
+
+        _dy_lay.addSpacing(10)
+        # "Durdur" butonu — ortalı bir satırda.
+        _dy_btn_row = QHBoxLayout()
+        _dy_btn_row.addStretch(1)
+        self.duyuru_stop_btn = QPushButton("⏸  Durdur", self.duyuru_panel)
+        self.duyuru_stop_btn.setObjectName("duyuruStop")
+        self.duyuru_stop_btn.setCursor(Qt.PointingHandCursor)
+        self.duyuru_stop_btn.clicked.connect(self._on_duyuru_stop)
+        _dy_btn_row.addWidget(self.duyuru_stop_btn)
+        _dy_btn_row.addStretch(1)
+        _dy_lay.addLayout(_dy_btn_row)
+
+        self.duyuru_panel.hide()
+
+        # --- Feature 4: "Bugün Gelmeyenler" (yoklama yok) paneli (sağ-alt köşe) ---
+        # O sınıfın bugünkü EN SON yoklamasındaki gelmeyenler (numara + isim). Yoklama
+        # alınmadıysa gizli; alındıysa ama gelmeyen yoksa "Tam katılım" gösterir.
+        self.yoklama_panel = QFrame(self)
+        self.yoklama_panel.setObjectName("yoklamaPanel")
+        self.yoklama_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.yoklama_panel.setStyleSheet(YOKLAMA_PANEL_QSS)
+        self.yoklama_panel.setFixedWidth(370)  # aferin paneliyle simetrik (sol-sag esit dar liste)
+
+        _yk_lay = QVBoxLayout(self.yoklama_panel)
+        _yk_lay.setContentsMargins(24, 19, 24, 21)
+        _yk_lay.setSpacing(3)
+
+        self.yoklama_title = QLabel("🚫  BUGÜN GELMEYENLER", self.yoklama_panel)
+        self.yoklama_title.setObjectName("yoklamaTitle")
+        _yk_lay.addWidget(self.yoklama_title)
+
+        self.yoklama_sub = QLabel("", self.yoklama_panel)
+        self.yoklama_sub.setObjectName("yoklamaSubtitle")
+        _yk_lay.addWidget(self.yoklama_sub)
+
+        _yk_rule = QFrame(self.yoklama_panel)
+        _yk_rule.setObjectName("yoklamaRule")
+        _yk_rule.setFixedHeight(3)
+        _yk_lay.addSpacing(9)
+        _yk_lay.addWidget(_yk_rule)
+        _yk_lay.addSpacing(11)
+
+        self.yoklama_rows_layout = QVBoxLayout()
+        self.yoklama_rows_layout.setSpacing(8)
+        _yk_lay.addLayout(self.yoklama_rows_layout)
+
+        self.yoklama_panel.hide()
 
         # Status message label
         self.message_label = QLabel("", self)
@@ -3299,14 +3567,19 @@ class FatihClientApp(QWidget):
             return
         if self.help_guide_label.isVisible():
             self.help_guide_label.hide()
+            # Kılavuz kapandı -> bilgi panellerini geri getir
+            self._restore_info_panels()
             logging.info("Help guide hidden")
         else:
+            # Yardım kılavuzu doğum günü / aferin panellerinin üstüne binmesin -> önce onları gizle
+            self._hide_info_panels()
             # Ekran koordinatlarına göre konumlandır (sağ üst köşe)
             guide_w, guide_h = 400, 320
             guide_x = self.width() - guide_w - 30
             guide_y = 110  # (i) butonunun altı
             self.help_guide_label.setGeometry(guide_x, guide_y, guide_w, guide_h)
             self.help_guide_label.show()
+            self.help_guide_label.raise_()
             logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
@@ -3401,15 +3674,23 @@ class FatihClientApp(QWidget):
             return
 
         d = self._last_display_data or {}
+        # Sira onemli: birthday, aferin+yoklama panellerinin ARASINA ortalanir; o yuzden
+        # once yan paneller cizilir (genislik/gorunurluk hazir olsun), en son birthday.
         self._render_aferin_panel(d.get("aferinTop5"))
+        self._render_yoklama_panel(d.get("yoklamaYok"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        # Duyuru: aktif ders saati + doğum günü kapısına göre slider'ı yönet (birthday'den SONRA).
+        self._update_duyuru_state()
 
     def _hide_info_panels(self):
-        """Aferin + dogum gunu panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
+        """Aferin + dogum gunu + yoklama panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
         if getattr(self, 'aferin_panel', None) is not None:
             self.aferin_panel.hide()
         if getattr(self, 'birthday_panel', None) is not None:
             self.birthday_panel.hide()
+        if getattr(self, 'yoklama_panel', None) is not None:
+            self.yoklama_panel.hide()
+        self._hide_duyuru_panel(keep_state=True)
 
     def _restore_info_panels(self):
         """Gizlenen panelleri son veriyle yeniden cizer (ag'a gitmeden)."""
@@ -3417,7 +3698,9 @@ class FatihClientApp(QWidget):
             return  # hala giris ekrani acik
         d = getattr(self, '_last_display_data', None) or {}
         self._render_aferin_panel(d.get("aferinTop5"))
+        self._render_yoklama_panel(d.get("yoklamaYok"))
         self._render_birthday_panel(d.get("dogumGunleri"))
+        self._update_duyuru_state()
 
     def _clear_layout(self, layout):
         """Bir layout'un tum widget'larini temizler (paneller her yenilemede yeniden kurulur)."""
@@ -3443,6 +3726,9 @@ class FatihClientApp(QWidget):
             name_lbl = QLabel(adi, self.birthday_panel)
             name_lbl.setObjectName("bdayName")
             name_lbl.setAlignment(Qt.AlignCenter)
+            # Uzun ad (ör. "ANIL TOPRAK KARABULUT") dar kartta yatayda kirpiliyordu;
+            # word-wrap ile alt satira kayar, hicbir genislikte kesilmez.
+            name_lbl.setWordWrap(True)
             self.bday_rows_layout.addWidget(name_lbl)
             name_lbl.show()   # bkz. _render_aferin_panel: gorunur parent'a eklenen cocuk otomatik gosterilmez
 
@@ -3471,14 +3757,28 @@ class FatihClientApp(QWidget):
         # pencere henuz gosterilmemisse .show() cagrilmis olsa bile False doner -> panel
         # "yok" sanilip kutlama karti tam ortaya konuyor ve uzerine biniyordu (V6.00.08 bug'i).
         # Icerik sayisi pencere gorunurlugunden bagimsizdir, guvenilir olcut budur.
+        # Kart, aferin (sol) ve yoklama (sag) panellerinin ARASINDAKI bosluga ortalanir;
+        # boylece hicbir panele binmez. Panel gorunurlugu icerik sayisindan anlasilir
+        # (isVisible() pencere gosterilene kadar guvenilmezdi -> V6.00.08 bug'i).
+        # NOT: bu render, yan panellerden SONRA cagrilir (bkz. _apply_display_data sirasi),
+        # boylece asagidaki genislik/gorunurluk olcumleri bu dongude tazedir.
+        GAP = 24
         left_bound = 0
         if self.aferin_rows_layout.count() > 0:
-            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + 24
+            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + GAP
 
-        avail = max(0, self.width() - left_bound)
-        bw = max(420, min(760, avail - 32))
+        right_bound = self.width()
+        if self.yoklama_rows_layout.count() > 0:
+            right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
+
+        avail = max(0, right_bound - left_bound)
+        # Orta pano ONE CIKAR (ileride duyuru panosu): yan listeler 370px'e daraltildi,
+        # burada tavan 920'ye cikarildi ki genis tahtada baskin dursun. Iki panelin
+        # arasindaki bosluktan tasmaz; dar ekranda 380'e kadar kucululur.
+        bw = max(380, min(920, avail - 32))
         self.birthday_panel.setFixedWidth(bw)
 
+        # Yukseklik word-wrap'i sayarak bw genisliginde hesaplanir (bkz. _fit_panel_height).
         self._fit_panel_height(self.birthday_panel)
         bh = self.birthday_panel.height()
         bx = left_bound + max(0, (avail - bw) // 2)
@@ -3488,21 +3788,348 @@ class FatihClientApp(QWidget):
         self.birthday_panel.show()
         self.birthday_panel.raise_()
 
+    # ----------------------------------------------------------------------------
+    # DUYURU (sınıf+ders saati hedefli, orta pano slider)
+    # ----------------------------------------------------------------------------
+    def init_duyuru_timers(self):
+        """İki timer: (1) durum değerlendirme — periyot değişimi + 10dk doğum günü kapısı
+        için 10 sn'de bir; (2) slayt geçişi — sadece slider görünürken çalışır."""
+        self.duyuru_state_timer = QTimer(self)
+        self.duyuru_state_timer.timeout.connect(self._update_duyuru_state)
+        self.duyuru_state_timer.start(10000)
+
+        self.duyuru_slide_timer = QTimer(self)
+        self.duyuru_slide_timer.timeout.connect(self._advance_duyuru_slide)
+        # start/stop _update_duyuru_state içinde yönetilir (yalnız >1 duyuru varken çalışır).
+
+    def _period_bounds(self, hours_data, dow, period):
+        """Bir günün (dow=1..7) belirli ders saatinin (period=1..18) ham (start,end) metnini
+        döner; check_schedule ile aynı iki format (list / dict) desteklenir. Yoksa (None,None)."""
+        try:
+            if isinstance(hours_data, list):
+                if dow < len(hours_data):
+                    day_schedule = hours_data[dow]
+                    if period < len(day_schedule):
+                        pd = day_schedule[period]
+                        if isinstance(pd, list) and len(pd) >= 3:
+                            return (pd[1] or "", pd[2] or "")
+            elif isinstance(hours_data, dict):
+                day_schedule = hours_data.get(str(dow), {})
+                slot = day_schedule.get(str(period))
+                if isinstance(slot, list) and len(slot) >= 3:
+                    return (slot[1] or "", slot[2] or "")
+                elif isinstance(slot, dict):
+                    return (slot.get('1', '') or "", slot.get('2', '') or "")
+        except Exception:
+            pass
+        return (None, None)
+
+    def _current_period_no(self):
+        """Şu an aktif olan ders saatini (1..18) ve o saatin başlangıcından bu yana geçen
+        dakikayı döner. Aktif ders saati yoksa / program yoksa (None, 0.0)."""
+        if not self.schedule or 'hours' not in self.schedule:
+            return None, 0.0
+        now = datetime.now()
+        dow = now.isoweekday()  # 1=Pzt ... 7=Paz (check_schedule ile aynı)
+        hours_data = self.schedule['hours']
+        for period in range(1, 19):
+            s_raw, e_raw = self._period_bounds(hours_data, dow, period)
+            if not s_raw or not e_raw or s_raw == "0" or e_raw == "0":
+                continue
+            s_str = self._format_time(s_raw)
+            e_str = self._format_time(e_raw)
+            if not s_str or not e_str or len(s_str) != 5 or len(e_str) != 5:
+                continue
+            try:
+                s_t = datetime.strptime(s_str, "%H:%M")
+                e_t = datetime.strptime(e_str, "%H:%M")
+            except Exception:
+                continue
+            start_dt = now.replace(hour=s_t.hour, minute=s_t.minute, second=0, microsecond=0)
+            end_dt = now.replace(hour=e_t.hour, minute=e_t.minute, second=0, microsecond=0)
+            if start_dt <= now <= end_dt:
+                return period, (now - start_dt).total_seconds() / 60.0
+        return None, 0.0
+
+    def _update_duyuru_state(self):
+        """Orta panonun tek karar merciisi: aktif ders saati + doğum günü kapısı + durdurma
+        durumuna göre duyuru slider'ını gösterir/gizler, doğum günü ile çakışmayı çözer.
+
+        Akış: aktif duyuru yok/durdurulmuş -> slider kapalı (doğum günü varsa görünsün).
+              doğum günü var + periyodun ilk 10 dk'sı -> doğum günü öne çıkar, slider bekler.
+              aksi halde -> doğum günü gizle, slider oynasın."""
+        if not hasattr(self, 'duyuru_slide_timer'):
+            return  # timerlar henüz kurulmadı (erken çağrı koruması)
+
+        # Şifre/giriş paneli açıkken hiçbir pano gösterme (numpad'i kapatmasın).
+        if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
+            self._hide_duyuru_panel()
+            return
+
+        d = getattr(self, '_last_display_data', None) or {}
+        duyurular = d.get('duyurular') or []
+
+        # Gün değişince "durdurma" hafızasını sıfırla.
+        dow = datetime.now().isoweekday()
+        if dow != self._duyuru_stopped_day:
+            self._duyuru_stopped_day = dow
+            self._duyuru_stopped_periods = set()
+
+        period, mins_in = self._current_period_no()
+
+        # Aktif ders saatine ait duyurular (ders saati eşleşmesi).
+        active = []
+        if period is not None:
+            active = [x for x in duyurular
+                      if isinstance(x, dict) and int(x.get('dersSaati') or 0) == period]
+
+        # Aktif ders saati yok / duyuru yok / bu periyot durdurulmuş -> slider kapalı.
+        # "Duyuru yoksa kapansın": slider gizlenir, doğum günü (varsa) yeniden görünür.
+        if period is None or not active or period in self._duyuru_stopped_periods:
+            self._hide_duyuru_panel()
+            self._restore_birthday_if_needed(d)
+            return
+
+        # Doğum günü kapısı: bugün doğum günü VAR ve periyodun ilk 10 dk'sındaysak, kutlama
+        # öne çıksın; slider beklesin (state korunur ki 10 dk sonra taze kurulsun).
+        if d.get('dogumGunleri') and mins_in < DUYURU_BIRTHDAY_GATE_MIN:
+            self._hide_duyuru_panel(keep_state=True)
+            return
+
+        # Slider devralıyor. Periyot ya da liste değiştiyse baştan kur.
+        active_ids = [x.get('id') for x in active]
+        if period != self._duyuru_period or active_ids != [x.get('id') for x in self._duyuru_active]:
+            self._duyuru_period = period
+            self._duyuru_active = active
+            self._duyuru_index = 0
+
+        # Doğum günü panelini gizle (orta panoyu slider devralır).
+        if getattr(self, 'birthday_panel', None) is not None:
+            self.birthday_panel.hide()
+
+        self._render_duyuru_slide()
+
+        # Slayt geçişi yalnız birden fazla duyuru varken.
+        if len(self._duyuru_active) > 1:
+            if not self.duyuru_slide_timer.isActive():
+                self.duyuru_slide_timer.start(DUYURU_SLIDE_MS)
+        else:
+            if self.duyuru_slide_timer.isActive():
+                self.duyuru_slide_timer.stop()
+
+    def _restore_birthday_if_needed(self, d):
+        """Slider kapandığında, doğum günü verisi varsa ve panel gizliyse tekrar çizer.
+        (Slider'ı biz gizlemiş olabiliriz.) isVisible() çalışma anında güvenilir."""
+        bd = d.get('dogumGunleri')
+        bp = getattr(self, 'birthday_panel', None)
+        if bd and bp is not None and not bp.isVisible():
+            self._render_birthday_panel(bd)
+
+    def _hide_duyuru_panel(self, keep_state=False):
+        """Slider'ı gizler + slayt timer'ını durdurur. keep_state=False durumunda slider
+        bağlamını (periyot/liste/index) da sıfırlar."""
+        if getattr(self, 'duyuru_panel', None) is not None:
+            self.duyuru_panel.hide()
+        if hasattr(self, 'duyuru_slide_timer') and self.duyuru_slide_timer.isActive():
+            self.duyuru_slide_timer.stop()
+        if not keep_state:
+            self._duyuru_period = None
+            self._duyuru_active = []
+            self._duyuru_index = 0
+
+    def _advance_duyuru_slide(self):
+        """Sonraki slayta geç (slayt timer'ından)."""
+        if not self._duyuru_active:
+            return
+        self._duyuru_index = (self._duyuru_index + 1) % len(self._duyuru_active)
+        self._render_duyuru_slide()
+
+    def _render_duyuru_slide(self):
+        """Geçerli slaytı (başlık/mesaj/gönderen/noktalar) çizer ve paneli konumlandırır."""
+        if not self._duyuru_active:
+            self._hide_duyuru_panel()
+            return
+        n = len(self._duyuru_active)
+        if self._duyuru_index >= n:
+            self._duyuru_index = 0
+        item = self._duyuru_active[self._duyuru_index]
+
+        self.duyuru_baslik.setText(str(item.get('baslik', '') or ''))
+        self.duyuru_mesaj.setText(str(item.get('mesaj', '') or ''))
+
+        gonderen = str(item.get('gonderenAd', '') or '').strip()
+        self.duyuru_gonderen.setText(f"— {gonderen}" if gonderen else "")
+        self.duyuru_gonderen.setVisible(bool(gonderen))
+
+        if n > 1:
+            self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
+                                                 for i in range(n)))
+            self.duyuru_dots.show()
+        else:
+            self.duyuru_dots.setText("")
+            self.duyuru_dots.hide()
+
+        # Aferin (sol) ile yoklama (sağ) panelleri arasına ortala (birthday ile aynı mantık).
+        self._position_center_panel(self.duyuru_panel, max_w=920)
+        self.duyuru_panel.show()
+        self.duyuru_panel.raise_()
+
+    def _position_center_panel(self, panel, max_w=920):
+        """Orta panoyu (aferin sol + yoklama sağ arasındaki boşluğa) ortalar; genişliği o
+        boşluğa sığdırır, yüksekliği word-wrap'i sayarak hesaplar. Birthday konumlama
+        mantığının slider için ortak sürümü."""
+        GAP = 24
+        left_bound = 0
+        if self.aferin_rows_layout.count() > 0:
+            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + GAP
+        right_bound = self.width()
+        if self.yoklama_rows_layout.count() > 0:
+            right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
+        avail = max(0, right_bound - left_bound)
+        bw = max(380, min(max_w, avail - 32))
+        panel.setFixedWidth(bw)
+        self._fit_panel_height(panel)
+        bh = panel.height()
+        bx = left_bound + max(0, (avail - bw) // 2)
+        bx = min(bx, max(0, self.width() - bw))
+        panel.move(bx, (self.height() - bh) // 2)
+
+    def _on_duyuru_stop(self):
+        """Öğretmen 'Durdur' dedi: sadece BU tahtada, BU ders saati boyunca gizle (lokal;
+        sunucuya dokunmaz, başka sınıf/tahta etkilenmez). Gün/periyot değişince tekrar oynar."""
+        if self._duyuru_period is not None:
+            self._duyuru_stopped_periods.add(self._duyuru_period)
+            logging.info(f"Duyuru öğretmen tarafından durduruldu (ders saati {self._duyuru_period}).")
+        self._hide_duyuru_panel()
+        # Slider kapandı -> doğum günü (varsa) tekrar görünsün.
+        self._restore_birthday_if_needed(getattr(self, '_last_display_data', None) or {})
+
+    def _render_yoklama_panel(self, yoklamaYok):
+        """Bugünkü EN SON yoklamada gelmeyenleri sağ-alt panelde gösterir (UI thread).
+        yoklamaYok None -> bugün yoklama alınmamış -> gizle.
+        gelmeyenler boş -> yoklama alındı, gelmeyen yok -> 'Tam katılım'."""
+        if not yoklamaYok or not isinstance(yoklamaYok, dict):
+            # Satirlari da temizle: birthday paneli sag boslugu 'yoklama_rows_layout.count()'
+            # ile olcuyor; gizlenirken bosaltilmazsa gizli panel icin yer ayrilip kart sola kayar.
+            self._clear_layout(self.yoklama_rows_layout)
+            self.yoklama_panel.hide()
+            return
+
+        self._clear_layout(self.yoklama_rows_layout)
+
+        sinif = str(yoklamaYok.get('sinif') or SETTINGS.get('board_name', '') or '')
+        ders = str(yoklamaYok.get('ders') or '')
+        alt = " • ".join([x for x in (sinif, ders) if x]) or "bugünkü yoklama"
+        self.yoklama_sub.setText(alt)
+
+        gelmeyenler = yoklamaYok.get('gelmeyenler') or []
+        if not gelmeyenler:
+            # Yoklama alınmış ama gelmeyen yok -> tam katılım (yeşil satır).
+            lbl = QLabel("✅  Tam katılım — gelmeyen yok", self.yoklama_panel)
+            lbl.setObjectName("yoklamaTamKatilim")
+            self.yoklama_rows_layout.addWidget(lbl)
+            lbl.show()
+        else:
+            # Ekran taşmasın: en fazla 12 satır, gerisi "+N daha".
+            MAX_SATIR = 12
+            gosterilecek = gelmeyenler[:MAX_SATIR]
+            for r in gosterilecek:
+                numara = str(r.get('numara', '') or '')
+                adi = str(r.get('adi', '') or '')
+                durum = str(r.get('durum', 'yok') or 'yok')
+
+                row = QFrame(self.yoklama_panel)
+                row.setObjectName("yoklamaRow")
+                row.setAttribute(Qt.WA_StyledBackground, True)
+                row_lay = QHBoxLayout(row)
+                row_lay.setContentsMargins(11, 8, 13, 8)
+                row_lay.setSpacing(12)
+
+                no = QLabel(numara or "—", row)
+                no.setObjectName("yoklamaNo")
+                no.setAlignment(Qt.AlignCenter)
+                no.setFixedSize(42, 24)
+                row_lay.addWidget(no)
+
+                name_lbl = QLabel(adi, row)
+                name_lbl.setObjectName("yoklamaName")
+                name_lbl.setWordWrap(True)  # dar panelde uzun ad kesilmesin, alt satira kaysin
+                # stretch=1: no ile tag arasindaki bosluk ada kalir, word-wrap orada sarilir.
+                row_lay.addWidget(name_lbl, 1)
+
+                # Durum etiketi: geç / nöbetçi. Gerçekten gelmeyende (yok) etiket yok.
+                if durum == 'gec':
+                    tag = QLabel("GEÇ", row)
+                    tag.setObjectName("yoklamaTagGec")
+                    tag.setAlignment(Qt.AlignCenter)
+                    tag.setFixedSize(38, 20)
+                    row_lay.addWidget(tag)
+                elif durum == 'nbt':
+                    tag = QLabel("NÖBETÇİ", row)
+                    tag.setObjectName("yoklamaTagNbt")
+                    tag.setAlignment(Qt.AlignCenter)
+                    tag.setFixedSize(60, 20)
+                    row_lay.addWidget(tag)
+
+                self.yoklama_rows_layout.addWidget(row)
+                row.show()
+
+            kalan = len(gelmeyenler) - len(gosterilecek)
+            if kalan > 0:
+                more = QLabel(f"+{kalan} öğrenci daha", self.yoklama_panel)
+                more.setObjectName("yoklamaSubtitle")
+                more.setAlignment(Qt.AlignCenter)
+                self.yoklama_rows_layout.addWidget(more)
+                more.show()
+
+        # Alt başlık: sınıf • ders • sayım. "gelmeyen" = gerçekten YOK (geç/nöbetçi hariç);
+        # geç/nöbetçi varsa ayrıca eklenir ki sayı doğru okunsun.
+        if gelmeyenler:
+            yok_s = sum(1 for r in gelmeyenler if str(r.get('durum', 'yok')) == 'yok')
+            gec_s = sum(1 for r in gelmeyenler if str(r.get('durum')) == 'gec')
+            nbt_s = sum(1 for r in gelmeyenler if str(r.get('durum')) == 'nbt')
+            parts = []
+            if yok_s: parts.append(f"{yok_s} gelmeyen")
+            if gec_s: parts.append(f"{gec_s} geç")
+            if nbt_s: parts.append(f"{nbt_s} nöbetçi")
+            self.yoklama_sub.setText(f"{alt}  •  " + ", ".join(parts) if parts else alt)
+
+        # Sağ kolon: dikeyde ortalanır (aferin sol kolonu ile simetrik -> temiz üçlü pano).
+        self._fit_panel_height(self.yoklama_panel)
+        yh = self.yoklama_panel.height()
+        yw = self.yoklama_panel.width()
+        self.yoklama_panel.move(self.width() - yw - 16, (self.height() - yh) // 2)
+        self.yoklama_panel.show()
+        self.yoklama_panel.raise_()
+
     @staticmethod
     def _fit_panel_height(panel):
-        """Paneli icerigine gore boyutlandirir.
+        """Paneli icerigine gore boyutlandirir (genislik SABIT varsayilir -> setFixedWidth).
 
-        Qt tuzagi: bir layout'a widget eklendikten hemen sonra sizeHint() ONBELLEKTEKI
-        (eski) degeri dondurebilir. Panel o eski yukseklikte sabitlenirse yeni satirlar
-        KIRPILIR ve gorunmez olur. invalidate()+activate() ile layout'u zorla yeniden
-        hesaplatip oyle adjustSize() cagiriyoruz.
+        Qt tuzagi 1: bir layout'a widget eklendikten hemen sonra sizeHint() ONBELLEKTEKI
+        (eski) degeri dondurebilir. invalidate()+activate() ile layout'u zorla yeniden
+        hesaplatiriz.
+        Qt tuzagi 2: word-wrap'li etiketlerde adjustSize() sarilan satirlari saymayip
+        paneli KISA cizip dikey kirpiyor. Bu yuzden yuksekligi panelin SABIT genisliginde
+        layout.heightForWidth() ile hesaplayip setFixedHeight veriyoruz (hfw cocuk varsa;
+        yoksa -1 doner -> eski adjustSize yoluna duseriz).
         """
         lay = panel.layout()
         if lay is not None:
             lay.invalidate()
             lay.activate()
         panel.updateGeometry()
-        panel.adjustSize()
+        # Sabit genisligi guvenilir oku: setFixedWidth maximumWidth'i ANINDA ayarlar,
+        # width() ise panel henuz gosterilmemisse gecikebilir (yanlis heightForWidth verir).
+        w = panel.maximumWidth()
+        if w <= 0 or w >= 16777215:  # QWIDGETSIZE_MAX -> sabit genislik yok
+            w = panel.width()
+        h = lay.heightForWidth(w) if lay is not None else -1
+        if h and h > 0:
+            panel.setFixedWidth(w)
+            panel.setFixedHeight(h)
+        else:
+            panel.adjustSize()
 
     def _clear_aferin_rows(self):
         """Panel satirlarini temizler (her yenilemede yeniden kurulur)."""
@@ -3538,21 +4165,21 @@ class FatihClientApp(QWidget):
             row_lay.setContentsMargins(11, 9, 13, 9)
             row_lay.setSpacing(13)
 
-            # Sira rozeti — ilk uc madalya renginde, 4-5 sade
+            # Sira rozeti — ilk uc madalya renginde, 4-5 sade (dar panel icin kucultuldu)
             badge = QLabel(str(i + 1), row)
             badge.setAlignment(Qt.AlignCenter)
-            badge.setFixedSize(38, 38)
+            badge.setFixedSize(32, 32)
             if i < len(AFERIN_RANK_COLORS):
                 c_top, c_bottom, c_text = AFERIN_RANK_COLORS[i]
                 badge.setStyleSheet(
-                    f"color:{c_text}; font-family:'DejaVu Sans'; font-size:16px; font-weight:bold;"
-                    f"border-radius:19px; background-color: qlineargradient("
+                    f"color:{c_text}; font-family:'DejaVu Sans'; font-size:14px; font-weight:bold;"
+                    f"border-radius:16px; background-color: qlineargradient("
                     f"x1:0, y1:0, x2:0, y2:1, stop:0 {c_top}, stop:1 {c_bottom});"
                 )
             else:
                 badge.setStyleSheet(
-                    "color:#C7D4E8; font-family:'DejaVu Sans'; font-size:15px; font-weight:bold;"
-                    "border-radius:19px; background-color: rgba(255,255,255,26);"
+                    "color:#C7D4E8; font-family:'DejaVu Sans'; font-size:13px; font-weight:bold;"
+                    "border-radius:16px; background-color: rgba(255,255,255,26);"
                 )
             row_lay.addWidget(badge)
 
@@ -3561,19 +4188,21 @@ class FatihClientApp(QWidget):
             name_box.setSpacing(1)
             name_lbl = QLabel(adi, row)
             name_lbl.setObjectName("aferinNameTop" if is_top else "aferinName")
+            name_lbl.setWordWrap(True)  # dar panelde uzun ad kesilmesin, alt satira kaysin
             name_box.addWidget(name_lbl)
             if numara:
                 no_lbl = QLabel(f"No {numara}", row)
                 no_lbl.setObjectName("aferinNo")
                 name_box.addWidget(no_lbl)
-            row_lay.addLayout(name_box)
-            row_lay.addStretch(1)
+            # name_box'a stretch=1: badge ile cnt arasindaki TUM bosluk ona kalir; word-wrap'li
+            # ad bu genislikte sarilir (ayri addStretch olsaydi Qt ada tam genislik verip keserdi).
+            row_lay.addLayout(name_box, 1)
 
-            # Aferin sayisi rozeti
+            # Aferin sayisi rozeti (dar panel: biraz kucultuldu)
             cnt = QLabel(f"{aferin} ★", row)
             cnt.setObjectName("aferinCount" if is_top else "aferinCountPlain")
             cnt.setAlignment(Qt.AlignCenter)
-            cnt.setFixedSize(58, 26)
+            cnt.setFixedSize(50, 24)
             row_lay.addWidget(cnt)
 
             self.aferin_rows_layout.addWidget(row)
@@ -3585,9 +4214,11 @@ class FatihClientApp(QWidget):
         # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir.
         # Layout ZORLA guncellenir: satirlar yeni eklendigi icin sizeHint() aksi halde
         # eski (satirsiz) yuksekligi dondurup paneli kirpabiliyor.
+        # Sol kolon: dikeyde ortalanir (yoklama sag kolonu ve ortadaki birthday ile ayni
+        # dikey eksende hizalansin -> temiz uclu pano). Onceden sol-alta yapisikti.
         self._fit_panel_height(self.aferin_panel)
         ph = self.aferin_panel.height()
-        self.aferin_panel.move(16, self.height() - ph - 78)
+        self.aferin_panel.move(16, (self.height() - ph) // 2)
         self.aferin_panel.show()
         self.aferin_panel.raise_()
 
@@ -4237,45 +4868,57 @@ class FatihClientApp(QWidget):
         except Exception as ack_err:
             logging.error(f"Remove ACK hatası: {ack_err}")
 
+        # Istemci etapadmin olarak calisir, kaldirma ise ROOT isi -> sudo sart.
+        # setup.sh yalnizca bu betik icin NOPASSWD kurali tanimlar (/etc/sudoers.d/fatih-client).
+        # `-n`: sifre sorma, soracaksa hemen basarisiz ol (kilit ekraninda prompt bekleyemeyiz).
         uninstaller = "/usr/local/bin/fatih-uninstall"
-        if os.path.exists(uninstaller):
-            try:
-                # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
-                # biz olsek de temizlik sonuna kadar devam etsin.
-                _subprocess.Popen(
-                    [uninstaller, "--force"],
-                    start_new_session=True,
-                    stdout=_subprocess.DEVNULL,
-                    stderr=_subprocess.DEVNULL,
-                )
-                logging.info("fatih-uninstall --force started (detached). Exiting.")
-                QApplication.quit()
-                return
-            except Exception as e:
-                logging.error(f"Uninstaller calistirilamadi: {e} — satir ici temizlige dusuluyor")
-        else:
-            logging.warning(f"{uninstaller} bulunamadi — satir ici temizlige dusuluyor")
+        try:
+            # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
+            # biz olsek de temizlik sonuna kadar devam etsin.
+            _subprocess.Popen(
+                ["sudo", "-n", uninstaller, "--force"],
+                start_new_session=True,
+                stdout=_subprocess.DEVNULL,
+                stderr=_subprocess.DEVNULL,
+            )
+            logging.info("sudo fatih-uninstall --force started (detached). Exiting.")
+            QApplication.quit()
+            return
+        except Exception as e:
+            logging.error(f"Uninstaller calistirilamadi: {e} — satir ici temizlige dusuluyor")
 
-        # --- Yedek plan: betik yoksa/calismazsa en azindan tam temizligi burada yap ---
-        # (Betikle ayni adimlar; ikisi degisirse birlikte guncellenmeli.)
+        # --- Yedek plan: betik cagrilamadiysa ayni adimlari burada dene ---
+        # Bunlar da root isi -> hepsi `sudo -n` ile. (Betikle ayni liste; birlikte guncellenmeli.)
         for cmd in (
             "rm -f /etc/xdg/autostart/fatih-client-autostart.desktop",
             "rm -f /home/etapadmin/.config/autostart/fatih-client.desktop",
             "rm -f /home/fatih-kiosk/.config/autostart/fatih-kiosk.desktop",
             "rfkill unblock all",
-            "pactl set-sink-mute @DEFAULT_SINK@ 0",
-            "gsettings set org.gnome.desktop.lockdown disable-command-line false",
-            "rm -f /etc/sudoers.d/fatih-client",
             "rm -f /etc/sudoers.d/fatih-kiosk",
             "rm -rf /opt/fatih-client",
             "rm -f /etc/fatih-client/config.ini",
+        ):
+            try:
+                os.system(f"sudo -n {cmd} 2>/dev/null")
+            except Exception:
+                pass
+        # Bunlar kullanici oturumuna ait, sudo'suz calisir.
+        for cmd in (
+            "pactl set-sink-mute @DEFAULT_SINK@ 0",
+            "gsettings set org.gnome.desktop.lockdown disable-command-line false",
         ):
             try:
                 os.system(cmd + " 2>/dev/null")
             except Exception:
                 pass
 
-        logging.info("Uninstallation complete (fallback). Exiting.")
+        # DURUST RAPOR: eskiden temizlik basarisiz olsa bile "complete" yaziliyordu
+        # (Errno 13'te tam bu oldu) -> gercekten gitti mi kontrol et.
+        if os.path.exists("/opt/fatih-client"):
+            logging.error("KALDIRMA BASARISIZ: /opt/fatih-client hala duruyor (yetki sorunu?). "
+                          "Tahta elle kaldirilmali: sudo /usr/local/bin/fatih-uninstall")
+        else:
+            logging.info("Uninstallation complete (fallback). Exiting.")
         QApplication.quit()
 
     # --- NEW: Log saving method that uses the network client ---
