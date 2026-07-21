@@ -2936,7 +2936,7 @@ class FatihClientApp(QWidget):
         self.yoklama_panel.setObjectName("yoklamaPanel")
         self.yoklama_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.yoklama_panel.setStyleSheet(YOKLAMA_PANEL_QSS)
-        self.yoklama_panel.setFixedWidth(400)
+        self.yoklama_panel.setFixedWidth(452)  # aferin paneliyle simetrik (sol-sag esit genislik)
 
         _yk_lay = QVBoxLayout(self.yoklama_panel)
         _yk_lay.setContentsMargins(24, 19, 24, 21)
@@ -3528,9 +3528,11 @@ class FatihClientApp(QWidget):
             return
 
         d = self._last_display_data or {}
+        # Sira onemli: birthday, aferin+yoklama panellerinin ARASINA ortalanir; o yuzden
+        # once yan paneller cizilir (genislik/gorunurluk hazir olsun), en son birthday.
         self._render_aferin_panel(d.get("aferinTop5"))
-        self._render_birthday_panel(d.get("dogumGunleri"))
         self._render_yoklama_panel(d.get("yoklamaYok"))
+        self._render_birthday_panel(d.get("dogumGunleri"))
 
     def _hide_info_panels(self):
         """Aferin + dogum gunu + yoklama panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
@@ -3547,8 +3549,8 @@ class FatihClientApp(QWidget):
             return  # hala giris ekrani acik
         d = getattr(self, '_last_display_data', None) or {}
         self._render_aferin_panel(d.get("aferinTop5"))
-        self._render_birthday_panel(d.get("dogumGunleri"))
         self._render_yoklama_panel(d.get("yoklamaYok"))
+        self._render_birthday_panel(d.get("dogumGunleri"))
 
     def _clear_layout(self, layout):
         """Bir layout'un tum widget'larini temizler (paneller her yenilemede yeniden kurulur)."""
@@ -3602,12 +3604,24 @@ class FatihClientApp(QWidget):
         # pencere henuz gosterilmemisse .show() cagrilmis olsa bile False doner -> panel
         # "yok" sanilip kutlama karti tam ortaya konuyor ve uzerine biniyordu (V6.00.08 bug'i).
         # Icerik sayisi pencere gorunurlugunden bagimsizdir, guvenilir olcut budur.
+        # Kart, aferin (sol) ve yoklama (sag) panellerinin ARASINDAKI bosluga ortalanir;
+        # boylece hicbir panele binmez. Panel gorunurlugu icerik sayisindan anlasilir
+        # (isVisible() pencere gosterilene kadar guvenilmezdi -> V6.00.08 bug'i).
+        # NOT: bu render, yan panellerden SONRA cagrilir (bkz. _apply_display_data sirasi),
+        # boylece asagidaki genislik/gorunurluk olcumleri bu dongude tazedir.
+        GAP = 24
         left_bound = 0
         if self.aferin_rows_layout.count() > 0:
-            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + 24
+            left_bound = self.aferin_panel.x() + self.aferin_panel.width() + GAP
 
-        avail = max(0, self.width() - left_bound)
-        bw = max(420, min(760, avail - 32))
+        right_bound = self.width()
+        if self.yoklama_rows_layout.count() > 0:
+            right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
+
+        avail = max(0, right_bound - left_bound)
+        # Bosluga sigacak kadar; tercihen 760, ama iki panelin arasindaki bosluktan tasmasin.
+        # Dar ekranda (dev laptop) 380'e kadar kucululur ki yan panellere binmesin.
+        bw = max(380, min(760, avail - 32))
         self.birthday_panel.setFixedWidth(bw)
 
         self._fit_panel_height(self.birthday_panel)
@@ -3624,6 +3638,9 @@ class FatihClientApp(QWidget):
         yoklamaYok None -> bugün yoklama alınmamış -> gizle.
         gelmeyenler boş -> yoklama alındı, gelmeyen yok -> 'Tam katılım'."""
         if not yoklamaYok or not isinstance(yoklamaYok, dict):
+            # Satirlari da temizle: birthday paneli sag boslugu 'yoklama_rows_layout.count()'
+            # ile olcuyor; gizlenirken bosaltilmazsa gizli panel icin yer ayrilip kart sola kayar.
+            self._clear_layout(self.yoklama_rows_layout)
             self.yoklama_panel.hide()
             return
 
@@ -3705,11 +3722,11 @@ class FatihClientApp(QWidget):
             if nbt_s: parts.append(f"{nbt_s} nöbetçi")
             self.yoklama_sub.setText(f"{alt}  •  " + ", ".join(parts) if parts else alt)
 
-        # İçeriğe göre yükseklik; sağ-alt köşeye yerleştir (aferin sol-altta -> simetrik).
+        # Sağ kolon: dikeyde ortalanır (aferin sol kolonu ile simetrik -> temiz üçlü pano).
         self._fit_panel_height(self.yoklama_panel)
         yh = self.yoklama_panel.height()
         yw = self.yoklama_panel.width()
-        self.yoklama_panel.move(self.width() - yw - 16, self.height() - yh - 78)
+        self.yoklama_panel.move(self.width() - yw - 16, (self.height() - yh) // 2)
         self.yoklama_panel.show()
         self.yoklama_panel.raise_()
 
@@ -3810,9 +3827,11 @@ class FatihClientApp(QWidget):
         # Icerige gore yukseklik, sol-altta surum etiketinin uzerine yerlestir.
         # Layout ZORLA guncellenir: satirlar yeni eklendigi icin sizeHint() aksi halde
         # eski (satirsiz) yuksekligi dondurup paneli kirpabiliyor.
+        # Sol kolon: dikeyde ortalanir (yoklama sag kolonu ve ortadaki birthday ile ayni
+        # dikey eksende hizalansin -> temiz uclu pano). Onceden sol-alta yapisikti.
         self._fit_panel_height(self.aferin_panel)
         ph = self.aferin_panel.height()
-        self.aferin_panel.move(16, self.height() - ph - 78)
+        self.aferin_panel.move(16, (self.height() - ph) // 2)
         self.aferin_panel.show()
         self.aferin_panel.raise_()
 
