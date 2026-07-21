@@ -2491,13 +2491,13 @@ QLabel { background: transparent; }
 QLabel#aferinTitle {
     color: #FFD35C;
     font-family: 'DejaVu Sans';
-    font-size: 17px;
+    font-size: 15px;
     font-weight: bold;
 }
 QLabel#aferinSubtitle {
     color: rgba(190, 205, 230, 190);
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
 }
 QFrame#aferinRule {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -2520,35 +2520,35 @@ QFrame#aferinRow {
 QLabel#aferinName {
     color: #FFFFFF;
     font-family: 'DejaVu Sans';
-    font-size: 15px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#aferinNameTop {
     color: #FFF3D0;
     font-family: 'DejaVu Sans';
-    font-size: 16px;
+    font-size: 14px;
     font-weight: bold;
 }
 QLabel#aferinNo {
     color: rgba(178, 195, 222, 205);
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
 }
 QLabel#aferinCount {
     color: #1E1605;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #FFE082, stop:1 #FFB300);
-    border-radius: 13px;
+    border-radius: 12px;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#aferinCountPlain {
     color: #EAF1FF;
     background-color: rgba(255, 255, 255, 30);
-    border-radius: 13px;
+    border-radius: 12px;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 """
@@ -2573,13 +2573,13 @@ QLabel { background: transparent; }
 QLabel#yoklamaTitle {
     color: #FF8A80;
     font-family: 'DejaVu Sans';
-    font-size: 17px;
+    font-size: 15px;
     font-weight: bold;
 }
 QLabel#yoklamaSubtitle {
     color: rgba(230, 200, 200, 190);
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
 }
 QFrame#yoklamaRule {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -2595,22 +2595,22 @@ QFrame#yoklamaRow {
 QLabel#yoklamaName {
     color: #FFFFFF;
     font-family: 'DejaVu Sans';
-    font-size: 15px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#yoklamaNo {
     color: #1A0A0B;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #FF8A80, stop:1 #E53935);
-    border-radius: 13px;
+    border-radius: 12px;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 QLabel#yoklamaTamKatilim {
     color: #A5D6A7;
     font-family: 'DejaVu Sans';
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
 }
 /* Durum etiketleri: geç (turuncu) ve nöbetçi (mavi). Yok'ta etiket gösterilmez. */
@@ -2619,7 +2619,7 @@ QLabel#yoklamaTagGec {
     background-color: #FFB74D;
     border-radius: 8px;
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
 }
 QLabel#yoklamaTagNbt {
@@ -2627,7 +2627,7 @@ QLabel#yoklamaTagNbt {
     background-color: #4FC3F7;
     border-radius: 8px;
     font-family: 'DejaVu Sans';
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
 }
 """
@@ -2859,7 +2859,7 @@ class FatihClientApp(QWidget):
         self.aferin_panel.setObjectName("aferinPanel")
         self.aferin_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.aferin_panel.setStyleSheet(AFERIN_PANEL_QSS)
-        self.aferin_panel.setFixedWidth(400)  # yan listeler dar: orta (dogum gunu/duyuru) panosu one ciksin
+        self.aferin_panel.setFixedWidth(370)  # yan listeler dar: orta (dogum gunu/duyuru) panosu one ciksin
 
         _ap_lay = QVBoxLayout(self.aferin_panel)
         _ap_lay.setContentsMargins(24, 19, 24, 21)
@@ -2939,7 +2939,7 @@ class FatihClientApp(QWidget):
         self.yoklama_panel.setObjectName("yoklamaPanel")
         self.yoklama_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.yoklama_panel.setStyleSheet(YOKLAMA_PANEL_QSS)
-        self.yoklama_panel.setFixedWidth(400)  # aferin paneliyle simetrik (sol-sag esit dar liste)
+        self.yoklama_panel.setFixedWidth(370)  # aferin paneliyle simetrik (sol-sag esit dar liste)
 
         _yk_lay = QVBoxLayout(self.yoklama_panel)
         _yk_lay.setContentsMargins(24, 19, 24, 21)
@@ -3625,23 +3625,14 @@ class FatihClientApp(QWidget):
             right_bound = self.width() - self.yoklama_panel.width() - 16 - GAP
 
         avail = max(0, right_bound - left_bound)
-        # Orta pano ONE CIKAR (ileride duyuru panosu): yan listeler 400px'e daraltildi,
-        # burada tavan 880'e cikarildi ki genis tahtada baskin dursun. Iki panelin
+        # Orta pano ONE CIKAR (ileride duyuru panosu): yan listeler 370px'e daraltildi,
+        # burada tavan 920'ye cikarildi ki genis tahtada baskin dursun. Iki panelin
         # arasindaki bosluktan tasmaz; dar ekranda 380'e kadar kucululur.
-        bw = max(380, min(880, avail - 32))
+        bw = max(380, min(920, avail - 32))
         self.birthday_panel.setFixedWidth(bw)
 
-        # Yuksekligi bw genisliginde ACIKCA hesapla: word-wrap'li isim/baslik etiketlerinde
-        # adjustSize() sarilan satirlari saymayip paneli KISA cizebiliyor -> dikey kirpma.
-        # QVBoxLayout.heightForWidth() sarilan yuksekligi dogru dondurur (hfw cocuk varsa).
-        _bl = self.birthday_panel.layout()
-        _bl.invalidate()
-        _bl.activate()
-        _hfw = _bl.heightForWidth(bw)
-        if _hfw and _hfw > 0:
-            self.birthday_panel.setFixedHeight(_hfw)
-        else:
-            self._fit_panel_height(self.birthday_panel)
+        # Yukseklik word-wrap'i sayarak bw genisliginde hesaplanir (bkz. _fit_panel_height).
+        self._fit_panel_height(self.birthday_panel)
         bh = self.birthday_panel.height()
         bx = left_bound + max(0, (avail - bw) // 2)
         # Ekrandan tasmasin
@@ -3694,26 +3685,27 @@ class FatihClientApp(QWidget):
                 no = QLabel(numara or "—", row)
                 no.setObjectName("yoklamaNo")
                 no.setAlignment(Qt.AlignCenter)
-                no.setFixedSize(46, 26)
+                no.setFixedSize(42, 24)
                 row_lay.addWidget(no)
 
                 name_lbl = QLabel(adi, row)
                 name_lbl.setObjectName("yoklamaName")
-                row_lay.addWidget(name_lbl)
-                row_lay.addStretch(1)
+                name_lbl.setWordWrap(True)  # dar panelde uzun ad kesilmesin, alt satira kaysin
+                # stretch=1: no ile tag arasindaki bosluk ada kalir, word-wrap orada sarilir.
+                row_lay.addWidget(name_lbl, 1)
 
                 # Durum etiketi: geç / nöbetçi. Gerçekten gelmeyende (yok) etiket yok.
                 if durum == 'gec':
                     tag = QLabel("GEÇ", row)
                     tag.setObjectName("yoklamaTagGec")
                     tag.setAlignment(Qt.AlignCenter)
-                    tag.setFixedSize(42, 22)
+                    tag.setFixedSize(38, 20)
                     row_lay.addWidget(tag)
                 elif durum == 'nbt':
                     tag = QLabel("NÖBETÇİ", row)
                     tag.setObjectName("yoklamaTagNbt")
                     tag.setAlignment(Qt.AlignCenter)
-                    tag.setFixedSize(66, 22)
+                    tag.setFixedSize(60, 20)
                     row_lay.addWidget(tag)
 
                 self.yoklama_rows_layout.addWidget(row)
@@ -3749,19 +3741,32 @@ class FatihClientApp(QWidget):
 
     @staticmethod
     def _fit_panel_height(panel):
-        """Paneli icerigine gore boyutlandirir.
+        """Paneli icerigine gore boyutlandirir (genislik SABIT varsayilir -> setFixedWidth).
 
-        Qt tuzagi: bir layout'a widget eklendikten hemen sonra sizeHint() ONBELLEKTEKI
-        (eski) degeri dondurebilir. Panel o eski yukseklikte sabitlenirse yeni satirlar
-        KIRPILIR ve gorunmez olur. invalidate()+activate() ile layout'u zorla yeniden
-        hesaplatip oyle adjustSize() cagiriyoruz.
+        Qt tuzagi 1: bir layout'a widget eklendikten hemen sonra sizeHint() ONBELLEKTEKI
+        (eski) degeri dondurebilir. invalidate()+activate() ile layout'u zorla yeniden
+        hesaplatiriz.
+        Qt tuzagi 2: word-wrap'li etiketlerde adjustSize() sarilan satirlari saymayip
+        paneli KISA cizip dikey kirpiyor. Bu yuzden yuksekligi panelin SABIT genisliginde
+        layout.heightForWidth() ile hesaplayip setFixedHeight veriyoruz (hfw cocuk varsa;
+        yoksa -1 doner -> eski adjustSize yoluna duseriz).
         """
         lay = panel.layout()
         if lay is not None:
             lay.invalidate()
             lay.activate()
         panel.updateGeometry()
-        panel.adjustSize()
+        # Sabit genisligi guvenilir oku: setFixedWidth maximumWidth'i ANINDA ayarlar,
+        # width() ise panel henuz gosterilmemisse gecikebilir (yanlis heightForWidth verir).
+        w = panel.maximumWidth()
+        if w <= 0 or w >= 16777215:  # QWIDGETSIZE_MAX -> sabit genislik yok
+            w = panel.width()
+        h = lay.heightForWidth(w) if lay is not None else -1
+        if h and h > 0:
+            panel.setFixedWidth(w)
+            panel.setFixedHeight(h)
+        else:
+            panel.adjustSize()
 
     def _clear_aferin_rows(self):
         """Panel satirlarini temizler (her yenilemede yeniden kurulur)."""
@@ -3797,21 +3802,21 @@ class FatihClientApp(QWidget):
             row_lay.setContentsMargins(11, 9, 13, 9)
             row_lay.setSpacing(13)
 
-            # Sira rozeti — ilk uc madalya renginde, 4-5 sade
+            # Sira rozeti — ilk uc madalya renginde, 4-5 sade (dar panel icin kucultuldu)
             badge = QLabel(str(i + 1), row)
             badge.setAlignment(Qt.AlignCenter)
-            badge.setFixedSize(38, 38)
+            badge.setFixedSize(32, 32)
             if i < len(AFERIN_RANK_COLORS):
                 c_top, c_bottom, c_text = AFERIN_RANK_COLORS[i]
                 badge.setStyleSheet(
-                    f"color:{c_text}; font-family:'DejaVu Sans'; font-size:16px; font-weight:bold;"
-                    f"border-radius:19px; background-color: qlineargradient("
+                    f"color:{c_text}; font-family:'DejaVu Sans'; font-size:14px; font-weight:bold;"
+                    f"border-radius:16px; background-color: qlineargradient("
                     f"x1:0, y1:0, x2:0, y2:1, stop:0 {c_top}, stop:1 {c_bottom});"
                 )
             else:
                 badge.setStyleSheet(
-                    "color:#C7D4E8; font-family:'DejaVu Sans'; font-size:15px; font-weight:bold;"
-                    "border-radius:19px; background-color: rgba(255,255,255,26);"
+                    "color:#C7D4E8; font-family:'DejaVu Sans'; font-size:13px; font-weight:bold;"
+                    "border-radius:16px; background-color: rgba(255,255,255,26);"
                 )
             row_lay.addWidget(badge)
 
@@ -3820,19 +3825,21 @@ class FatihClientApp(QWidget):
             name_box.setSpacing(1)
             name_lbl = QLabel(adi, row)
             name_lbl.setObjectName("aferinNameTop" if is_top else "aferinName")
+            name_lbl.setWordWrap(True)  # dar panelde uzun ad kesilmesin, alt satira kaysin
             name_box.addWidget(name_lbl)
             if numara:
                 no_lbl = QLabel(f"No {numara}", row)
                 no_lbl.setObjectName("aferinNo")
                 name_box.addWidget(no_lbl)
-            row_lay.addLayout(name_box)
-            row_lay.addStretch(1)
+            # name_box'a stretch=1: badge ile cnt arasindaki TUM bosluk ona kalir; word-wrap'li
+            # ad bu genislikte sarilir (ayri addStretch olsaydi Qt ada tam genislik verip keserdi).
+            row_lay.addLayout(name_box, 1)
 
-            # Aferin sayisi rozeti
+            # Aferin sayisi rozeti (dar panel: biraz kucultuldu)
             cnt = QLabel(f"{aferin} ★", row)
             cnt.setObjectName("aferinCount" if is_top else "aferinCountPlain")
             cnt.setAlignment(Qt.AlignCenter)
-            cnt.setFixedSize(58, 26)
+            cnt.setFixedSize(50, 24)
             row_lay.addWidget(cnt)
 
             self.aferin_rows_layout.addWidget(row)
