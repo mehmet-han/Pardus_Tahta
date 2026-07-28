@@ -19,7 +19,7 @@ from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor, QFontMetrics
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
 from pyudev import Context, Monitor
-from datetime import datetime
+from datetime import datetime, timedelta
 import subprocess as _subprocess
 import hashlib
 
@@ -309,6 +309,46 @@ def get_network_time():
     # Fallback to local time if all NTP servers fail
     logging.warning("Could not get network time, using local time")
     return datetime.now()
+
+# ============================================================================
+# AĞ SAATİ SENKRONU — tahtanın sistem saati yanlış olabilir (Pardus'ta NTP kapalı
+# olabiliyor, RTC kayabiliyor). Otomatik kilit, sınav penceresi, duyuru ve ekrandaki
+# saat KESİNLİKLE doğru olmalı. Bu yüzden NTP'den bir OFSET hesaplanır ve zamana
+# duyarlı tüm okumalar `simdi()` üzerinden yapılır. Sistem saatine DOKUNULMAZ
+# (root gerektirir); ofset uygulama içinde tutulur.
+# ----------------------------------------------------------------------------
+_TIME_OFFSET_SEC = 0.0     # ag_saati - yerel_saat (saniye)
+_TIME_SYNCED = False       # en az bir kez basarili senkron oldu mu
+
+def simdi():
+    """Senkronlanmış şimdiki zaman. NTP ofseti uygulanır; senkron yoksa yerel saat."""
+    return datetime.now() + timedelta(seconds=_TIME_OFFSET_SEC)
+
+def sync_network_time():
+    """NTP'den ofseti hesaplar (bloklar — arka plan thread'inden çağır).
+    Sapma 2 sn'den büyükse uyarı loglar; ağ yoksa mevcut ofset korunur."""
+    global _TIME_OFFSET_SEC, _TIME_SYNCED
+    try:
+        yerel_once = datetime.now()
+        ag = get_network_time()
+        yerel_sonra = datetime.now()
+        if ag is None:
+            return False
+        # NTP cagrisinin kendi gecikmesini ortala (yerel olcumun ortasi)
+        yerel = yerel_once + (yerel_sonra - yerel_once) / 2
+        sapma = (ag - yerel).total_seconds()
+        # get_network_time() basarisiz olunca datetime.now() donuyor -> sapma ~0 olur;
+        # bu durumda da zarar yok (ofset 0 kalir).
+        if abs(sapma) > 2:
+            logging.warning(f"Tahta saati {sapma:+.1f} sn sapmis — ag saatine gore duzeltiliyor.")
+        else:
+            logging.info(f"Saat senkronu tamam (sapma {sapma:+.1f} sn).")
+        _TIME_OFFSET_SEC = sapma
+        _TIME_SYNCED = True
+        return True
+    except Exception as e:
+        logging.error(f"Saat senkronu basarisiz: {e}")
+        return False
 
 def generate_dynamic_password(dt: datetime, minute_offset: int = 0) -> str:
     """
@@ -1898,7 +1938,7 @@ class ScheduleDialog(QDialog):
         # Gün seçim butonları
         day_layout = QHBoxLayout()
         self.day_buttons = []
-        today = datetime.now().isoweekday()  # 1=Mon, 7=Sun
+        today = simdi().isoweekday()  # 1=Mon, 7=Sun
         for i in range(1, 8):
             btn = QPushButton(self.DAYS[i][:3])
             btn.setCheckable(True)
@@ -2013,7 +2053,7 @@ class ScheduleWidget(QWidget):
         # Gün seçim butonları
         day_layout = QHBoxLayout()
         self.day_buttons = []
-        today = datetime.now().isoweekday()
+        today = simdi().isoweekday()
         for i in range(1, 8):
             btn = QPushButton(self.DAYS[i][:3])
             btn.setCheckable(True)
@@ -2736,48 +2776,64 @@ QLabel#duyuruDots {
 DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
 
+# Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
+EXAM_VARSAYILAN_SURE_DK = 120
+
 
 # --- Sinav Oturma Duzeni (tam ekran sinav modu) paneli ---
 # Ortak sinav saatinde tahta komple kilitlenir; bu panel TUM ekrani kaplar (aferin/duyuru kilit
 # ekraninin USTUNDE, oncelikli). Ogrenci sinifa girince adini x/y grid'inde bulup oturur.
 EXAM_PANEL_QSS = """
 QFrame#examPanel {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(10, 22, 40, 255), stop:1 rgba(6, 14, 28, 255));
+    background-color: qlineargradient(x1:0, y1:0, x2:0.35, y2:1,
+        stop:0 #0B1226, stop:0.55 #0E1830, stop:1 #0A1020);
 }
+QLabel { background: transparent; }
 QLabel#examHeader {
     color: #FFFFFF;
     font-family: 'DejaVu Sans';
-    font-size: 34px;
-    font-weight: bold;
-    letter-spacing: 2px;
-}
-QLabel#examSubHeader {
-    color: #8FD3FF;
-    font-family: 'DejaVu Sans';
-    font-size: 22px;
-    font-weight: bold;
-}
-QLabel#examFront {
-    color: rgba(180, 210, 240, 200);
-    font-family: 'DejaVu Sans';
-    font-size: 15px;
+    font-size: 36px;
     font-weight: bold;
     letter-spacing: 3px;
 }
-QLabel#examFooter {
-    color: #EAF4FF;
+QLabel#examSubHeader {
+    color: #7DD3FC;
     font-family: 'DejaVu Sans';
-    font-size: 18px;
+    font-size: 23px;
     font-weight: bold;
 }
+QLabel#examClock {
+    color: #E6EEF9;
+    font-family: 'DejaVu Sans';
+    font-size: 26px;
+    font-weight: bold;
+}
+QLabel#examFront {
+    color: rgba(168, 194, 224, 190);
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 4px;
+}
+QLabel#examFooter {
+    color: #CBD9EC;
+    font-family: 'DejaVu Sans';
+    font-size: 17px;
+    font-weight: bold;
+}
+QLabel#examLegend {
+    color: rgba(190, 208, 230, 210);
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+    font-weight: bold;
+}
+/* SINAVDA olan öğrenci — MAVİ (renk körü güvenli çift: mavi <-> amber) */
 QFrame#examBox {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 rgba(30, 60, 96, 255), stop:1 rgba(22, 48, 80, 255));
-    border: 2px solid rgba(120, 200, 255, 200);
-    border-radius: 12px;
+        stop:0 #1C3357, stop:1 #16263F);
+    border: 2px solid #5EA8E8;
+    border-radius: 14px;
 }
-QLabel { background: transparent; }
 QLabel#examName {
     color: #FFFFFF;
     font-family: 'DejaVu Sans';
@@ -2785,35 +2841,40 @@ QLabel#examName {
     font-weight: bold;
 }
 QLabel#examNo {
-    color: #B7DBFF;
+    color: #A9CBEA;
     font-family: 'DejaVu Sans';
     font-size: 14px;
 }
+/* GELMEYEN öğrenci — AMBER + KALIN KESİKLİ çerçeve + "GELMEDİ" rozeti.
+   Renk körlüğüne karşı üç ayrı ipucu: renk, çerçeve deseni, metin. Kırmızı KULLANILMAZ. */
 QFrame#examBoxYok {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 rgba(92, 30, 38, 255), stop:1 rgba(70, 22, 30, 255));
-    border: 2px solid rgba(255, 120, 130, 210);
-    border-radius: 12px;
+        stop:0 #4A3512, stop:1 #35260B);
+    border: 3px dashed #F2A93B;
+    border-radius: 14px;
 }
 QLabel#examNameYok {
-    color: rgba(255, 214, 218, 235);
+    color: #FFE3B0;
     font-family: 'DejaVu Sans';
     font-size: 17px;
     font-weight: bold;
 }
 QLabel#examTagYok {
-    color: #FFC9CE;
+    color: #1B1405;
+    background-color: #F2A93B;
+    border-radius: 7px;
     font-family: 'DejaVu Sans';
     font-size: 13px;
     font-weight: bold;
+    padding: 1px 6px;
 }
 QFrame#examYokPanel {
-    background-color: rgba(70, 20, 28, 235);
-    border: 2px solid rgba(255, 120, 130, 190);
-    border-radius: 14px;
+    background-color: rgba(58, 42, 14, 238);
+    border: 2px solid #F2A93B;
+    border-radius: 16px;
 }
 QLabel#examYokTitle {
-    color: #FFC9CE;
+    color: #FFCF8B;
     font-family: 'DejaVu Sans';
     font-size: 16px;
     font-weight: bold;
@@ -2826,7 +2887,7 @@ QLabel#examYokRow {
     font-weight: bold;
 }
 QLabel#examYokEmpty {
-    color: rgba(200, 230, 210, 220);
+    color: #BFE3D6;
     font-family: 'DejaVu Sans';
     font-size: 14px;
 }
@@ -2935,6 +2996,7 @@ class FatihClientApp(QWidget):
         self.init_display_timer()  # Feature 5: ilk-5 aferin paneli
         self.init_duyuru_timers()  # Duyuru: durum değerlendirme + slayt geçişi
         self.init_exam_timer()     # Sınav oturma düzeni: /sinav_oturma yoklaması
+        self.init_time_sync()      # Ağ saati senkronu (kilit/sınav/duyuru saatleri doğru olsun)
 
         # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
         PowerManager.disable_sleep()
@@ -3189,6 +3251,16 @@ class FatihClientApp(QWidget):
         self.exam_footer.setObjectName("examFooter")
         self.exam_footer.setAlignment(Qt.AlignCenter)
         self.exam_footer.setWordWrap(True)
+
+        # Canlı saat (sağ üst) — ağ saatiyle senkron; sınav salonunda saat görmek kritik.
+        self.exam_clock = QLabel("", self.exam_panel)
+        self.exam_clock.setObjectName("examClock")
+        self.exam_clock.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        # Lejant: renk kodunu AÇIKÇA yazar (renk körü kullanıcılar için renkten bağımsız ipucu).
+        self.exam_legend = QLabel("", self.exam_panel)
+        self.exam_legend.setObjectName("examLegend")
+        self.exam_legend.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Sınava gelmeyenler paneli (sağ kolon) — gözetmen MebreCep'ten yoklama alınca dolar.
         self.exam_yok_panel = QFrame(self.exam_panel)
@@ -3543,7 +3615,7 @@ class FatihClientApp(QWidget):
         day_btn_layout.setSpacing(3)
         day_buttons = []
         
-        today_iso = datetime.now().isoweekday()  # 1=Pzt, 7=Paz
+        today_iso = simdi().isoweekday()  # 1=Pzt, 7=Paz
         
         for i, day_name in enumerate(days_tr):
             day_idx = i + 1  # 1-7
@@ -3951,6 +4023,17 @@ class FatihClientApp(QWidget):
     # ----------------------------------------------------------------------------
     # SINAV OTURMA DÜZENİ (tam ekran sınav modu)
     # ----------------------------------------------------------------------------
+    def init_time_sync(self):
+        """Ağ saati senkronu: açılışta hemen, sonra 6 saatte bir (arka planda, UI'yı bloklamaz).
+        Tahtanın sistem saati kayarsa otomatik kilit/sınav penceresi/duyuru yanlış çalışırdı."""
+        def _sync():
+            threading.Thread(target=sync_network_time, daemon=True).start()
+        self.time_sync_timer = QTimer(self)
+        self.time_sync_timer.timeout.connect(_sync)
+        self.time_sync_timer.start(6 * 60 * 60 * 1000)   # 6 saat
+        QTimer.singleShot(1500, _sync)                   # açılışta (ağ otursun diye kısa gecikme)
+        logging.info("Ağ saati senkron timer'ı başlatıldı (6 saat)")
+
     def init_exam_timer(self):
         """Sınav oturma düzeni yoklaması (v5 /sinav_oturma). Veri seyrek değişir -> 45 sn."""
         self.exam_timer = QTimer(self)
@@ -3976,7 +4059,7 @@ class FatihClientApp(QWidget):
             parts = str(saat).split(':')
             hh = int(parts[0])
             mm = int(parts[1]) if len(parts) > 1 else 0
-            now = datetime.now()
+            now = simdi()
             exam_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
             return now >= exam_dt
         except Exception:
@@ -3989,9 +4072,19 @@ class FatihClientApp(QWidget):
         if not self._exam_time_reached(data.get('saat')):
             return False                       # başlangıç saati gelmedi
         bitis = data.get('bitis')
-        if bitis and self._exam_time_reached(bitis):
-            return False                       # bitiş geçti -> gösterimi durdur
-        return True
+        if bitis:
+            if self._exam_time_reached(bitis):
+                return False                   # bitiş geçti -> gösterimi durdur
+            return True
+        # Bitiş saati gönderilmemişse ekran gün boyu açık kalmasın: başlangıçtan
+        # EXAM_VARSAYILAN_SURE_DK sonra kendiliğinden kapanır (güvenli varsayılan).
+        try:
+            p = str(data.get('saat') or '').split(':')
+            bas = simdi().replace(hour=int(p[0]), minute=int(p[1]) if len(p) > 1 else 0,
+                                  second=0, microsecond=0)
+            return simdi() < bas + timedelta(minutes=EXAM_VARSAYILAN_SURE_DK)
+        except Exception:
+            return True
 
     def _exam_showing(self):
         """Sınav ekranı şu an gösteriliyor olmalı mı? = sınav penceresi aktif VE tahta kilitli."""
@@ -4068,6 +4161,24 @@ class FatihClientApp(QWidget):
                 return px
         return int(min_px)
 
+    def _raise_exam_controls(self):
+        """'Tahtayı Açın' ve (i) butonlarını sınav panelinin üstüne çıkarır. Tam ekran sınav
+        ekranı bunları örterse öğretmen tahtayı açamaz — her çizimde tekrar öne alınır."""
+        for ad in ('login_button', 'help_toggle_button'):
+            w = getattr(self, ad, None)
+            if w is not None:
+                try:
+                    w.raise_()
+                    w.show()
+                except Exception:
+                    pass
+
+    def _update_exam_clock(self):
+        """Sınav ekranındaki canlı saati (ağ saatiyle senkron) tazeler."""
+        lbl = getattr(self, 'exam_clock', None)
+        if lbl is not None:
+            lbl.setText(simdi().strftime("%d.%m.%Y   %H:%M:%S"))
+
     def _render_exam_panel(self, data):
         """Tam ekran oturma düzenini çizer: header (salon/ders/saat) + x/y grid öğrenci kutuları +
         gözetmenler. Koordinatlar salon-yerel/seyrek olabilir -> min çıkar, ekrana sığacak ölçekle.
@@ -4083,6 +4194,8 @@ class FatihClientApp(QWidget):
         if (self._exam_rendered_id == sid and getattr(self, 'exam_panel', None) is not None
                 and self.exam_panel.isVisible()):
             self.exam_panel.raise_()
+            self._raise_exam_controls()
+            self._update_exam_clock()
             return
         self._exam_rendered_id = sid
         W = self.width()
@@ -4092,17 +4205,33 @@ class FatihClientApp(QWidget):
         salon = str(data.get('salon') or '')
         ders = str(data.get('ders_adi') or data.get('sinav_adi') or '')
         saat = str(data.get('saat') or '')
-        self.exam_subheader.setText(f"{ders}   ·   Salon {salon}   ·   Saat {saat}")
+        bitis = str(data.get('bitis') or '')
+        # Sınav saati ARALIK olarak yazılır (başlangıç–bitiş) — "Saat 09:30" tek başına
+        # ne zaman biteceğini söylemiyordu.
+        aralik = f"{saat} – {bitis}" if (saat and bitis) else (saat or '')
+        self.exam_subheader.setText(
+            f"{ders}   ·   Salon {salon}" + (f"   ·   {aralik}" if aralik else ""))
 
         gorevliler = [g for g in (data.get('gorevliler') or []) if isinstance(g, dict)]
         self.exam_footer.setText("        ".join(
             f"{(g.get('gorev') or '')}: {(g.get('ad') or '')}".strip(" :") for g in gorevliler))
 
-        # Sabit bölgeler (üst: başlık; alt: gözetmenler)
-        self.exam_header.setGeometry(0, 28, W, 48)
-        self.exam_subheader.setGeometry(0, 82, W, 34)
-        self.exam_front.setGeometry(0, 124, W, 22)
-        self.exam_footer.setGeometry(20, H - 68, W - 40, 50)
+        # Sabit bölgeler (üst: başlık + canlı saat; alt: lejant ve gözetmenler)
+        self.exam_header.setGeometry(0, 26, W, 50)
+        self.exam_subheader.setGeometry(0, 80, W, 34)
+        self.exam_front.setGeometry(0, 120, W, 20)
+        # Saat SOL üstte: sağ üst köşe "Tahtayı Açın" + (i) butonlarına ait.
+        self.exam_clock.setGeometry(30, 26, 300, 42)
+        self.exam_clock.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._update_exam_clock()
+        self.exam_clock.show()
+
+        # Lejant (renk körü için renkten bağımsız açıklama) — sol altta, gözetmenlerin üstünde.
+        self.exam_legend.setText("■ Mavi: sınavda      ⬚ Amber + kesik çerçeve: GELMEDİ")
+        self.exam_legend.setGeometry(30, H - 92, W - 60, 26)
+        self.exam_legend.show()
+
+        self.exam_footer.setGeometry(20, H - 58, W - 40, 44)
 
         # --- Sınava gelmeyenler (gözetmen MebreCep'ten yoklama alınca dolar) ---
         # Yoklama alındıysa sağda bir kolon ayrılır; grid o kadar daralır. Alınmadıysa panel gizli
@@ -4133,7 +4262,7 @@ class FatihClientApp(QWidget):
                 r.setWordWrap(True)
                 self.exam_yok_rows.addWidget(r)
                 r.show()
-            self.exam_yok_panel.setGeometry(W - yok_w - 24, 158, yok_w, H - 158 - 88)
+            self.exam_yok_panel.setGeometry(W - yok_w - 24, 152, yok_w, H - 152 - 100)
             self.exam_yok_panel.show()
             self.exam_yok_panel.raise_()
         else:
@@ -4164,7 +4293,7 @@ class FatihClientApp(QWidget):
             nrows = max(1, maxy - miny + 1)
 
             # Grid alanı: header altında, footer üstünde; gelmeyenler paneli varsa sağdan daralır.
-            top, bottom, left = 158, H - 88, 50
+            top, bottom, left = 152, H - 100, 40
             right = W - 50 - (yok_w + 24 if yok_w else 0)
             gw = max(1, right - left)
             gh = max(1, bottom - top)
@@ -4230,6 +4359,9 @@ class FatihClientApp(QWidget):
         self.exam_panel.setGeometry(0, 0, W, H)
         self.exam_panel.show()
         self.exam_panel.raise_()
+        # Kilit ekranı kontrolleri sınav ekranının ÜSTÜNDE kalmalı: aksi halde öğretmen
+        # sınav sırasında/ sonrasında tahtayı açamaz.
+        self._raise_exam_controls()
 
     def _update_duyuru_state(self):
         """Orta panonun tek karar merciisi — KİLİT TABANLI model.
@@ -4698,7 +4830,7 @@ class FatihClientApp(QWidget):
             logging.debug("Schedule not available, skipping check.")
             return
 
-        now = datetime.now()
+        now = simdi()   # AG SAATI (sistem saati kaymis olabilir)
         # isoweekday(): Monday is 1 and Sunday is 7. This matches the C# loop (s=1 to 7)
         day_of_week = now.isoweekday()
         current_time_str = now.strftime("%H:%M")
@@ -5322,10 +5454,13 @@ class FatihClientApp(QWidget):
         ).start()
 
     def update_time_display(self):
-        """Update the time display in bottom-right corner"""
-        current_time = datetime.now()
+        """Update the time display in bottom-right corner (AG SAATI ile senkron)"""
+        current_time = simdi()
         time_str = current_time.strftime("%d/%m/%Y %H:%M:%S")
         self.time_label.setText(time_str)
+        # Sınav ekranı açıksa oradaki büyük saat de aynı kaynaktan tazelenir.
+        if getattr(self, '_exam_on', False):
+            self._update_exam_clock()
 
     def update_board_id_display(self):
         """Update the board name display in top-center - Sadece TAHTA ADI görünür"""
@@ -6133,8 +6268,8 @@ class FatihKioskMode(QMainWindow):
         logging.info("Kiosk mode UI initialized with background, clock, USB monitoring, and server polling")
 
     def update_time_display(self):
-        """Update the time display in bottom-right corner"""
-        current_time = datetime.now()
+        """Update the time display in bottom-right corner (AG SAATI ile senkron)"""
+        current_time = simdi()
         time_str = current_time.strftime("%d/%m/%Y %H:%M:%S")
         self.time_label.setText(time_str)
 
