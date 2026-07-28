@@ -2475,6 +2475,15 @@ class NetworkClient:
             return None
         return result
 
+    def get_sinav_oturma(self):
+        """Sinav oturma duzeni (v5 GET /sinav_oturma). deviceAuth (/display ile ayni); govde yok.
+        result = {aktif, salon, sinav_id, sinav_adi, ders_adi, saat, ogrenciler[], gorevliler[]}.
+        aktif=false -> bugun bu odada sinav yok. Sunucu hatasi/ag yoksa None (mevcut durum korunur)."""
+        result = self._result(self._make_request("sinav_oturma", {}, method="GET"))
+        if result is None:
+            return None
+        return result
+
 
 # --- Main Application Window ---
 # --- Feature 5: "Bu Haftanin Aferinleri" paneli stili ---
@@ -2712,11 +2721,6 @@ QLabel#duyuruBaslik {
     font-size: 30px;
     font-weight: bold;
 }
-QLabel#duyuruMesaj {
-    color: #EAF4FF;
-    font-family: 'DejaVu Sans';
-    font-size: 20px;
-}
 QLabel#duyuruDots {
     color: rgba(150, 200, 240, 230);
     font-family: 'DejaVu Sans';
@@ -2724,24 +2728,109 @@ QLabel#duyuruDots {
     font-weight: bold;
     letter-spacing: 3px;
 }
-QPushButton#duyuruStop {
-    background-color: rgba(255, 255, 255, 28);
-    color: #EAF4FF;
-    font-family: 'DejaVu Sans';
-    font-size: 15px;
-    font-weight: bold;
-    border: 1px solid rgba(160, 210, 245, 150);
-    border-radius: 16px;
-    padding: 8px 22px;
-}
-QPushButton#duyuruStop:pressed {
-    background-color: rgba(255, 255, 255, 64);
-}
 """
 
 # Dogum gunu -> slider gecis kapisi (dk) ve slayt sure (ms).
-DUYURU_BIRTHDAY_GATE_MIN = 10
+# Kilitlenme anindan itibaren dogum gunu kutlamasi bu sure boyunca one cikar, sonra duyuru
+# slider'i devralir. Tenefusler 5 dk kadar kisa olabildigi icin dusuk tutuldu (kullanici karari).
+DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
+
+
+# --- Sinav Oturma Duzeni (tam ekran sinav modu) paneli ---
+# Ortak sinav saatinde tahta komple kilitlenir; bu panel TUM ekrani kaplar (aferin/duyuru kilit
+# ekraninin USTUNDE, oncelikli). Ogrenci sinifa girince adini x/y grid'inde bulup oturur.
+EXAM_PANEL_QSS = """
+QFrame#examPanel {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(10, 22, 40, 255), stop:1 rgba(6, 14, 28, 255));
+}
+QLabel#examHeader {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 34px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#examSubHeader {
+    color: #8FD3FF;
+    font-family: 'DejaVu Sans';
+    font-size: 22px;
+    font-weight: bold;
+}
+QLabel#examFront {
+    color: rgba(180, 210, 240, 200);
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 3px;
+}
+QLabel#examFooter {
+    color: #EAF4FF;
+    font-family: 'DejaVu Sans';
+    font-size: 18px;
+    font-weight: bold;
+}
+QFrame#examBox {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(30, 60, 96, 255), stop:1 rgba(22, 48, 80, 255));
+    border: 2px solid rgba(120, 200, 255, 200);
+    border-radius: 12px;
+}
+QLabel { background: transparent; }
+QLabel#examName {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 17px;
+    font-weight: bold;
+}
+QLabel#examNo {
+    color: #B7DBFF;
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+}
+QFrame#examBoxYok {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(92, 30, 38, 255), stop:1 rgba(70, 22, 30, 255));
+    border: 2px solid rgba(255, 120, 130, 210);
+    border-radius: 12px;
+}
+QLabel#examNameYok {
+    color: rgba(255, 214, 218, 235);
+    font-family: 'DejaVu Sans';
+    font-size: 17px;
+    font-weight: bold;
+}
+QLabel#examTagYok {
+    color: #FFC9CE;
+    font-family: 'DejaVu Sans';
+    font-size: 13px;
+    font-weight: bold;
+}
+QFrame#examYokPanel {
+    background-color: rgba(70, 20, 28, 235);
+    border: 2px solid rgba(255, 120, 130, 190);
+    border-radius: 14px;
+}
+QLabel#examYokTitle {
+    color: #FFC9CE;
+    font-family: 'DejaVu Sans';
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+QLabel#examYokRow {
+    color: #FFFFFF;
+    font-family: 'DejaVu Sans';
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#examYokEmpty {
+    color: rgba(200, 230, 210, 220);
+    font-family: 'DejaVu Sans';
+    font-size: 14px;
+}
+"""
 
 
 class FatihClientApp(QWidget):
@@ -2758,13 +2847,27 @@ class FatihClientApp(QWidget):
     # Icinden hem aferinTop5 (Feature 5) hem dogumGunleri (Feature 1) beslenir.
     _display_ready = pyqtSignal(object)
 
+    # /sinav_oturma verisi arka plan thread'inden UI thread'ine (result dict ya da None).
+    _exam_ready = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
         # Connect the command signal to process_commands
         self.command_signal.connect(self.process_commands)
         self.network_status_signal.connect(self.update_network_status_ui)
         self._display_ready.connect(self._render_display)
-        
+        self._exam_ready.connect(self._apply_exam)
+
+        # --- SINAV MODU (oturma duzeni tam ekran) ---
+        # Sinav ekrani = KILITLIYKEN gosterilen bir mod (duyuru gibi); kilidi ZORLA tutmaz.
+        # Sadece saat gelince BIR KEZ otomatik kilitler (ekran gelsin). Sonrasi mebrecep/ynt5/
+        # masaustu mudahaleleri her zaman ONCELIKLI. Pencere: [saat, bitis] — bitis gecince durur.
+        self._exam_on = False        # sinav penceresi su an aktif mi (aktif + saat<=now<bitis)
+        self._exam_data = None
+        self._exam_boxes = []        # dinamik ogrenci kutulari
+        self._exam_locked_for = None # ilk otomatik kilit yapilan sinav_id (bir kez)
+        self._exam_rendered_id = None # cizili sinav_id (titreme onleme)
+
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
         self._last_display_data = None  # /display son yaniti (panelleri aga gitmeden geri cizmek icin)
         self.keyboard_locker = None
@@ -2813,14 +2916,13 @@ class FatihClientApp(QWidget):
         self.last_schedule_day = -1  # Gün değişince exit_time_locked sıfırlanacak
         # --- END SCHEDULING ---
 
-        # --- DUYURU (sınıf+ders saati hedefli, orta pano slider) ---
-        # /display'den gelen ham liste; aktif periyoda göre süzülüp slider'da oynatılır.
-        self._duyuru_active = []          # şu anki ders saatine ait, gösterilecek duyurular
+        # --- DUYURU (kilit-tabanlı slider) ---
+        # MODEL: duyurular YALNIZ tahta KİLİTLİYKEN gösterilir (tenefüs/auto-lock/power açılışı/
+        # kilit-on-send). Ders saati penceresi mantığı YOK — kilitli olduğu SÜRECE bugünün tüm
+        # duyuruları döner (kısa 5 dk tenefüste de çalışır). /display o sınıfın (+0=tüm sınıf)
+        # bugünkü tüm aktiflerini döner; tahta hepsini gösterir.
+        self._duyuru_active = []          # kilitliyken gösterilecek bugünün duyuruları
         self._duyuru_index = 0            # slider'da gösterilen slayt
-        self._duyuru_period = None        # slider'ın bağlı olduğu ders saati (periyot no)
-        # Öğretmen "Durdur" derse: sadece BU tahtada, BU ders saati boyunca gizle (lokal).
-        self._duyuru_stopped_periods = set()
-        self._duyuru_stopped_day = -1     # gün değişince durdurma hafızası sıfırlanır
         # --- END DUYURU ---
 
         self.init_ui()
@@ -2832,6 +2934,7 @@ class FatihClientApp(QWidget):
         self.init_schedule_timer() # New timer for scheduling
         self.init_display_timer()  # Feature 5: ilk-5 aferin paneli
         self.init_duyuru_timers()  # Duyuru: durum değerlendirme + slayt geçişi
+        self.init_exam_timer()     # Sınav oturma düzeni: /sinav_oturma yoklaması
 
         # Güç yönetimi: uyku modu devre dışı (C# powercfg karşılığı)
         PowerManager.disable_sleep()
@@ -3061,19 +3164,50 @@ class FatihClientApp(QWidget):
         self.duyuru_dots.setAlignment(Qt.AlignCenter)
         _dy_lay.addWidget(self.duyuru_dots)
 
-        _dy_lay.addSpacing(10)
-        # "Durdur" butonu — ortalı bir satırda.
-        _dy_btn_row = QHBoxLayout()
-        _dy_btn_row.addStretch(1)
-        self.duyuru_stop_btn = QPushButton("⏸  Durdur", self.duyuru_panel)
-        self.duyuru_stop_btn.setObjectName("duyuruStop")
-        self.duyuru_stop_btn.setCursor(Qt.PointingHandCursor)
-        self.duyuru_stop_btn.clicked.connect(self._on_duyuru_stop)
-        _dy_btn_row.addWidget(self.duyuru_stop_btn)
-        _dy_btn_row.addStretch(1)
-        _dy_lay.addLayout(_dy_btn_row)
-
+        # GÜVENLİK: kilit ekranında öğrencinin basabileceği HİÇBİR buton yok — "Durdur" butonu
+        # KALDIRILDI (öğrenci basıp tahtayı açabiliyordu). Öğretmen duyuruyu durdurmak isterse
+        # tahtayı AÇAR (ders başlatır); o an tüm paneller (slider dahil) zaten gizlenir.
         self.duyuru_panel.hide()
+
+        # --- Sınav Oturma Düzeni paneli (TAM EKRAN, sınav modu) ---
+        # Ortak sınav saatinde tahta kilitlenir; bu panel her şeyin üstünde tam ekran çizilir.
+        # Öğrenci kutuları (x/y grid) _render_exam_panel'de dinamik kurulur.
+        self.exam_panel = QFrame(self)
+        self.exam_panel.setObjectName("examPanel")
+        self.exam_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.exam_panel.setStyleSheet(EXAM_PANEL_QSS)
+        self.exam_header = QLabel("SINAV OTURMA DÜZENİ", self.exam_panel)
+        self.exam_header.setObjectName("examHeader")
+        self.exam_header.setAlignment(Qt.AlignCenter)
+        self.exam_subheader = QLabel("", self.exam_panel)
+        self.exam_subheader.setObjectName("examSubHeader")
+        self.exam_subheader.setAlignment(Qt.AlignCenter)
+        self.exam_front = QLabel("▲  TAHTA / ÖN SIRALAR", self.exam_panel)
+        self.exam_front.setObjectName("examFront")
+        self.exam_front.setAlignment(Qt.AlignCenter)
+        self.exam_footer = QLabel("", self.exam_panel)
+        self.exam_footer.setObjectName("examFooter")
+        self.exam_footer.setAlignment(Qt.AlignCenter)
+        self.exam_footer.setWordWrap(True)
+
+        # Sınava gelmeyenler paneli (sağ kolon) — gözetmen MebreCep'ten yoklama alınca dolar.
+        self.exam_yok_panel = QFrame(self.exam_panel)
+        self.exam_yok_panel.setObjectName("examYokPanel")
+        self.exam_yok_panel.setAttribute(Qt.WA_StyledBackground, True)
+        _ey_lay = QVBoxLayout(self.exam_yok_panel)
+        _ey_lay.setContentsMargins(16, 14, 16, 14)
+        _ey_lay.setSpacing(8)
+        self.exam_yok_title = QLabel("🚫  SINAVA GELMEYENLER", self.exam_yok_panel)
+        self.exam_yok_title.setObjectName("examYokTitle")
+        self.exam_yok_title.setWordWrap(True)
+        _ey_lay.addWidget(self.exam_yok_title)
+        self.exam_yok_rows = QVBoxLayout()
+        self.exam_yok_rows.setSpacing(6)
+        _ey_lay.addLayout(self.exam_yok_rows)
+        _ey_lay.addStretch(1)
+        self.exam_yok_panel.hide()
+
+        self.exam_panel.hide()
 
         # --- Feature 4: "Bugün Gelmeyenler" (yoklama yok) paneli (sağ-alt köşe) ---
         # O sınıfın bugünkü EN SON yoklamasındaki gelmeyenler (numara + isim). Yoklama
@@ -3668,6 +3802,13 @@ class FatihClientApp(QWidget):
         # Son veriyi sakla: giris ekrani kapaninca ag'a tekrar gitmeden geri cizebilelim.
         self._last_display_data = data if isinstance(data, dict) else None
 
+        # Sınav ekranı gösteriliyorsa (pencere aktif + kilitli) normal panelleri ÇİZME.
+        if self._exam_showing():
+            self._hide_info_panels()
+            if getattr(self, 'exam_panel', None) is not None and self.exam_panel.isVisible():
+                self.exam_panel.raise_()
+            return
+
         # Sifre/giris paneli aciksa panelleri CIZME — numpad'i kapatmasinlar.
         if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
             self._hide_info_panels()
@@ -3696,6 +3837,11 @@ class FatihClientApp(QWidget):
         """Gizlenen panelleri son veriyle yeniden cizer (ag'a gitmeden)."""
         if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
             return  # hala giris ekrani acik
+        # Sınav penceresi aktifse (kilit ekranı = sınav) normal panel yerine oturma düzenini çiz.
+        if getattr(self, '_exam_on', False):
+            self._hide_info_panels()
+            self._render_exam_panel(self._exam_data or {})
+            return
         d = getattr(self, '_last_display_data', None) or {}
         self._render_aferin_panel(d.get("aferinTop5"))
         self._render_yoklama_panel(d.get("yoklamaYok"))
@@ -3802,105 +3948,301 @@ class FatihClientApp(QWidget):
         self.duyuru_slide_timer.timeout.connect(self._advance_duyuru_slide)
         # start/stop _update_duyuru_state içinde yönetilir (yalnız >1 duyuru varken çalışır).
 
-    def _period_bounds(self, hours_data, dow, period):
-        """Bir günün (dow=1..7) belirli ders saatinin (period=1..18) ham (start,end) metnini
-        döner; check_schedule ile aynı iki format (list / dict) desteklenir. Yoksa (None,None)."""
-        try:
-            if isinstance(hours_data, list):
-                if dow < len(hours_data):
-                    day_schedule = hours_data[dow]
-                    if period < len(day_schedule):
-                        pd = day_schedule[period]
-                        if isinstance(pd, list) and len(pd) >= 3:
-                            return (pd[1] or "", pd[2] or "")
-            elif isinstance(hours_data, dict):
-                day_schedule = hours_data.get(str(dow), {})
-                slot = day_schedule.get(str(period))
-                if isinstance(slot, list) and len(slot) >= 3:
-                    return (slot[1] or "", slot[2] or "")
-                elif isinstance(slot, dict):
-                    return (slot.get('1', '') or "", slot.get('2', '') or "")
-        except Exception:
-            pass
-        return (None, None)
+    # ----------------------------------------------------------------------------
+    # SINAV OTURMA DÜZENİ (tam ekran sınav modu)
+    # ----------------------------------------------------------------------------
+    def init_exam_timer(self):
+        """Sınav oturma düzeni yoklaması (v5 /sinav_oturma). Veri seyrek değişir -> 45 sn."""
+        self.exam_timer = QTimer(self)
+        self.exam_timer.timeout.connect(self.refresh_exam)
+        self.exam_timer.start(45000)
+        QTimer.singleShot(4000, self.refresh_exam)  # ilk çekim (ağ/token otursun)
+        logging.info("Sınav oturma düzeni timer başlatıldı (45 sn)")
 
-    def _current_period_no(self):
-        """Şu an aktif olan ders saatini (1..18) ve o saatin başlangıcından bu yana geçen
-        dakikayı döner. Aktif ders saati yoksa / program yoksa (None, 0.0)."""
-        if not self.schedule or 'hours' not in self.schedule:
-            return None, 0.0
-        now = datetime.now()
-        dow = now.isoweekday()  # 1=Pzt ... 7=Paz (check_schedule ile aynı)
-        hours_data = self.schedule['hours']
-        for period in range(1, 19):
-            s_raw, e_raw = self._period_bounds(hours_data, dow, period)
-            if not s_raw or not e_raw or s_raw == "0" or e_raw == "0":
-                continue
-            s_str = self._format_time(s_raw)
-            e_str = self._format_time(e_raw)
-            if not s_str or not e_str or len(s_str) != 5 or len(e_str) != 5:
-                continue
+    def refresh_exam(self):
+        """/sinav_oturma'yı ARKA PLAN thread'inde çeker; sonucu _exam_ready ile UI thread'ine taşır."""
+        def _worker():
             try:
-                s_t = datetime.strptime(s_str, "%H:%M")
-                e_t = datetime.strptime(e_str, "%H:%M")
+                data = self.network_client.get_sinav_oturma()
+            except Exception as e:
+                logging.error(f"/sinav_oturma çekimi başarısız: {e}")
+                data = None
+            self._exam_ready.emit(data)
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _exam_time_reached(self, saat):
+        """Sınav başlangıç saati (HH:mm) bugün geldi mi? Parse edilemezse güvenli taraf: True."""
+        try:
+            parts = str(saat).split(':')
+            hh = int(parts[0])
+            mm = int(parts[1]) if len(parts) > 1 else 0
+            now = datetime.now()
+            exam_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            return now >= exam_dt
+        except Exception:
+            return True
+
+    def _exam_window_active(self, data):
+        """Sınav penceresi ŞU AN açık mı? aktif=true VE saat<=now VE (bitis boş ya da now<bitis)."""
+        if not bool(data.get('aktif')):
+            return False
+        if not self._exam_time_reached(data.get('saat')):
+            return False                       # başlangıç saati gelmedi
+        bitis = data.get('bitis')
+        if bitis and self._exam_time_reached(bitis):
+            return False                       # bitiş geçti -> gösterimi durdur
+        return True
+
+    def _exam_showing(self):
+        """Sınav ekranı şu an gösteriliyor olmalı mı? = sınav penceresi aktif VE tahta kilitli."""
+        return getattr(self, '_exam_on', False) and getattr(self, 'is_locked', False)
+
+    def _apply_exam(self, data):
+        """/sinav_oturma sonucunu uygular (UI thread). data None -> ağ hatası, mevcut durumu koru.
+
+        MODEL: sınav ekranı = KİLİTLİYKEN gösterilen bir mod; kilidi ZORLA tutmaz. Sadece saat
+        gelince tahta AÇIKSA bir kez otomatik kilitler (ekran gelsin). Sonrası: mebrecep/ynt5/
+        masaüstü müdahaleleri her zaman öncelikli — açarsa açık kalır, tekrar kilitlerse (sınav
+        penceresi hâlâ aktifse) ekran geri gelir. bitiş saati geçince gösterim durur."""
+        if data is None:
+            return  # ağ/parse hatası — mevcut durumu bozma
+
+        self._exam_data = data if bool(data.get('aktif')) else None
+
+        if not self._exam_window_active(data):
+            # Sınav yok / saati gelmedi / bitti -> sınav modu kapalı.
+            self._exam_on = False
+            if not bool(data.get('aktif')):
+                self._exam_locked_for = None   # sınav bitti -> ilk-kilit hafızasını sıfırla
+            self._hide_exam_panel()
+            return
+
+        # Sınav penceresi aktif.
+        self._exam_on = True
+        sid = data.get('sinav_id')
+        # İLK otomatik kilit: saat gelince tahta AÇIKSA bir kez kilitle (ekran gelsin). Bir daha
+        # ZORLA kilitleme YOK -> müdahaleler öncelikli.
+        if not self.is_locked and self._exam_locked_for != sid:
+            self._exam_locked_for = sid
+            self.lock_system("Sınav oturma düzeni")   # -> _restore_info_panels -> exam çizilir
+
+        # Ekran durumu: kilitliyse oturma düzenini göster; açılmışsa (müdahale) dokunma.
+        if self.is_locked:
+            self._render_exam_panel(data)
+        else:
+            self._hide_exam_panel()
+
+    def _hide_exam_panel(self):
+        """Sınav panelini + kutularını gizler. Tahta KİLİDİNE DOKUNMAZ. Sınav modu kapalı AMA
+        tahta hâlâ kilitliyse normal paneller (aferin/duyuru...) geri gelir."""
+        self._exam_rendered_id = None
+        if getattr(self, 'exam_yok_panel', None) is not None:
+            self.exam_yok_panel.hide()
+        if getattr(self, 'exam_panel', None) is not None:
+            self.exam_panel.hide()
+        for b in getattr(self, '_exam_boxes', []):
+            try:
+                b.setParent(None)
+                b.deleteLater()
             except Exception:
-                continue
-            start_dt = now.replace(hour=s_t.hour, minute=s_t.minute, second=0, microsecond=0)
-            end_dt = now.replace(hour=e_t.hour, minute=e_t.minute, second=0, microsecond=0)
-            if start_dt <= now <= end_dt:
-                return period, (now - start_dt).total_seconds() / 60.0
-        return None, 0.0
+                pass
+        self._exam_boxes = []
+        if getattr(self, 'is_locked', False) and not getattr(self, '_exam_on', False):
+            self._restore_info_panels()
+
+    def _render_exam_panel(self, data):
+        """Tam ekran oturma düzenini çizer: header (salon/ders/saat) + x/y grid öğrenci kutuları +
+        gözetmenler. Koordinatlar salon-yerel/seyrek olabilir -> min çıkar, ekrana sığacak ölçekle.
+        Küçük y = tahtaya/öne yakın (üstte)."""
+        # Çizim anahtarı: sınav + YOKLAMA durumu. Yoklama sonradan alınır/değişir (gözetmen
+        # MebreCep'ten işaretler) -> anahtar değişince yeniden çizilir. Sadece sinav_id'ye
+        # bakılsaydı gelmeyenler listesi hiç güncellenmezdi.
+        sid = (data.get('sinav_id'),
+               bool(data.get('yoklamaAlindi')),
+               tuple(sorted(str(g.get('no', '')) + '|' + str(g.get('ad', ''))
+                            for g in (data.get('gelmeyenler') or []) if isinstance(g, dict))))
+        # Aynı içerik zaten çiziliyse yeniden KURMA (45sn'de bir titreme olmasın) — sadece üstte tut.
+        if (self._exam_rendered_id == sid and getattr(self, 'exam_panel', None) is not None
+                and self.exam_panel.isVisible()):
+            self.exam_panel.raise_()
+            return
+        self._exam_rendered_id = sid
+        W = self.width()
+        H = self.height()
+        self.exam_panel.setGeometry(0, 0, W, H)
+
+        salon = str(data.get('salon') or '')
+        ders = str(data.get('ders_adi') or data.get('sinav_adi') or '')
+        saat = str(data.get('saat') or '')
+        self.exam_subheader.setText(f"{ders}   ·   Salon {salon}   ·   Saat {saat}")
+
+        gorevliler = [g for g in (data.get('gorevliler') or []) if isinstance(g, dict)]
+        self.exam_footer.setText("        ".join(
+            f"{(g.get('gorev') or '')}: {(g.get('ad') or '')}".strip(" :") for g in gorevliler))
+
+        # Sabit bölgeler (üst: başlık; alt: gözetmenler)
+        self.exam_header.setGeometry(0, 28, W, 48)
+        self.exam_subheader.setGeometry(0, 82, W, 34)
+        self.exam_front.setGeometry(0, 124, W, 22)
+        self.exam_footer.setGeometry(20, H - 68, W - 40, 50)
+
+        # --- Sınava gelmeyenler (gözetmen MebreCep'ten yoklama alınca dolar) ---
+        # Yoklama alındıysa sağda bir kolon ayrılır; grid o kadar daralır. Alınmadıysa panel gizli
+        # ve grid tüm genişliği kullanır.
+        gelmeyenler = [g for g in (data.get('gelmeyenler') or []) if isinstance(g, dict)]
+        yoklama_alindi = bool(data.get('yoklamaAlindi'))
+        yok_w = 0
+        self._clear_layout(self.exam_yok_rows)
+        if yoklama_alindi:
+            yok_w = max(240, min(340, int(W * 0.22)))
+            if gelmeyenler:
+                self.exam_yok_title.setText(f"🚫  SINAVA GELMEYENLER  ({len(gelmeyenler)})")
+                for g in gelmeyenler[:14]:
+                    r = QLabel(f"{g.get('no', '')}  ·  {g.get('ad', '')}".strip(" ·"), self.exam_yok_panel)
+                    r.setObjectName("examYokRow")
+                    r.setWordWrap(True)
+                    self.exam_yok_rows.addWidget(r)
+                    r.show()
+                if len(gelmeyenler) > 14:
+                    more = QLabel(f"+{len(gelmeyenler) - 14} kişi daha", self.exam_yok_panel)
+                    more.setObjectName("examYokEmpty")
+                    self.exam_yok_rows.addWidget(more)
+                    more.show()
+            else:
+                self.exam_yok_title.setText("✅  SINAV YOKLAMASI")
+                r = QLabel("Tüm öğrenciler sınavda.", self.exam_yok_panel)
+                r.setObjectName("examYokEmpty")
+                r.setWordWrap(True)
+                self.exam_yok_rows.addWidget(r)
+                r.show()
+            self.exam_yok_panel.setGeometry(W - yok_w - 24, 158, yok_w, H - 158 - 88)
+            self.exam_yok_panel.show()
+            self.exam_yok_panel.raise_()
+        else:
+            self.exam_yok_panel.hide()
+
+        # Eski öğrenci kutularını temizle
+        for b in getattr(self, '_exam_boxes', []):
+            try:
+                b.setParent(None)
+                b.deleteLater()
+            except Exception:
+                pass
+        self._exam_boxes = []
+
+        ogr = [o for o in (data.get('ogrenciler') or []) if isinstance(o, dict)]
+        if ogr:
+            xs, ys = [], []
+            for o in ogr:
+                try:
+                    xs.append(int(o.get('x', 0)))
+                    ys.append(int(o.get('y', 0)))
+                except Exception:
+                    xs.append(0)
+                    ys.append(0)
+            minx, maxx = min(xs), max(xs)
+            miny, maxy = min(ys), max(ys)
+            ncols = max(1, maxx - minx + 1)
+            nrows = max(1, maxy - miny + 1)
+
+            # Grid alanı: header altında, footer üstünde; gelmeyenler paneli varsa sağdan daralır.
+            top, bottom, left = 158, H - 88, 50
+            right = W - 50 - (yok_w + 24 if yok_w else 0)
+            gw = max(1, right - left)
+            gh = max(1, bottom - top)
+            cellW = gw / ncols
+            cellH = gh / nrows
+            gap = 12
+            boxW = min(max(90, int(cellW - gap)), 340)
+            boxH = min(max(64, int(cellH - gap)), 190)
+
+            for o in ogr:
+                try:
+                    col = int(o.get('x', 0)) - minx
+                    row = int(o.get('y', 0)) - miny
+                except Exception:
+                    col, row = 0, 0
+                cx = int(left + col * cellW + (cellW - boxW) / 2.0)
+                cy = int(top + row * cellH + (cellH - boxH) / 2.0)
+                # Sınava gelmeyen öğrencinin kutusu kırmızı + "GELMEDİ" etiketli.
+                yok = bool(o.get('yok'))
+                box = QFrame(self.exam_panel)
+                box.setObjectName("examBoxYok" if yok else "examBox")
+                box.setAttribute(Qt.WA_StyledBackground, True)
+                box.setGeometry(cx, cy, boxW, boxH)
+                bl = QVBoxLayout(box)
+                bl.setContentsMargins(8, 6, 8, 6)
+                bl.setSpacing(3)
+                nm = QLabel(str(o.get('ad', '') or ''), box)
+                nm.setObjectName("examNameYok" if yok else "examName")
+                nm.setAlignment(Qt.AlignCenter)
+                nm.setWordWrap(True)
+                info = QLabel(f"No {o.get('no', '')}   ·   Sıra {o.get('sira', '')}", box)
+                info.setObjectName("examNo")
+                info.setAlignment(Qt.AlignCenter)
+                bl.addWidget(nm)
+                bl.addWidget(info)
+                if yok:
+                    tag = QLabel("GELMEDİ", box)
+                    tag.setObjectName("examTagYok")
+                    tag.setAlignment(Qt.AlignCenter)
+                    bl.addWidget(tag)
+                    tag.show()
+                box.show()
+                self._exam_boxes.append(box)
+
+        self.exam_panel.setGeometry(0, 0, W, H)
+        self.exam_panel.show()
+        self.exam_panel.raise_()
 
     def _update_duyuru_state(self):
-        """Orta panonun tek karar merciisi: aktif ders saati + doğum günü kapısı + durdurma
-        durumuna göre duyuru slider'ını gösterir/gizler, doğum günü ile çakışmayı çözer.
+        """Orta panonun tek karar merciisi — KİLİT TABANLI model.
 
-        Akış: aktif duyuru yok/durdurulmuş -> slider kapalı (doğum günü varsa görünsün).
-              doğum günü var + periyodun ilk 10 dk'sı -> doğum günü öne çıkar, slider bekler.
-              aksi halde -> doğum günü gizle, slider oynasın."""
+        Duyuru YALNIZ tahta KİLİTLİYKEN gösterilir (tenefüs/auto-lock/power açılışı/kilit-on-send).
+        Ders saati penceresi mantığı YOK: kilitli olduğu SÜRECE bugünün tüm duyuruları döner
+        (kısa 5 dk tenefüste de çalışır) — ta ki tahta açılana kadar.
+
+        Akış: kilit değil -> gizle. Kilitliyken bugün doğum günü VAR ve kilitten bu yana <3 dk
+        ise -> doğum günü öne çıkar, slider bekler. Sonra -> doğum günü gizle, slider döner.
+        Öğretmen 'Durdur' -> bu kilit boyunca gizli (tahta açılıp tekrar kilitlenince sıfırlanır)."""
         if not hasattr(self, 'duyuru_slide_timer'):
             return  # timerlar henüz kurulmadı (erken çağrı koruması)
+
+        # Sınav penceresi aktifse duyuru gösterme (tam ekran sınav üstte).
+        if getattr(self, '_exam_on', False):
+            self._hide_duyuru_panel()
+            return
 
         # Şifre/giriş paneli açıkken hiçbir pano gösterme (numpad'i kapatmasın).
         if getattr(self, 'login_panel', None) is not None and self.login_panel.isVisible():
             self._hide_duyuru_panel()
             return
 
+        # TETİK: yalnız kilitliyken. Değilse pencere zaten gizli ama garanti gizle.
+        if not getattr(self, 'is_locked', False):
+            self._hide_duyuru_panel()
+            return
+
         d = getattr(self, '_last_display_data', None) or {}
-        duyurular = d.get('duyurular') or []
+        duyurular = [x for x in (d.get('duyurular') or []) if isinstance(x, dict)]
 
-        # Gün değişince "durdurma" hafızasını sıfırla.
-        dow = datetime.now().isoweekday()
-        if dow != self._duyuru_stopped_day:
-            self._duyuru_stopped_day = dow
-            self._duyuru_stopped_periods = set()
-
-        period, mins_in = self._current_period_no()
-
-        # Aktif ders saatine ait duyurular (ders saati eşleşmesi).
-        active = []
-        if period is not None:
-            active = [x for x in duyurular
-                      if isinstance(x, dict) and int(x.get('dersSaati') or 0) == period]
-
-        # Aktif ders saati yok / duyuru yok / bu periyot durdurulmuş -> slider kapalı.
-        # "Duyuru yoksa kapansın": slider gizlenir, doğum günü (varsa) yeniden görünür.
-        if period is None or not active or period in self._duyuru_stopped_periods:
+        # Duyuru yoksa -> gizle, doğum günü (varsa) yeniden görünür.
+        if not duyurular:
             self._hide_duyuru_panel()
             self._restore_birthday_if_needed(d)
             return
 
-        # Doğum günü kapısı: bugün doğum günü VAR ve periyodun ilk 10 dk'sındaysak, kutlama
-        # öne çıksın; slider beklesin (state korunur ki 10 dk sonra taze kurulsun).
-        if d.get('dogumGunleri') and mins_in < DUYURU_BIRTHDAY_GATE_MIN:
+        # Doğum günü kapısı: bugün doğum günü VAR ve KİLİTLENME anından bu yana <3 dk ise
+        # kutlama öne çıksın; slider beklesin (state korunur).
+        secs_since_lock = time.time() - getattr(self, 'last_lock_time', 0)
+        if d.get('dogumGunleri') and secs_since_lock < DUYURU_BIRTHDAY_GATE_SEC:
             self._hide_duyuru_panel(keep_state=True)
             return
 
-        # Slider devralıyor. Periyot ya da liste değiştiyse baştan kur.
-        active_ids = [x.get('id') for x in active]
-        if period != self._duyuru_period or active_ids != [x.get('id') for x in self._duyuru_active]:
-            self._duyuru_period = period
-            self._duyuru_active = active
+        # Slider devralıyor. Liste değiştiyse baştan kur.
+        ids = [x.get('id') for x in duyurular]
+        if ids != [x.get('id') for x in self._duyuru_active]:
+            self._duyuru_active = duyurular
             self._duyuru_index = 0
 
         # Doğum günü panelini gizle (orta panoyu slider devralır).
@@ -3933,7 +4275,6 @@ class FatihClientApp(QWidget):
         if hasattr(self, 'duyuru_slide_timer') and self.duyuru_slide_timer.isActive():
             self.duyuru_slide_timer.stop()
         if not keep_state:
-            self._duyuru_period = None
             self._duyuru_active = []
             self._duyuru_index = 0
 
@@ -3943,6 +4284,20 @@ class FatihClientApp(QWidget):
             return
         self._duyuru_index = (self._duyuru_index + 1) % len(self._duyuru_active)
         self._render_duyuru_slide()
+
+    def _duyuru_msg_px(self, text):
+        """Mesaj uzunluğuna göre font boyutu (px). Uzun metinde küçülür; sabit yükseklikli
+        alanda taşmayı azaltır. Tahta uzaktan okunduğu için tavan yüksek tutulur."""
+        n = len(text or "")
+        if n <= 120:
+            return 22
+        if n <= 220:
+            return 19
+        if n <= 360:
+            return 16
+        if n <= 520:
+            return 14
+        return 13
 
     def _render_duyuru_slide(self):
         """Geçerli slaytı (başlık/mesaj/gönderen/noktalar) çizer ve paneli konumlandırır."""
@@ -3955,7 +4310,15 @@ class FatihClientApp(QWidget):
         item = self._duyuru_active[self._duyuru_index]
 
         self.duyuru_baslik.setText(str(item.get('baslik', '') or ''))
-        self.duyuru_mesaj.setText(str(item.get('mesaj', '') or ''))
+
+        # (a) Uzun metin: mesaj alanı SABİT yükseklikte (slaytlar arası zıplama yok) +
+        # uzunluğa göre font otomatik küçülür (tahta uzaktan okunur, taşma engellenir).
+        mesaj = str(item.get('mesaj', '') or '')
+        px = self._duyuru_msg_px(mesaj)
+        self.duyuru_mesaj.setStyleSheet(
+            f"color:#EAF4FF; font-family:'DejaVu Sans'; font-size:{px}px; background:transparent;")
+        self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
+        self.duyuru_mesaj.setText(mesaj)
 
         gonderen = str(item.get('gonderenAd', '') or '').strip()
         self.duyuru_gonderen.setText(f"— {gonderen}" if gonderen else "")
@@ -3993,16 +4356,6 @@ class FatihClientApp(QWidget):
         bx = left_bound + max(0, (avail - bw) // 2)
         bx = min(bx, max(0, self.width() - bw))
         panel.move(bx, (self.height() - bh) // 2)
-
-    def _on_duyuru_stop(self):
-        """Öğretmen 'Durdur' dedi: sadece BU tahtada, BU ders saati boyunca gizle (lokal;
-        sunucuya dokunmaz, başka sınıf/tahta etkilenmez). Gün/periyot değişince tekrar oynar."""
-        if self._duyuru_period is not None:
-            self._duyuru_stopped_periods.add(self._duyuru_period)
-            logging.info(f"Duyuru öğretmen tarafından durduruldu (ders saati {self._duyuru_period}).")
-        self._hide_duyuru_panel()
-        # Slider kapandı -> doğum günü (varsa) tekrar görünsün.
-        self._restore_birthday_if_needed(getattr(self, '_last_display_data', None) or {})
 
     def _render_yoklama_panel(self, yoklamaYok):
         """Bugünkü EN SON yoklamada gelmeyenleri sağ-alt panelde gösterir (UI thread).
@@ -4677,7 +5030,7 @@ class FatihClientApp(QWidget):
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
-            self.last_lock_time = time.time()  # Soğuma süresini başlat
+            self.last_lock_time = time.time()  # Soğuma + duyuru 3 dk doğum günü kapısı bu andan başlar
             # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1")
@@ -4766,6 +5119,8 @@ class FatihClientApp(QWidget):
         if hasattr(self, 'login_panel') and self.login_panel.isVisible():
             self.login_panel.hide()
         logging.info(f"Unlocking system: {reason}")
+        # NOT: Sınav modu kilidi ZORLA tutmaz (müdahale önceliği) — açılınca sınav ekranı da
+        # pencereyle gizlenir; tahta tekrar kilitlenirse (sınav hâlâ aktifse) ekran geri gelir.
 
         # Set manual override if this is not a scheduled or server-commanded unlock
         # Veya sunucudan gelmiş olsa bile, kullanıcının MebreCep/Yönetim ekranından 
