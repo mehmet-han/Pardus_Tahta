@@ -4174,10 +4174,19 @@ class FatihClientApp(QWidget):
                     pass
 
     def _update_exam_clock(self):
-        """Sınav ekranındaki canlı saati (ağ saatiyle senkron) tazeler."""
+        """Sinav ekranindaki canli saati (ag saatiyle senkron) tazeler.
+        Font, etiket genisligine gore OLCULEREK secilir -> saat ASLA kirpilmaz
+        (once "17:17:35" yerine "17:17:3" gorunuyordu)."""
         lbl = getattr(self, 'exam_clock', None)
-        if lbl is not None:
-            lbl.setText(simdi().strftime("%d.%m.%Y   %H:%M:%S"))
+        if lbl is None:
+            return
+        metin = simdi().strftime("%d.%m.%Y   %H:%M:%S")
+        gen = max(120, lbl.width() - 8)
+        px = self._fit_font_px(metin, gen, 26, 13, bold=True, tek_satir=True)
+        lbl.setStyleSheet(
+            f"color:#E6EEF9; font-family:'DejaVu Sans'; font-size:{px}px;"
+            f"font-weight:bold; background:transparent;")
+        lbl.setText(metin)
 
     def _render_exam_panel(self, data):
         """Tam ekran oturma düzenini çizer: header (salon/ders/saat) + x/y grid öğrenci kutuları +
@@ -4220,16 +4229,16 @@ class FatihClientApp(QWidget):
         self.exam_header.setGeometry(0, 26, W, 50)
         self.exam_subheader.setGeometry(0, 80, W, 34)
         self.exam_front.setGeometry(0, 120, W, 20)
-        # Saat SOL üstte: sağ üst köşe "Tahtayı Açın" + (i) butonlarına ait.
-        self.exam_clock.setGeometry(30, 26, 300, 42)
+        # Saat SOL ustte: sag ust kose "Tahtayi Acin" + (i) butonlarina ait.
+        # Genislik bol tutulur ve font olculerek sigdirilir — aksi halde saniye kirpiliyordu.
+        self.exam_clock.setGeometry(30, 24, 430, 46)
         self.exam_clock.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._update_exam_clock()
         self.exam_clock.show()
 
-        # Lejant (renk körü için renkten bağımsız açıklama) — sol altta, gözetmenlerin üstünde.
-        self.exam_legend.setText("■ Mavi: sınavda      ⬚ Amber + kesik çerçeve: GELMEDİ")
-        self.exam_legend.setGeometry(30, H - 92, W - 60, 26)
-        self.exam_legend.show()
+        # Lejant KALDIRILDI: "Amber / kesik cerceve" gibi teknik ifadelerin sinif ekraninda yeri
+        # yok; kutudaki "GELMEDI" rozeti zaten kendini anlatiyor.
+        self.exam_legend.hide()
 
         self.exam_footer.setGeometry(20, H - 58, W - 40, 44)
 
