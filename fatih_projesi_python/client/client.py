@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLi
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
                            QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction, QFrame,
                            QListWidget, QListWidgetItem, QScrollArea, QStackedWidget)
-from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor
+from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor, QFontMetrics
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from evdev import InputDevice, ecodes, list_devices
 from pyudev import Context, Monitor
@@ -4050,6 +4050,24 @@ class FatihClientApp(QWidget):
         if getattr(self, 'is_locked', False) and not getattr(self, '_exam_on', False):
             self._restore_info_panels()
 
+    @staticmethod
+    def _fit_font_px(text, max_w, start_px, min_px, bold=False, tek_satir=False):
+        """Metnin verilen genişliğe SIĞACAĞI en büyük font boyutunu (px) döner.
+        tek_satir=False -> satır sarma var, yalnız EN UZUN KELİME sığmalı (ad soyad).
+        tek_satir=True  -> metnin tamamı tek satıra sığmalı (No/Sıra bilgisi).
+        Ölçüm QFontMetrics ile gerçek font üzerinden yapılır (tahminle değil)."""
+        s = str(text or '')
+        parcalar = [s] if tek_satir else ([w for w in s.split() if w] or [s])
+        f = QFont('DejaVu Sans')
+        f.setBold(bold)
+        for px in range(int(start_px), int(min_px) - 1, -1):
+            f.setPixelSize(px)
+            fm = QFontMetrics(f)
+            olc = getattr(fm, 'horizontalAdvance', None) or fm.width
+            if max(olc(p) for p in parcalar) <= max_w:
+                return px
+        return int(min_px)
+
     def _render_exam_panel(self, data):
         """Tam ekran oturma düzenini çizer: header (salon/ders/saat) + x/y grid öğrenci kutuları +
         gözetmenler. Koordinatlar salon-yerel/seyrek olabilir -> min çıkar, ekrana sığacak ölçekle.
@@ -4152,9 +4170,10 @@ class FatihClientApp(QWidget):
             gh = max(1, bottom - top)
             cellW = gw / ncols
             cellH = gh / nrows
-            gap = 12
-            boxW = min(max(90, int(cellW - gap)), 340)
-            boxH = min(max(64, int(cellH - gap)), 190)
+            gap = 10
+            boxW = min(max(96, int(cellW - gap)), 340)
+            boxH = min(max(70, int(cellH - gap)), 190)
+            ic_genislik = max(30, boxW - 14)   # kutu ici kullanilabilir genislik (kenar bosluklari dusuk)
 
             for o in ogr:
                 try:
@@ -4171,21 +4190,38 @@ class FatihClientApp(QWidget):
                 box.setAttribute(Qt.WA_StyledBackground, True)
                 box.setGeometry(cx, cy, boxW, boxH)
                 bl = QVBoxLayout(box)
-                bl.setContentsMargins(8, 6, 8, 6)
-                bl.setSpacing(3)
-                nm = QLabel(str(o.get('ad', '') or ''), box)
+                bl.setContentsMargins(6, 5, 6, 5)
+                bl.setSpacing(2)
+
+                # Ad: kutuya SIĞACAK en büyük font seçilir (en uzun kelime taşmasın); satır sarar.
+                ad_txt = str(o.get('ad', '') or '')
+                ad_px = self._fit_font_px(ad_txt, ic_genislik, 17, 9, bold=True)
+                nm = QLabel(ad_txt, box)
                 nm.setObjectName("examNameYok" if yok else "examName")
                 nm.setAlignment(Qt.AlignCenter)
                 nm.setWordWrap(True)
-                info = QLabel(f"No {o.get('no', '')}   ·   Sıra {o.get('sira', '')}", box)
+                nm.setStyleSheet(
+                    f"color:{'rgba(255,214,218,235)' if yok else '#FFFFFF'};"
+                    f"font-family:'DejaVu Sans'; font-size:{ad_px}px; font-weight:bold; background:transparent;")
+
+                # Bilgi satırı: tek satırda sığsın diye ayrı ölçülür (ayraçlar dar tutuldu).
+                info_txt = f"No {o.get('no', '')} · Sıra {o.get('sira', '')}"
+                info_px = self._fit_font_px(info_txt, ic_genislik, 13, 8, bold=False, tek_satir=True)
+                info = QLabel(info_txt, box)
                 info.setObjectName("examNo")
                 info.setAlignment(Qt.AlignCenter)
+                info.setStyleSheet(
+                    f"color:#B7DBFF; font-family:'DejaVu Sans'; font-size:{info_px}px; background:transparent;")
                 bl.addWidget(nm)
                 bl.addWidget(info)
                 if yok:
                     tag = QLabel("GELMEDİ", box)
                     tag.setObjectName("examTagYok")
                     tag.setAlignment(Qt.AlignCenter)
+                    tag_px = self._fit_font_px("GELMEDİ", ic_genislik, 13, 8, bold=True, tek_satir=True)
+                    tag.setStyleSheet(
+                        f"color:#FFC9CE; font-family:'DejaVu Sans'; font-size:{tag_px}px;"
+                        f"font-weight:bold; background:transparent;")
                     bl.addWidget(tag)
                     tag.show()
                 box.show()
