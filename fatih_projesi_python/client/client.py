@@ -4040,7 +4040,20 @@ class FatihClientApp(QWidget):
         self.exam_timer.timeout.connect(self.refresh_exam)
         self.exam_timer.start(45000)
         QTimer.singleShot(4000, self.refresh_exam)  # ilk çekim (ağ/token otursun)
-        logging.info("Sınav oturma düzeni timer başlatıldı (45 sn)")
+
+        # Sınav saatinin gelmesini 45 sn beklemeyelim: elde tutulan sınav verisiyle her 10 sn'de
+        # bir YEREL değerlendirme yapılır -> saat gelir gelmez (en geç 10 sn) kilit + ekran devreye
+        # girer. Ağ gerektirmez; bu yüzden internet kesik olsa bile sınav ekranı zamanında açılır.
+        self.exam_tick_timer = QTimer(self)
+        self.exam_tick_timer.timeout.connect(self._exam_tick)
+        self.exam_tick_timer.start(10000)
+        logging.info("Sınav timer'ları başlatıldı (veri 45 sn, yerel değerlendirme 10 sn)")
+
+    def _exam_tick(self):
+        """Ağdan bağımsız yerel değerlendirme (10 sn): sınav penceresi açıldı/kapandı mı?"""
+        veri = getattr(self, '_exam_data', None)
+        if veri:
+            self._apply_exam(veri)
 
     def refresh_exam(self):
         """/sinav_oturma'yı ARKA PLAN thread'inde çeker; sonucu _exam_ready ile UI thread'ine taşır."""
@@ -4113,11 +4126,15 @@ class FatihClientApp(QWidget):
         # Sınav penceresi aktif.
         self._exam_on = True
         sid = data.get('sinav_id')
-        # İLK otomatik kilit: saat gelince tahta AÇIKSA bir kez kilitle (ekran gelsin). Bir daha
-        # ZORLA kilitleme YOK -> müdahaleler öncelikli.
-        if not self.is_locked and self._exam_locked_for != sid:
+        # İLK otomatik kilit: sınav saati geldiği AN, tahta AÇIKSA bir kez kilitle (ekran gelsin);
+        # zaten kilitliyse sadece göster. İşaret (_exam_locked_for) pencere aktifleşir aktifleşmez
+        # konur — tahta o an kilitli olsa bile. Aksi halde öğretmen sınav sırasında tahtayı açınca
+        # sistem tekrar kilitliyordu (müdahale önceliği kuralına aykırı).
+        if self._exam_locked_for != sid:
             self._exam_locked_for = sid
-            self.lock_system("Sınav oturma düzeni")   # -> _restore_info_panels -> exam çizilir
+            if not self.is_locked:
+                logging.info(f"Sınav saati geldi (sinav_id={sid}) — tahta açıktı, kilitleniyor.")
+                self.lock_system("Sınav oturma düzeni")   # -> _restore_info_panels -> exam çizilir
 
         # Ekran durumu: kilitliyse oturma düzenini göster; açılmışsa (müdahale) dokunma.
         if self.is_locked:
@@ -4128,6 +4145,9 @@ class FatihClientApp(QWidget):
     def _hide_exam_panel(self):
         """Sınav panelini + kutularını gizler. Tahta KİLİDİNE DOKUNMAZ. Sınav modu kapalı AMA
         tahta hâlâ kilitliyse normal paneller (aferin/duyuru...) geri gelir."""
+        # Panel gerçekten görünüyor muydu? Normal panelleri YALNIZ geçişte geri çiz — aksi halde
+        # 10 sn'lik yerel değerlendirme her turda gereksiz yere hepsini yeniden çizerdi.
+        goruniyordu = (getattr(self, 'exam_panel', None) is not None and self.exam_panel.isVisible())
         self._exam_rendered_id = None
         if getattr(self, 'exam_yok_panel', None) is not None:
             self.exam_yok_panel.hide()
@@ -4140,7 +4160,7 @@ class FatihClientApp(QWidget):
             except Exception:
                 pass
         self._exam_boxes = []
-        if getattr(self, 'is_locked', False) and not getattr(self, '_exam_on', False):
+        if goruniyordu and getattr(self, 'is_locked', False) and not getattr(self, '_exam_on', False):
             self._restore_info_panels()
 
     @staticmethod
@@ -4310,7 +4330,7 @@ class FatihClientApp(QWidget):
             cellH = gh / nrows
             gap = 10
             boxW = min(max(96, int(cellW - gap)), 340)
-            boxH = min(max(70, int(cellH - gap)), 190)
+            boxH = min(max(78, int(cellH - gap)), 190)
             ic_genislik = max(30, boxW - 14)   # kutu ici kullanilabilir genislik (kenar bosluklari dusuk)
 
             for o in ogr:
@@ -4342,12 +4362,23 @@ class FatihClientApp(QWidget):
                     f"color:{'rgba(255,214,218,235)' if yok else '#FFFFFF'};"
                     f"font-family:'DejaVu Sans'; font-size:{ad_px}px; font-weight:bold; background:transparent;")
 
-                # Bilgi satırı: tek satırda sığsın diye ayrı ölçülür (ayraçlar dar tutuldu).
-                info_txt = f"No {o.get('no', '')} · Sıra {o.get('sira', '')}"
-                info_px = self._fit_font_px(info_txt, ic_genislik, 13, 8, bold=False, tek_satir=True)
+                # Bilgi satiri: ONCE tek satir denenir; okunabilir puntoda (>=11px) sigmiyorsa
+                # ALT SATIRA inilir ("No 1320" / "Sira 1"). Numara ve sira ASLA kirpilmamali.
+                no_txt = f"No {o.get('no', '')}"
+                sira_txt = f"Sıra {o.get('sira', '')}"
+                tek_txt = f"{no_txt} · {sira_txt}"
+                info_px = self._fit_font_px(tek_txt, ic_genislik, 13, 8, bold=False, tek_satir=True)
+                if info_px >= 11:
+                    info_txt = tek_txt
+                else:
+                    info_txt = no_txt + "\n" + sira_txt
+                    info_px = min(
+                        self._fit_font_px(no_txt, ic_genislik, 13, 8, bold=False, tek_satir=True),
+                        self._fit_font_px(sira_txt, ic_genislik, 13, 8, bold=False, tek_satir=True))
                 info = QLabel(info_txt, box)
                 info.setObjectName("examNo")
                 info.setAlignment(Qt.AlignCenter)
+                info.setWordWrap(True)
                 info.setStyleSheet(
                     f"color:#B7DBFF; font-family:'DejaVu Sans'; font-size:{info_px}px; background:transparent;")
                 bl.addWidget(nm)
