@@ -2888,6 +2888,7 @@ QLabel#duyuruDots {
 # slider'i devralir. Tenefusler 5 dk kadar kisa olabildigi icin dusuk tutuldu (kullanici karari).
 DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
+DUYURU_MAX_NOKTA = 12            # bunun ustunde nokta yerine '3 / 27' sayaci
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -3313,6 +3314,7 @@ class FatihClientApp(QWidget):
         self.duyuru_gonderen.setObjectName("duyuruGonderen")
         self.duyuru_gonderen.setAlignment(Qt.AlignCenter)
         self.duyuru_gonderen.setWordWrap(True)
+        self.duyuru_gonderen.setTextFormat(Qt.PlainText)   # gonderen adi da duz metin
         _dy_lay.addWidget(self.duyuru_gonderen)
 
         _dy_rule = QFrame(self.duyuru_panel)
@@ -3326,6 +3328,11 @@ class FatihClientApp(QWidget):
         self.duyuru_baslik.setObjectName("duyuruBaslik")
         self.duyuru_baslik.setAlignment(Qt.AlignCenter)
         self.duyuru_baslik.setWordWrap(True)  # uzun başlık dar kartta kesilmesin
+        # GUVENLIK: QLabel varsayilani Qt.AutoText -> gelen metin HTML'e benziyorsa
+        # ZENGIN METIN olarak islenir. Duyuru yazabilen biri <b>/<a>/<img src="http://...">
+        # gonderip tahtanin ekranini bicimlendirebilir, hatta disari istek attirabilirdi.
+        # Duyuru metni her zaman DUZ METIN. (Sunucu da etiketleri temizliyor; iki katman.)
+        self.duyuru_baslik.setTextFormat(Qt.PlainText)
         _dy_lay.addWidget(self.duyuru_baslik)
 
         _dy_lay.addSpacing(10)
@@ -3333,6 +3340,7 @@ class FatihClientApp(QWidget):
         self.duyuru_mesaj.setObjectName("duyuruMesaj")
         self.duyuru_mesaj.setAlignment(Qt.AlignCenter)
         self.duyuru_mesaj.setWordWrap(True)
+        self.duyuru_mesaj.setTextFormat(Qt.PlainText)   # bkz. duyuru_baslik — HTML calistirilmaz
         _dy_lay.addWidget(self.duyuru_mesaj)
 
         _dy_lay.addSpacing(18)
@@ -4649,8 +4657,14 @@ class FatihClientApp(QWidget):
         self.duyuru_gonderen.setVisible(bool(gonderen))
 
         if n > 1:
-            self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
-                                                 for i in range(n)))
+            # Nokta sayisi SINIRLI: sunucu gunde 50 duyuruya kadar gonderebiliyor ve
+            # 50 nokta tek satira sigmiyordu (panel en fazla 920px). Cok duyuruda
+            # noktalar yerine sayac gosterilir.
+            if n <= DUYURU_MAX_NOKTA:
+                self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
+                                                     for i in range(n)))
+            else:
+                self.duyuru_dots.setText(f"{self._duyuru_index + 1} / {n}")
             self.duyuru_dots.show()
         else:
             self.duyuru_dots.setText("")
