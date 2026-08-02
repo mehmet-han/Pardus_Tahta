@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mebre — Kriz Kodu Üretici</title>
+<style>
+  body{margin:0;background:#0b1020;color:#e7ecf3;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+       display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+  .k{background:#141b30;border:1px solid #2a3550;border-radius:16px;padding:28px;max-width:460px;width:100%}
+  h1{font-size:20px;margin:0 0 4px}
+  .alt{color:#93a4c0;font-size:13px;margin:0 0 20px}
+  label{display:block;font-size:13px;color:#93a4c0;margin:14px 0 6px}
+  input{width:100%;box-sizing:border-box;padding:12px 14px;font-size:16px;border-radius:10px;
+        border:1px solid #2a3550;background:#0d1424;color:#e7ecf3}
+  button{width:100%;margin-top:18px;padding:13px;font-size:16px;font-weight:700;border:0;border-radius:10px;
+         background:#2f6df6;color:#fff;cursor:pointer}
+  button:active{transform:scale(.99)}
+  .kod{margin-top:20px;padding:20px;border-radius:12px;background:#0d1424;border:1px solid #2a3550;text-align:center;
+       font-size:38px;font-weight:800;letter-spacing:6px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#7dd3fc}
+  .not{margin-top:14px;font-size:12px;color:#93a4c0;line-height:1.6}
+  .uyari{margin-top:16px;padding:10px 12px;border-radius:8px;background:rgba(242,169,59,.12);
+         border:1px solid #f2a93b;color:#ffcf8b;font-size:12px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="k">
+  <h1>Kriz Kodu Üretici</h1>
+  <p class="alt">Sunucu erişilemezken akıllı tahtayı açmak için. <b>İnternet gerektirmez.</b></p>
+
+  <label>Okul kurum kodu</label>
+  <input id="kurum" inputmode="numeric" placeholder="353535" autocomplete="off">
+
+  <label>Tarih (tahtanın gördüğü gün)</label>
+  <input id="tarih" type="date">
+
+  <button id="uret">Kodu üret</button>
+  <div class="kod" id="kod">--------</div>
+
+  <p class="not">
+    Kod <b>o güne özeldir</b>, ertesi gün kendiliğinden değişir. Her okul için farklıdır.
+    Tahta, saati kaymış olabileceği için <b>bir gün öncesini ve sonrasını da</b> kabul eder.
+    5 yanlış denemede tahta 5 dakika kilitlenir.
+  </p>
+  <div class="uyari">
+    Bu dosya Mebre'ye özel anahtarı içerir. Paylaşılan sürücüde/e-postada tutma;
+    sızarsa tüm okulların kodu üretilebilir hale gelir.
+  </div>
+</div>
+<script>
+const ANAHTAR = "30feead56612abb3bc2462e604b827e14070b389d9d61865a0cd23abfd080db0";
+
+function ymd(d){
+  const p = n => String(n).padStart(2,'0');
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate());
+}
+
+async function uret(kurum, tarihStr){
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", enc.encode(ANAHTAR), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(kurum + "-" + tarihStr)));
+  // ilk 4 bayt -> isaretsiz 32-bit -> en yuksek bit maskelenir -> 8 hane
+  const p = (((mac[0]<<24)|(mac[1]<<16)|(mac[2]<<8)|mac[3]) >>> 0) & 0x7FFFFFFF;
+  return String(p % 100000000).padStart(8,'0');
+}
+
+const bugun = new Date();
+document.getElementById('tarih').value =
+  bugun.getFullYear() + '-' + String(bugun.getMonth()+1).padStart(2,'0') + '-' + String(bugun.getDate()).padStart(2,'0');
+
+document.getElementById('uret').onclick = async () => {
+  const kurum = document.getElementById('kurum').value.trim();
+  const t = document.getElementById('tarih').value;
+  if(!kurum || !t){ document.getElementById('kod').textContent = '--------'; return; }
+  const d = new Date(t + 'T12:00:00');
+  document.getElementById('kod').textContent = await uret(kurum, ymd(d));
+};
+</script>
+</body>
+</html>
