@@ -480,6 +480,55 @@ def validate_totp_password(entered_password: str, unix_time: int = None) -> bool
         logging.error(f"TOTP validation error: {e}")
         return False
 
+
+# ============================================================================
+# KRIZ KODU — sunucu tamamen cokse bile tahtayi acabilmek icin.
+# ----------------------------------------------------------------------------
+# Senaryo: v5/ynt5/DB erisilemez. O anda mobil acma da, tahta-ozel TOTP uretimi de
+# calismaz (ikisi de sunucuya bagli). Bu kod TAMAMEN CEVRIMDISI dogrulanir; Mebre
+# kodu kendi bilgisayarinda (internetsiz araciyla) uretip telefonla soyler.
+#
+#   kod = HMAC-SHA256(ANA_ANAHTAR, "<kurum_kodu>-<YYYYMMDD>") ilk 4 bayt -> 8 hane
+#
+# NEDEN FORMUL DEGIL: eski Y*d*m*85 formulu ogrenciler tarafindan cozulmustu —
+# girdiler (kurum kodu, tarih) herkesce bilindigi icin tek sir formulun kendisiydi ve
+# birkac kod gozlemlenerek cikarilabiliyordu. HMAC'te girdi-cikti arasinda gorulebilir
+# oruntu yoktur; kirmak icin anahtarin kendisini cikarmak gerekir. Anahtar sizarsa
+# yeni surumle DONDURULEBILIR (formulde bu imkansizdi).
+#
+# Gun toleransi: tahtanin saati kaymis olabilir diye dun/bugun/yarin kabul edilir
+# (saat senkronu var ama internetsiz tahtada NTP de calismaz).
+# Kaba kuvvet: mevcut 5-deneme kilidi bu kodu da korur (bkz. validate_admin_password).
+# ============================================================================
+def _kriz_anahtari():
+    """Ana anahtari coz (kodda duz metin durmaz — USB sifresi/host ile ayni desen)."""
+    _k = "pardus2026!"
+    _o = "4351140110125605040010420010064611510206001315574250174b000757071540564206464b0b540b52174159445114435154000540120716544d43565202"
+    b = bytes.fromhex(_o)
+    return ''.join(chr(b[i] ^ ord(_k[i % len(_k)])) for i in range(len(b)))
+
+def _kriz_kodu(kurum_kodu: str, gun: datetime) -> str:
+    mesaj = f"{kurum_kodu}-{gun.strftime('%Y%m%d')}".encode()
+    mac = hmac.new(_kriz_anahtari().encode(), mesaj, hashlib.sha256).digest()
+    p = int.from_bytes(mac[0:4], 'big') & 0x7FFFFFFF
+    return str(p % 100000000).zfill(8)
+
+def validate_kriz_password(entered_password: str) -> bool:
+    """Kriz kodunu dogrula (dun/bugun/yarin). Kurum kodu config'ten gelir."""
+    try:
+        kurum = str(SETTINGS.get('corporate_code', '') or '').strip()
+        if not kurum or not entered_password:
+            return False
+        bugun = simdi()
+        for fark in (-1, 0, 1):
+            if hmac.compare_digest(_kriz_kodu(kurum, bugun + timedelta(days=fark)), entered_password):
+                logging.warning("KRIZ KODU ile acildi (sunucusuz acil giris).")
+                return True
+        return False
+    except Exception as e:
+        logging.error(f"Kriz kodu dogrulama hatasi: {e}")
+        return False
+
 def validate_offline_password(entered_password: str) -> bool:
     """v6 tahta (device_token var) → TOTP; yoksa eski formül (C#/eski Pardus uyumu)."""
     if get_setting('device_token', ''):
@@ -5680,6 +5729,11 @@ class FatihClientApp(QWidget):
         # Çevrimdışı şifre kontrolü (v6 tahta → TOTP; değilse eski formül)
         if validate_offline_password(password):
             logging.info("Password validated via offline algorithm (Mebrecep)")
+            offline_register_success()
+            return True
+
+        # KRİZ KODU — sunucu tamamen çökmüşken son çare. Tamamen çevrimdışı doğrulanır.
+        if validate_kriz_password(password):
             offline_register_success()
             return True
 
