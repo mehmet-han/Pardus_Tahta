@@ -513,6 +513,31 @@ def _kriz_kodu(kurum_kodu: str, gun: datetime) -> str:
     p = int.from_bytes(mac[0:4], 'big') & 0x7FFFFFFF
     return str(p % 100000000).zfill(8)
 
+# Kriz kodu girilince tahta bu sure boyunca ACIK kalir: kriz aninda her ders bitiminde
+# tekrar kilitlenip kodu yeniden istemesin. Sure config.ini'ye yazilir -> tahta yeniden
+# baslatilsa bile pencere devam eder (kriz sirasinda reboot cok olasi).
+KRIZ_ACIK_SURE_SAAT = 24
+
+def kriz_penceresi_kalan() -> int:
+    """Kriz penceresinden kalan saniye (0 = pencere yok)."""
+    try:
+        until = int(SETTINGS.get('kriz_acik_until', '0') or '0')
+    except ValueError:
+        until = 0
+    kalan = until - int(time.time())
+    return kalan if kalan > 0 else 0
+
+def kriz_penceresi_baslat():
+    """Kriz penceresini baslat (kalici)."""
+    _otp_persist('kriz_acik_until', int(time.time()) + KRIZ_ACIK_SURE_SAAT * 3600)
+    logging.warning(f"KRIZ PENCERESI ACILDI — tahta {KRIZ_ACIK_SURE_SAAT} saat kilitlenmeyecek.")
+
+def kriz_penceresi_kapat(sebep: str = ""):
+    """Pencereyi elle kapat (ornegin sunucudan acik kilit komutu gelince)."""
+    if kriz_penceresi_kalan() > 0:
+        _otp_persist('kriz_acik_until', 0)
+        logging.warning(f"Kriz penceresi kapatildi: {sebep}")
+
 def validate_kriz_password(entered_password: str) -> bool:
     """Kriz kodunu dogrula (dun/bugun/yarin). Kurum kodu config'ten gelir."""
     try:
@@ -523,6 +548,7 @@ def validate_kriz_password(entered_password: str) -> bool:
         for fark in (-1, 0, 1):
             if hmac.compare_digest(_kriz_kodu(kurum, bugun + timedelta(days=fark)), entered_password):
                 logging.warning("KRIZ KODU ile acildi (sunucusuz acil giris).")
+                kriz_penceresi_baslat()
                 return True
         return False
     except Exception as e:
@@ -3064,6 +3090,9 @@ class FatihClientApp(QWidget):
                 logging.info("USB password found at startup - skipping initial lock")
                 self.usb_monitor.unlocked_by_usb = True
                 self.manual_override = True
+            elif kriz_penceresi_kalan() > 0:
+                # Kriz penceresi surerken tahta yeniden baslatildi -> kilitli acilmasin.
+                logging.warning(f"Kriz penceresi acik ({kriz_penceresi_kalan() // 60} dk) — baslangic kilidi atlandi.")
             else:
                 self.lock_system("Sistem başlangıcı")
         else:
@@ -4926,6 +4955,13 @@ class FatihClientApp(QWidget):
             logging.debug("Schedule not available, skipping check.")
             return
 
+        # KRIZ PENCERESI: kriz kodu girilmisse tahta 24 saat kilitlenmez. Aksi halde kriz
+        # aninda her ders bitiminde tekrar kilitlenip kodu yeniden isterdi.
+        _kriz_kalan = kriz_penceresi_kalan()
+        if _kriz_kalan > 0:
+            logging.debug(f"Kriz penceresi acik ({_kriz_kalan // 60} dk kaldi) — otomatik kilit atlandi.")
+            return
+
         now = simdi()   # AG SAATI (sistem saati kaymis olabilir)
         # isoweekday(): Monday is 1 and Sunday is 7. This matches the C# loop (s=1 to 7)
         day_of_week = now.isoweekday()
@@ -5204,6 +5240,9 @@ class FatihClientApp(QWidget):
                     if check_usb_password():
                         logging.info("Server says lock, but USB is present. Skipping lock.")
                     else:
+                        # Sunucudan ACIK kilit komutu geldiyse bu bilincli bir mudahaledir:
+                        # kriz penceresini de kapatir (kullanicinin "mudahaleler onceliklidir" kurali).
+                        kriz_penceresi_kapat("sunucudan kilit komutu")
                         self.manual_override = False
                         self.lock_system("Sunucudan gelen komut ile kilitlendi")
 
