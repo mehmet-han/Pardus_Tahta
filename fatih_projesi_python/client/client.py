@@ -1300,8 +1300,9 @@ class LoginDialog(QDialog):
             logging.info("Password validated successfully")
             # NEW: Immediately notify the server that the board is unlocked
             self.parent.acknowledge_command("tahtaLock", "0")
+            _y = getattr(self.parent, 'son_acilis_yontemi', 'Admin sifresi')
             self.parent.save_log("Admin şifre ile giriş yapıldı", "login")
-            self.parent.unlock_system("Admin şifre ile açıldı")
+            self.parent.unlock_system(f"{_y} ile acildi")
             self.accept()
         else:
             logging.warning("Invalid password entered")
@@ -5712,8 +5713,9 @@ class FatihClientApp(QWidget):
             # C# stms=true'ya dönüş (başarılı giriş)
             self.start_work = True
             self.acknowledge_command("tahtaLock", "0")
+            _y = getattr(self, 'son_acilis_yontemi', 'Admin sifresi')
             self.save_log("Admin şifre ile giriş yapıldı", "login")
-            self.unlock_system("Admin şifre ile açıldı")
+            self.unlock_system(f"{_y} ile acildi")
         else:
             logging.warning("Invalid password entered")
             self.login_error_label.setStyleSheet("color: #ff4444; font-size: 14px;")
@@ -5762,17 +5764,20 @@ class FatihClientApp(QWidget):
             config_password = '803580'
         if password == config_password:
             logging.info("Password validated via config admin_password")
+            self.son_acilis_yontemi = "Admin sifresi"
             offline_register_success()
             return True
 
         # Çevrimdışı şifre kontrolü (v6 tahta → TOTP; değilse eski formül)
         if validate_offline_password(password):
             logging.info("Password validated via offline algorithm (Mebrecep)")
+            self.son_acilis_yontemi = "Cevrimdisi sifre"
             offline_register_success()
             return True
 
         # KRİZ KODU — sunucu tamamen çökmüşken son çare. Tamamen çevrimdışı doğrulanır.
         if validate_kriz_password(password):
+            self.son_acilis_yontemi = "KRIZ KODU"
             offline_register_success()
             return True
 
