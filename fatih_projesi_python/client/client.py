@@ -1530,13 +1530,28 @@ class BoardConfigWidget(QWidget):
                 else:
                     self.status_label.setStyleSheet("color: #ffaa00;")
                     self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
-            elif not get_setting('enroll_secret', ''):
-                # Sik yapilan saha hatasi: kurulum medyasinda secret.txt yoktu.
-                self.status_label.setStyleSheet("color: #ff5555;")
-                self.status_label.setText("Hata: Kurulum sırrı yok. Tahta yeniden kurulmalı.")
             else:
+                # Teknisyen sahada ne yapacagini EKRANDAN gorsun: eskiden her sebep icin
+                # ayni cumle yaziliyordu ve hata ancak sunucu loglarindan bulunabiliyordu.
+                _h = getattr(self.network_client, 'son_enroll_hata', '')
+                if not get_setting('enroll_secret', '') and not get_setting('device_token', ''):
+                    _msg = "Hata: Kurulum sırrı yok. secret.txt ile yeniden kurun."
+                elif _h == "401":
+                    _msg = "Hata: Kurulum sırrı geçersiz (401). USB'deki secret.txt yanlış."
+                elif _h == "403":
+                    _msg = "Hata: Bu tahta bu kuruma ait değil (403). Kurum kodunu kontrol edin."
+                elif _h == "500":
+                    _msg = "Hata: Sunucu yapılandırması eksik (500). Mebre'yi arayın."
+                elif _h == "404":
+                    _msg = "Hata: Sunucuda bu servis yok (404). Mebre'yi arayın."
+                elif _h == "ssl":
+                    _msg = "Hata: Güvenli bağlantı kurulamadı. Okul ağı engelliyor olabilir."
+                elif _h == "ag":
+                    _msg = "Hata: İnternet yok. Ağ bağlantısını kontrol edin."
+                else:
+                    _msg = "Hata: Sunucudan tahta listesi alınamadı."
                 self.status_label.setStyleSheet("color: #ff5555;")
-                self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
+                self.status_label.setText(_msg)
         except Exception as e:
             logging.error(f"[BoardConfig] fetch_boards failed: {e}")
             self.status_label.setStyleSheet("color: #ff5555;")
@@ -2427,12 +2442,19 @@ class NetworkClient:
         Sir config'e setup.sh tarafindan ENC'li yazilir (kurulum medyasindaki secret.txt'ten) ve
         enroll basarili olur olmaz silinir (bkz. BoardConfig._strip_enroll_secret)."""
         secret = get_setting('enroll_secret', '')
-        if not secret:
-            logging.error("enroll_secret config'te yok — kurulum medyasinda secret.txt eksik olabilir.")
+        # YENIDEN TANITMA: tanitim basarili olunca sir config'ten SILINIYOR. Tahta adini/sinifini
+        # degistirmek ya da baska bir tahta kaydina gecmek isteyen teknisyen bu yuzden duvara
+        # tosluyordu ("Kurulum sirri yok"). Sir yoksa mevcut cihaz token'i ile devam ediyoruz;
+        # sunucu token'i kabul eder ama YALNIZCA kendi okulu icin (bkz. checkDeviceToken).
+        token = get_setting('device_token', '') or None
+        if not secret and not token:
+            logging.error("Ne enroll_secret ne device_token var — kurulum medyasinda secret.txt eksik.")
             return None
 
+        self.son_enroll_hata = ""
         if not self.check_network():
             logging.warning("Network is unavailable. Aborting enroll request.")
+            self.son_enroll_hata = "ag"
             return None
 
         _k = "pardus2026!"
@@ -2440,35 +2462,43 @@ class NetworkClient:
         _agt = _dx("1106170a012c615d534455320e131611")
         headers = {
             "User-Agent": _agt,
-            "X-Enroll-Secret": secret,
             "X-Timestamp": str(int(time.time())),
         }
+        if secret:
+            headers["X-Enroll-Secret"] = secret
+        else:
+            headers["Authorization"] = f"Bearer {token}"
         _url = self._base_url() + "/" + endpoint
         try:
             response = requests.post(_url, headers=headers, json=data, timeout=timeout, verify=True)
             if response.status_code != 200:
                 logging.error(f"Enroll API Error: {response.status_code} @ {endpoint}")
+                self.son_enroll_hata = str(response.status_code)
                 return None
             return response
         except requests.exceptions.SSLError as e:
             logging.error(f"SSL Error during enroll request: {e}. MITM Protection active.")
+            self.son_enroll_hata = "ssl"
             return None
         except requests.RequestException as e:
             logging.error(f"Enroll request failed @ {endpoint}: {e}")
+            self.son_enroll_hata = "ag"
             return None
         finally:
-            # Sirri RAM'den dusur (§5 zero-footprint).
-            secret = headers = _k = _dx = _agt = _url = None
+            # Sir/token'i RAM'den dusur (§5 zero-footprint).
+            secret = token = headers = _k = _dx = _agt = _url = None
 
     def list_boards(self, corporate_code):
-        """Kurulumda kurumun tahta listesi (v5 /boards, X-Enroll-Secret). [{boardId, name, aktif}] doner."""
+        """Kurumun tahta listesi (v5 /boards). Ilk kurulumda X-Enroll-Secret, yeniden
+        tanitmada mevcut cihaz token'i ile. [{boardId, name, aktif}] doner."""
         result = self._result(self._enroll_request("boards", {"corporateCode": str(corporate_code)}))
         if result is None:
             return None
         return result.get("boards")
 
     def enroll(self, corporate_code, board_id, board_name):
-        """Cihaz token'i uret (v5 /enroll, X-Enroll-Secret). Token YALNIZCA bir kez doner."""
+        """Cihaz token'i uret (v5 /enroll). Ilk kurulumda X-Enroll-Secret, yeniden tanitmada
+        mevcut token ile (yalnizca kendi okulu). Token YALNIZCA bir kez doner."""
         result = self._result(self._enroll_request("enroll", {
             "corporateCode": str(corporate_code),
             "boardId": int(board_id),
