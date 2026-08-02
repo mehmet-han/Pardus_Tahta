@@ -2460,9 +2460,16 @@ class NetworkClient:
             str(result.get("logIstek", 0)),
         ]
 
-    def set_value(self, column, value):
-        """Komut ACK'i (v5 /ack). Kolon whitelist: open_close/shutdown/system_Remove/log_istek/message."""
-        result = self._result(self._make_request("ack", {"column": column, "value": str(value)}))
+    def set_value(self, column, value, sebep=None):
+        """Komut ACK'i (v5 /ack). Kolon whitelist: open_close/shutdown/system_Remove/log_istek/message.
+
+        `sebep`: tahtanin KENDI actigi/kilitledigi durumlarda nedenini sunucuya bildirir
+        (admin sifresi / USB / cevrimdisi sifre / zamanlanmis...). Sunucu bunu denetim
+        kaydina yazar; illegal acilis uyarisi buna dayanir. Kimlik yine token'dan gelir."""
+        govde = {"column": column, "value": str(value)}
+        if sebep:
+            govde["sebep"] = str(sebep)[:60]
+        result = self._result(self._make_request("ack", govde))
         if result is not None:
             logging.info(f"Acknowledged command: set {column}={value}")
             return True
@@ -5241,7 +5248,7 @@ class FatihClientApp(QWidget):
             self.last_lock_time = time.time()  # Soğuma + duyuru 3 dk doğum günü kapısı bu andan başlar
             # Record the lock event
             self.save_log(reason, "lock")
-            self.acknowledge_command("tahtaLock", "1")
+            self.acknowledge_command("tahtaLock", "1", reason)
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
@@ -5353,7 +5360,8 @@ class FatihClientApp(QWidget):
             if hasattr(self, 'usb_monitor') and self.usb_monitor:
                 self.usb_monitor.reset_usb_unlock_flag()
             
-        self.acknowledge_command("tahtaLock", "0")
+        # Acilis sebebi sunucuya bildirilir (illegal acilis uyarisinin kaynagi budur).
+        self.acknowledge_command("tahtaLock", "0", reason)
         self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
         
         # Fatih kilidi açıldıktan sonra Pardus/GNOME ekran kilidini aktif et
@@ -5400,7 +5408,7 @@ class FatihClientApp(QWidget):
         logging.warning("Could not activate system lock screen - no supported method found")
         return False
 
-    def acknowledge_command(self, cmd_key, cmd_val):
+    def acknowledge_command(self, cmd_key, cmd_val, sebep=None):
         # Notify the server that we have processed a command.
         def send_ack():
             self.network_client.set_value(cmd_key, cmd_val)
@@ -5409,7 +5417,8 @@ class FatihClientApp(QWidget):
                 # C# kodunda (systmlock = true ise "1", false ise "0") gönderiliyordu.
                 # python tarafında cmd_val "1" (kilitli) ve "0" (açık) olarak geliyor.
                 # MebreCep'teki yeşil/kırmızı ışığın doğru tespiti için bu satır gereklidir:
-                self.network_client.set_value("open_close", cmd_val)
+                # Acilis/kilit SEBEBI de gonderilir -> sunucu denetim kaydina yazar.
+                self.network_client.set_value("open_close", cmd_val, sebep)
 
         threading.Thread(target=send_ack, daemon=True).start()
 
