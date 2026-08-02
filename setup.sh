@@ -13,6 +13,44 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Proje dizinine EN BASTA gec: secret.txt "setup.sh'in yanindaki" dosyadir, calistirildigi
+# dizindeki degil. Eskiden bu cd [2/7]'de yapiliyordu; baska bir klasorden calistirilinca
+# ./secret.txt bulunamiyordu.
+cd "$(dirname "$0")" || { echo "❌ HATA: Kurulum klasörüne geçilemedi."; exit 1; }
+
+# --- ON KONTROL: kurulum sirri (2 Agustos 2026) ---
+# Sirsiz ve token'siz kurulum, tahtayi ASLA tanitilamayacak halde birakiyor: ekranda
+# "Kurulum sırrı yok" cikiyor ve teknisyen sahadan donmus oluyor. Eskiden burada sadece
+# uyari basilip kuruluma devam ediliyordu, uyari da ekrandan akip gidiyordu.
+# Artik ON KOSUL: agir islere (apt, Cython, kopyalama) girmeden ONCE durur.
+# NOT: secret.txt git deposunda YOKTUR (.gitignore) — depodan kurulum yapiliyorsa
+#      dosyanin elle konmasi gerekir.
+_ONCEKI_TOKEN=$(sed -nr 's/^device_token\s*=\s*(.*)/\1/p' \
+    /home/etapadmin/.config/fatih-client/config.ini 2>/dev/null)
+
+if [ -f "./secret.txt" ] && [ -n "$(tr -d ' \t\n\r' < ./secret.txt)" ]; then
+    echo "  ✅ Kurulum sırrı bulundu (secret.txt)."
+elif [ -n "$_ONCEKI_TOKEN" ]; then
+    echo "  ℹ secret.txt yok ama tahta zaten tanıtılmış — mevcut kimlik korunacak."
+else
+    echo ""
+    echo "========================================================="
+    echo "❌ KURULUM DURDURULDU: Kurulum sırrı (secret.txt) yok."
+    echo "========================================================="
+    echo "Bu tahta daha önce tanıtılmamış, sırsız kurulursa TANITILAMAZ."
+    echo "Ekranda 'Kurulum sırrı yok' hatası çıkar ve tahta açılmaz."
+    echo ""
+    echo "Yapılması gereken:"
+    echo "  1) 'secret.txt' dosyasını setup.sh ile AYNI klasöre koyun:"
+    echo "     $(pwd)/secret.txt"
+    echo "  2) Kurulumu tekrar başlatın: sudo ./setup.sh"
+    echo ""
+    echo "Dosya kurulum USB'sindedir. Yoksa Mebre'den isteyin."
+    echo "(Git deposundan kurulum yapıyorsanız secret.txt orada BULUNMAZ.)"
+    echo "========================================================="
+    exit 1
+fi
+
 echo "[1/7] Gerekli paketler yükleniyor..."
 apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
 # Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
@@ -20,8 +58,7 @@ apt-get install -y python3-pip python3-pyqt5 python3-dev gcc python3-setuptools 
 pip3 install Cython==3.0.11 setuptools evdev --break-system-packages || pip3 install Cython==3.0.11 setuptools evdev
 
 echo "[2/7] Python kodları şifreleniyor (Obfuscation)..."
-# Ana projenin olduğu dizine geç
-cd "$(dirname "$0")"
+# NOT: proje dizinine gecis scriptin EN BASINDA yapildi (on kontrol secret.txt'e bakiyor).
 
 # Git'ten en son sürümü çek (Eğer çalıştırılan dizin git reposu ise)
 if [ -d ".git" ]; then
@@ -137,19 +174,15 @@ fi
 # Sir teknisyene GOSTERILMEZ ve elle yazilmaz: setup.sh yanindaki secret.txt'ten okunur,
 # config'e ENC'li gomulur ve tahta tanitilir tanitilmaz istemci tarafindan SILINIR.
 # NOT: secret.txt USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
+# Gecerlilik EN BASTAKI on kontrolde dogrulandi; burada yalnizca gomuluyor.
 ENROLL_SECRET_ENC=""
 if [ -f "./secret.txt" ]; then
     _SECRET=$(tr -d ' \t\n\r' < ./secret.txt)
     if [ -n "$_SECRET" ]; then
         ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_SECRET" | base64 -w0)"
-        echo "  ✅ Kurulum sırrı okundu ve yapılandırmaya gömüldü."
-    else
-        echo "  ⚠ secret.txt boş! Tahta tanıtılamaz."
+        echo "  ✅ Kurulum sırrı yapılandırmaya gömüldü."
     fi
     _SECRET=""
-elif [ -z "$DEVICE_TOKEN" ]; then
-    echo "  ⚠ UYARI: secret.txt bulunamadı ve tahta daha önce tanıtılmamış."
-    echo "     Tahta kilitli açılır. secret.txt'i setup.sh'ın yanına koyup tekrar kurun."
 fi
 
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
@@ -270,6 +303,20 @@ echo "  ✅ Cinnamon ekran kilidi devre dışı bırakıldı"
 echo "========================================================="
 echo "✅ KURULUM TAMAMLANDI!"
 echo "Sistem başarıyla kuruldu ve kodlar şifrelendi."
+echo "---------------------------------------------------------"
+echo "Kurulan sürüm : $_PKG_VERSION"
+echo "Kurum kodu    : ${CORPORATE_CODE:-(girilmedi)}"
+# Teknisyen sahadan ayrilmadan once tahtanin tanitilabilir olup olmadigini GORSUN.
+if [ -n "$DEVICE_TOKEN" ]; then
+    echo "Tahta kimliği : ✅ Zaten tanıtılmış (mevcut kimlik korundu)"
+elif [ -n "$ENROLL_SECRET_ENC" ]; then
+    echo "Tahta kimliği : ⏳ Tanıtılmadı — kurulum sırrı gömüldü."
+    echo "                Yeniden başlattıktan sonra ekrandan kurum kodunu girip"
+    echo "                'Tahtaları Getir' ile tahtayı seçin."
+else
+    echo "Tahta kimliği : ❌ SIR YOK — tahta tanıtılamaz! (bu satırı görmemeniz gerekir)"
+fi
+echo "---------------------------------------------------------"
 echo "Tahtayı test etmek için yeniden başlatmanız önerilir."
 echo "Komut: sudo reboot"
 echo "========================================================="
