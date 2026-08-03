@@ -70,6 +70,58 @@ else
     exit 1
 fi
 
+# --- ON KONTROLLER (3 Agustos 2026: kurulum sahada cok takiliyordu) ---
+# Amac: 5 dakikalik agir isten SONRA patlamak yerine, eksigi BASTA soylemek.
+echo "[0/7] Ön kontroller..."
+
+_EKSIK=""
+for _d in "fatih_projesi_python/client/client.py" "compile_client.py" "uninstall.sh"; do
+    [ -f "$_d" ] || _EKSIK="$_EKSIK $_d"
+done
+if [ -n "$_EKSIK" ]; then
+    echo "❌ KURULUM DURDURULDU: kurulum dosyaları eksik:$_EKSIK"
+    echo "   USB'yi olduğu gibi kullanın, dosyaları tek tek kopyalamayın."
+    exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ KURULUM DURDURULDU: python3 bulunamadı."
+    exit 1
+fi
+
+# Disk alani (en az 500 MB)
+_BOS_MB=$(df -Pm /opt 2>/dev/null | awk 'NR==2{print $4}')
+if [ -n "$_BOS_MB" ] && [ "$_BOS_MB" -lt 500 ]; then
+    echo "❌ KURULUM DURDURULDU: /opt bölümünde yalnızca ${_BOS_MB} MB boş yer var (en az 500 MB gerekli)."
+    exit 1
+fi
+
+# Internet: derleme icin paket indirmek gerekebilir, tanitim icin de sart
+if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+    _NET=1
+else
+    _NET=0
+    echo "  ⚠ İnternet yok. Hazır derlenmiş dosya varsa kurulum devam eder,"
+    echo "    ancak tahta tanıtımı için internet GEREKLİ."
+fi
+
+# KURUM KODU EN BASTA soruluyor: eskiden [4/7]'de soruluyordu, yani teknisyen
+# yanlis yazarsa ya da vazgecerse 5 dakikalik derleme cope gidiyordu.
+echo ""
+read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
+if [ -z "$CORPORATE_CODE" ]; then
+    echo "❌ KURULUM DURDURULDU: kurum kodu boş olamaz."
+    exit 1
+fi
+case "$CORPORATE_CODE" in
+    *[!0-9]*)
+        echo "❌ KURULUM DURDURULDU: kurum kodu yalnızca rakam olmalı ('$CORPORATE_CODE' girildi)."
+        exit 1
+        ;;
+esac
+echo "  ✅ Kurum kodu: $CORPORATE_CODE"
+echo ""
+
 echo "[1/7] Gerekli paketler yükleniyor..."
 apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
 # Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
@@ -80,23 +132,58 @@ echo "[2/7] Python kodları şifreleniyor (Obfuscation)..."
 # NOT: proje dizinine gecis scriptin EN BASINDA yapildi (on kontrol secret.txt'e bakiyor).
 
 # Git'ten en son sürümü çek (Eğer çalıştırılan dizin git reposu ise)
+# NOT: eskiden KOSULSUZ `git pull origin main` yapiliyordu. Tahta kodu `v6` dalinda;
+# v6 klonundan kurulum yapan teknisyende bu, main'i v6 uzerine cekmeye calisip
+# ya catisma cikariyor ya da YANLIS SURUMU kuruyordu. Artik bulunulan dal cekilir
+# ve basarisizlik sessizce yutulmaz.
 if [ -d ".git" ]; then
-    echo "Git reposu algılandı, güncellemeler çekiliyor..."
-    git pull origin main || echo "Uyarı: git pull başarısız, yerel dosyalarla devam edilecek."
+    _DAL=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -n "$_DAL" ] && [ "$_DAL" != "HEAD" ]; then
+        echo "Git reposu algılandı (dal: $_DAL), güncellemeler çekiliyor..."
+        git pull origin "$_DAL" || echo "  ⚠ git pull başarısız — YEREL dosyalarla devam ediliyor."
+    fi
 fi
 
-# Eski derlemeleri kök dizinde ve client klasöründe tamamen temizle
-rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
+# --- HAZIR DERLENMIS DOSYA VARSA DERLEME YAPILMAZ ---
+# Kurulum sahada en cok BURADA takiliyordu: derleme icin apt deposu + internet +
+# gcc + python3-dev + Cython indirmesi gerekiyor, okul agi bunlardan birini
+# engelleyince kurulum ortada kaliyordu. Ayrica zayif tahta islemcisinde dakikalar suruyor.
+# Pakette tahtanin Python surumune uyan hazir .so varsa dogrudan kullanilir.
+_PYTAG=$(python3 -c "import sys; print('cpython-%d%d' % sys.version_info[:2])" 2>/dev/null)
+COMPILED_FILE=""
 
-# Cython ile client.py'yi C uzantısına (.so) derle
-python3 compile_client.py build_ext --inplace
+if [ -n "$_PYTAG" ]; then
+    for _hazir in hazir/client*.so fatih_projesi_python/client/client*.so; do
+        case "$_hazir" in
+            *"$_PYTAG"*)
+                [ -f "$_hazir" ] && COMPILED_FILE="$_hazir" && break
+                ;;
+        esac
+    done
+fi
 
-# Derlenen .so dosyasını bul (önceki adımda eski .so dosyaları zaten silindiği için güvenlidir)
-COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+if [ -n "$COMPILED_FILE" ]; then
+    echo "  ✅ Hazır derlenmiş dosya bulundu ($COMPILED_FILE) — derleme atlanıyor."
+else
+    echo "  ℹ Hazır dosya yok, tahtada derlenecek (internet ve derleyici gerekir)."
 
-if [ -z "$COMPILED_FILE" ]; then
-    echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
-    exit 1
+    # Eski derlemeleri temizle
+    rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
+
+    if ! command -v gcc >/dev/null 2>&1; then
+        echo "❌ KURULUM DURDURULDU: gcc yok ve hazır derlenmiş dosya da yok."
+        echo "   İnternet bağlayıp tekrar deneyin ya da hazır paketi isteyin."
+        exit 1
+    fi
+
+    python3 compile_client.py build_ext --inplace
+    COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+
+    if [ -z "$COMPILED_FILE" ]; then
+        echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
+        echo "   En sık sebep: python3-dev / gcc / Cython kurulamamış (internet yok)."
+        exit 1
+    fi
 fi
 
 echo "✅ Kodlar başarıyla şifrelendi (.so oluşturuldu: $COMPILED_FILE)."
@@ -171,7 +258,8 @@ chown -R root:etapadmin "$INSTALL_DIR"
 chmod -R 750 "$INSTALL_DIR"
 
 echo "[4/7] Kurum Kodu (Corporate Code) ayarlanıyor..."
-read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
+# Kurum kodu ON KONTROLDE alindi (agir isten once) — burada tekrar sorulmaz.
+echo "  → Kurum kodu: $CORPORATE_CODE"
 
 # Eski ayarları korumak için yapılandırma dosyasını oku
 EXISTING_CONFIG="/home/etapadmin/.config/fatih-client/config.ini"
