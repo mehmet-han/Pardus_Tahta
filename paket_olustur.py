@@ -89,6 +89,27 @@ def create_release():
                         file_path = os.path.join(root, f)
                         zf.write(file_path, file_path)
             print(f"  ✅ Eklendi (Klasör): {client_dir}")
+
+        # --- HAZIR DERLENMIS .so (3 Agustos 2026) ---
+        # Tahtada derleme, saha kurulumunun en kirilgan adimi: internet + apt deposu +
+        # gcc + Cython gerekiyor ve zayif islemcide dakikalar suruyor. Bir kez bir tahtada
+        # derlenip 'hazir/' klasorune konan .so pakete girer; setup.sh Python surumu uyan
+        # dosyayi bulursa derlemeyi TAMAMEN atlar.
+        # NOT: client klasorundeki .so'lar DISLANMAYA devam eder (onlar derleme artigi);
+        # yalnizca bilerek konan hazir/ klasoru paketlenir.
+        hazir_dir = "hazir"
+        if os.path.isdir(hazir_dir):
+            eklenen = 0
+            for f in sorted(os.listdir(hazir_dir)):
+                if f.startswith("client") and f.endswith(".so"):
+                    zf.write(os.path.join(hazir_dir, f), os.path.join(hazir_dir, f))
+                    print(f"  ✅ Eklendi (hazır derleme): {f}")
+                    eklenen += 1
+            if eklenen == 0:
+                print("  ⚠ 'hazir/' klasörü var ama içinde client*.so yok.")
+        else:
+            print("  ℹ 'hazir/' klasörü yok — tahtalar kodu KENDİSİ derleyecek "
+                  "(internet + gcc gerekir, yavaş).")
         
     # Create standard name copy
     import shutil

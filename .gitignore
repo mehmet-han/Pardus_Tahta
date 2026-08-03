@@ -68,3 +68,4 @@ fatih_projesi_python/client/client.c
 
 # Deployment paketleri
 *.zip
+hazir/
