@@ -2990,7 +2990,7 @@ DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
 DUYURU_MAX_NOKTA = 12
 DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
-DUYURU_RESIM_MAX_YUKSEKLIK = 300          # panelde resme ayrilan azami yukseklik            # bunun ustunde nokta yerine '3 / 27' sayaci
+DUYURU_RESIM_MAX_YUKSEKLIK = 1600          # panelde resme ayrilan azami yukseklik (px). Yuksek cozunurluklu tahtada foto buyuk gorunsun; dusuk cozunurlukte zaten ekran orani (0.40H) sinirlar.
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -4720,6 +4720,8 @@ class FatihClientApp(QWidget):
             self._render_birthday_panel(bd)
 
     def _hide_duyuru_panel(self, keep_state=False):
+        # Panel gizleniyorsa tam ekran fotograf da kapanmali (ekranda asili kalmasin).
+        self._foto_tam_ekran_kapat()
         """Slider'ı gizler + slayt timer'ını durdurur. keep_state=False durumunda slider
         bağlamını (periyot/liste/index) da sıfırlar."""
         if getattr(self, 'duyuru_panel', None) is not None:
@@ -4731,6 +4733,8 @@ class FatihClientApp(QWidget):
             self._duyuru_index = 0
 
     def _advance_duyuru_slide(self):
+        # Slayt degisiyor -> acik tam ekran fotograf onceki duyuruya aitti, kapat.
+        self._foto_tam_ekran_kapat()
         """Sonraki slayta geç (slayt timer'ından)."""
         if not self._duyuru_active:
             return
@@ -4750,6 +4754,67 @@ class FatihClientApp(QWidget):
         if n <= 520:
             return 14
         return 13
+
+    # ==================== FOTOGRAF TAM EKRAN ====================
+    # Tahtaya gonderilen fotograflar resmi yazi oluyor; kartta buyuk gosterilse bile
+    # kucuk punto okunmayabiliyor. Tahta dokunmatik: fotografa dokununca tam ekran acilir.
+    #
+    # GUVENLIK (kilidi zayiflatmamak icin bilincli kisitlar):
+    #  - Katman AYRI PENCERE DEGIL, kilit ekraninin COCUGU. Kilidin ustune cikamaz,
+    #    kilit ekrani kapanirsa o da kapanir.
+    #  - Uzerinde HICBIR etkilesim yok: buton yok, bag yok, metin girisi yok. Yalniz resim.
+    #  - Her dokunusta kapanir; 20 sn'de kendiliginden de kapanir (acik unutulmasin).
+    #  - Acilir acilmaz 'Tahtayi Acin' ve (i) butonlari USTE alinir -> ogretmen tahtayi
+    #    her an acabilir, katman onu engellemez.
+    #  - Slayt degisince, duyuru paneli gizlenince ve tahta acilinca kapatilir.
+    #  - Klavye grab'ina dokunmaz; kilit mantigi bu katmandan tamamen bagimsizdir.
+
+    def _foto_tam_ekran_hazirla(self):
+        """Katmani (ilk kullanimda) olusturur."""
+        if getattr(self, 'foto_tam_ekran', None) is not None:
+            return
+        self.foto_tam_ekran = QLabel(self)
+        self.foto_tam_ekran.setObjectName("fotoTamEkran")
+        self.foto_tam_ekran.setAlignment(Qt.AlignCenter)
+        self.foto_tam_ekran.setStyleSheet("background-color: rgba(0,0,0,235);")
+        self.foto_tam_ekran.hide()
+        # Dokununca kapansin.
+        self.foto_tam_ekran.mousePressEvent = lambda e: self._foto_tam_ekran_kapat()
+
+        self.foto_tam_ekran_timer = QTimer(self)
+        self.foto_tam_ekran_timer.setSingleShot(True)
+        self.foto_tam_ekran_timer.timeout.connect(self._foto_tam_ekran_kapat)
+
+    def _foto_tam_ekran_ac(self, pix):
+        """Fotografi ekrani kaplayacak sekilde gosterir."""
+        if pix is None or not isinstance(pix, QPixmap) or pix.isNull():
+            return
+        try:
+            self._foto_tam_ekran_hazirla()
+            # Ekranin tamamina sigdir; en-boy orani korunur (resmi yazi KIRPILMAZ).
+            buyuk = pix.scaled(max(320, self.width() - 40), max(240, self.height() - 40),
+                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.foto_tam_ekran.setPixmap(buyuk)
+            self.foto_tam_ekran.setGeometry(0, 0, self.width(), self.height())
+            self.foto_tam_ekran.show()
+            self.foto_tam_ekran.raise_()
+            # Tahtayi acma butonlari HER ZAMAN erisilebilir kalir.
+            self._raise_exam_controls()
+            self.foto_tam_ekran_timer.start(20000)
+        except Exception as e:
+            logging.warning(f"Fotograf tam ekran acilamadi: {e}")
+            self._foto_tam_ekran_kapat()
+
+    def _foto_tam_ekran_kapat(self):
+        """Katmani kapatir. Cagrilmasi HER DURUMDA guvenlidir."""
+        try:
+            if getattr(self, 'foto_tam_ekran_timer', None) is not None:
+                self.foto_tam_ekran_timer.stop()
+            if getattr(self, 'foto_tam_ekran', None) is not None:
+                self.foto_tam_ekran.clear()
+                self.foto_tam_ekran.hide()
+        except Exception:
+            pass
 
     def _duyuru_resmi_iste(self, duyuru_id: int, url: str):
         """Fotografi ARKA PLANDA indirir. UI asla beklemez; gelince slayt yenilenir."""
@@ -4802,27 +4867,83 @@ class FatihClientApp(QWidget):
         px = self._duyuru_msg_px(mesaj)
         self.duyuru_mesaj.setStyleSheet(
             f"color:#EAF4FF; font-family:'DejaVu Sans'; font-size:{px}px; background:transparent;")
-        self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
-        self.duyuru_mesaj.setText(mesaj)
 
         # --- Fotograf (varsa) ---
         _did = int(item.get('id', 0) or 0)
         _rurl = str(item.get('resimUrl', '') or '').strip()
         _pix = self._duyuru_resim_onbellek.get(_did) if _rurl else None
+        _foto_var = bool(_rurl and isinstance(_pix, QPixmap) and not _pix.isNull())
+
+        # Foto VARSA mesaj rezervini kucult (bos alan gitsin), o alani fotografa ver.
+        # Net panel yuksekligi ~AYNI kalir (mesaj 0.36->0.18, foto 0.22->0.40 => toplam 0.58H sabit),
+        # yani _position_center_panel'de tasma/kirpilma riski ARTMAZ ama foto ~2x buyur.
+        # Tahtaya gonderilen fotograflar cogunlukla RESMI YAZI (A4, dikey, metin dolu).
+        # Kirpmak metni goturur, tahtada parmakla buyutmek de yok -> belge TEK SEFERDE
+        # ve OLABILDIGINCE BUYUK gorunmeli. Bu yuzden foto varken kart icindeki her sey
+        # kisilir: ust satir ("SINIF DUYURUSU") gizlenir, mesaj icerigi kadar yer kaplar.
+        self.duyuru_kicker.setVisible(not _foto_var)
+
+        if _foto_var:
+            # Foto varken mesaj kutusu ICERIGI KADAR yer kaplasin: "FOTO" gibi tek
+            # kelimelik mesajda 0.18H rezerve etmek panelin ortasinda bos bir bosluk
+            # birakiyor ve fotografa kalan alani gereksiz yere daraltiyordu.
+            _tavan_m = max(90, min(260, int(self.height() * 0.18)))
+            _dogal_m = 0
+            try:
+                _pw_m = self.duyuru_panel.maximumWidth()
+                if _pw_m <= 0 or _pw_m >= 16777215:
+                    _pw_m = self.duyuru_panel.width() or 760
+                _dogal_m = self.duyuru_mesaj.heightForWidth(max(240, _pw_m - 72))
+            except Exception:
+                _dogal_m = 0
+            if _dogal_m and _dogal_m > 0:
+                _tavan_m = max(48, min(_tavan_m, _dogal_m + 10))
+            self.duyuru_mesaj.setFixedHeight(_tavan_m)
+        else:
+            self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
+        self.duyuru_mesaj.setText(mesaj)
+
         if _rurl and _did not in self._duyuru_resim_onbellek:
             self._duyuru_resmi_iste(_did, _rurl)
 
-        if _rurl and isinstance(_pix, QPixmap) and not _pix.isNull():
-            # Panele sigacak sekilde olcekle; en-boy orani korunur.
-            _gen = max(200, self.duyuru_panel.width() - 72)
-            # Yukseklik EKRANA GORE sinirlanir: panel ekrandan uzun olursa
-            # _position_center_panel negatif y veriyor ve kart ustten/alttan kirpiliyor.
-            # Dusuk cozunurluklu tahtada resim kucuk kalir ama metin okunur kalir.
-            _maks_h = max(120, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.22)))
+        if _foto_var:
+            # --- Fotografa GERCEK bos alan verilir (sabit oran DEGIL) ---
+            # Sabit oranli (0.40H) siniri, DIKEY fotograflarda yetersiz kaliyordu:
+            # en-boy orani korundugu icin yukseklik sinirlaninca genislik de kuculuyor
+            # ve 760px'lik panelde daracik bir serit olusuyordu (iki yani bos).
+            #
+            # Iki gecisli olcum: once fotograf YOKKEN panel ne kadar yer kapliyor
+            # olculur, ekranda kalan bosluk fotografa verilir. Boylece kisa mesajda
+            # foto buyur, uzun mesajda kendiliginden kuculur ve panel HICBIR ZAMAN
+            # ekrandan tasmaz (tasarsa _position_center_panel negatif y verip kirpardi).
+            _pw = self.duyuru_panel.maximumWidth()
+            if _pw <= 0 or _pw >= 16777215:
+                _pw = self.duyuru_panel.width() or 760
+            _gen = max(240, _pw - 48)
+
+            # 1. gecis: resim gizliyken panelin dogal yuksekligi
+            self.duyuru_resim.clear()
+            self.duyuru_resim.hide()
+            try:
+                self._fit_panel_height(self.duyuru_panel)
+                _h0 = self.duyuru_panel.height()
+            except Exception:
+                _h0 = int(self.height() * 0.45)
+
+            # 2. gecis: kalan bosluk fotografin olsun (ust/alt icin pay birakilir)
+            # Belge okunabilirligi icin ekranin neredeyse tamami kullanilir.
+            # (Kart zaten dikeyde ortalaniyor; %97 pay ust/alt kenarda ince bosluk birakir.)
+            _kalan = int(self.height() * 0.97) - _h0 - 12
+            _maks_h = max(220, min(DUYURU_RESIM_MAX_YUKSEKLIK, _kalan))
+
             _olcekli = _pix.scaled(_gen, _maks_h,
                                    Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.duyuru_resim.setPixmap(_olcekli)
             self.duyuru_resim.show()
+            # Dokununca tam ekran (resmi yazinin kucuk puntosu okunabilsin).
+            self.duyuru_resim.setCursor(Qt.PointingHandCursor)
+            self.duyuru_resim.mousePressEvent = (
+                lambda e, _p=_pix: self._foto_tam_ekran_ac(_p))
         else:
             # Resmi yok, henuz inmedi ya da indirilemedi -> duyuru metin olarak devam eder.
             self.duyuru_resim.clear()
@@ -5660,6 +5781,9 @@ class FatihClientApp(QWidget):
             self.manual_override = True
             logging.info("Manual override activated (or server unlock received). Timer started.")
 
+        # Tam ekran fotograf acik kaldiysa kapat: kilit ekrani gidiyor.
+        self._foto_tam_ekran_kapat()
+
         self.is_locked = False
         self.hide()
         if self.keyboard_locker:
@@ -5908,7 +6032,11 @@ class FatihClientApp(QWidget):
         # Bilgi panelleri (aferin/dogum gunu) giris ekranini ve numpad'i kapatmasin.
         self._hide_info_panels()
 
+        # Tam ekran fotograf acikken sifre paneli ALTINDA kalabilirdi -> once kapat.
+        self._foto_tam_ekran_kapat()
+
         self.login_panel.show()
+        self.login_panel.raise_()
         # Force window to stay on top and regain focus if Cinnamon dropped it
         self.raise_()
         try:

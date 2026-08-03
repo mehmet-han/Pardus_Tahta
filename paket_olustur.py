@@ -127,6 +127,10 @@ def create_release():
         'output_lines.txt', 'schedule_check.txt', 'service_check.txt',
         'mebre_lock.png', 'screen.png', 'pyarmor.error.log',
         '.env', '_encoded_vals.txt', 'Fatih_Projesi.sln',
+        # config.ini CIHAZA OZELDIR (device token/ENC:). Pakete GIRMEZ; her tahta
+        # kurulumda kendi config'ini uretir (/opt/fatih-client/config.ini). Repodaki
+        # yalnizca local test fallback'iydi — artik takipten cikarildi + gitignore.
+        'config.ini',
     }
     
     print(f"'{release_name}' oluşturuluyor...")

@@ -70,3 +70,6 @@ fatih_projesi_python/client/client.c
 *.zip
 hazir/
 Fatih_Client_Kurulum_KORUMALI.zip
+
+# Cihaza özel config (device token) — pakete/repoya girmez
+fatih_projesi_python/client/config.ini
