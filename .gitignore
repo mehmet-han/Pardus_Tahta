@@ -17,6 +17,12 @@ pyarmor.error.log
 # v6 enroll sırrı — kurulum medyasında (USB) durur; depoya veya pakete ASLA girmez.
 secret.txt
 **/secret.txt
+# Kurulum dogrulama kodunu tasiyan dosya (eski adi secret.txt). Masum bir isim
+# tasidigi icin yanlislikla commit'lenme riski YUKSEK — ikisi de yok sayilir.
+Readme.txt
+**/Readme.txt
+readme.txt
+**/readme.txt
 
 # Visual Studio / C# (reference code - kept separately)
 [Bb]in/
@@ -62,3 +68,5 @@ fatih_projesi_python/client/client.c
 
 # Deployment paketleri
 *.zip
+hazir/
+Fatih_Client_Kurulum_KORUMALI.zip

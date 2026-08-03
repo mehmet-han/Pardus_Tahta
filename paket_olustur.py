@@ -2,6 +2,70 @@ import os
 import zipfile
 import datetime
 
+
+# Pakete giren kabuk betiklerinden ACIKLAYICI yorumlar temizlenir.
+#
+# NEDEN (3 Agustos 2026): gelistirici yorumlari, savunmanin nasil kuruldugunu
+# adim adim anlatiyordu ve bu yorumlar dagitim paketinin ICINE giriyordu:
+#   "kod, dosyadaki ILK 64 haneli onaltilik dizidir"
+#   "bu bir GIZLEME onlemidir, sifreleme DEGILDIR"
+#   "sudo fatih-uninstall --force ile sifre atlanabiliyordu"
+# Yani paketi acan birine yol haritasi veriyorduk. Aciklamalar depoda KALIR
+# (bakim icin gerekli), pakete giden kopyadan cikarilir.
+#
+# Yalnizca TAM SATIR yorumlar ve yalnizca hassas anahtar kelime iceriyorsa silinir;
+# kod satirlarina ve satir-ici yorumlara DOKUNULMAZ (davranis degismez).
+HASSAS_KELIMELER = (
+    '64 hane', '64 haneli', 'gizleme', 'GIZLEME', 'sifreleme degil', 'sifreleme DEGILDIR',
+    'sudoers', '--force', 'PBKDF2', 'REMOVE_SALT', 'kanit', 'KANIT',
+    'duz metin', 'DUZ METIN', 'sir ', 'SIR ', 'sirri', 'SIRRI', 'acik', 'ACIK',
+    'atlan', 'ATLAN', 'ogrenci', 'saldiri', 'guvenlik', 'GUVENLIK',
+)
+
+
+def sadelestir_kabuk(icerik: str) -> str:
+    """Kabuk betiginden hassas ACIKLAMA yorumlarini cikarir."""
+    cikti = []
+    for satir in icerik.split('\n'):
+        kirp = satir.strip()
+        # Shebang ve kod satirlari korunur; yalnizca tam-satir yorumlara bakilir.
+        if kirp.startswith('#') and not kirp.startswith('#!'):
+            if any(k in satir for k in HASSAS_KELIMELER):
+                continue
+        cikti.append(satir)
+    return '\n'.join(cikti)
+
+
+# Siteye konacak KORUMALI paket icin sifre.
+# Ortam degiskeniyle gecilebilir: FATIH_ZIP_SIFRE=... python paket_olustur.py
+# Sifre AYLIK degistirilir; degistirince paketi yeniden uretip siteye koyun.
+# NOT: klasik zip sifrelemesi (ZipCrypto) kiriktir; burada AES-256 kullanilir.
+ZIP_SIFRE = os.environ.get("FATIH_ZIP_SIFRE", "803417")
+
+
+def korumali_paket_uret(kaynak_zip: str, hedef_zip: str, sifre: str) -> bool:
+    """Normal paketin icerigini AES-256 sifreli bir zip'e kopyalar."""
+    try:
+        import pyzipper
+    except ImportError:
+        print("  ⚠ 'pyzipper' kurulu değil — korumalı paket üretilemedi.")
+        print("    Kurmak için:  pip install pyzipper")
+        return False
+
+    try:
+        with zipfile.ZipFile(kaynak_zip, "r") as kaynak:
+            with pyzipper.AESZipFile(hedef_zip, "w",
+                                     compression=pyzipper.ZIP_DEFLATED,
+                                     encryption=pyzipper.WZ_AES) as hedef:
+                hedef.setpassword(sifre.encode("utf-8"))
+                for ad in kaynak.namelist():
+                    hedef.writestr(ad, kaynak.read(ad))
+        return True
+    except Exception as e:
+        print(f"  ⚠ Korumalı paket üretilemedi: {e}")
+        return False
+
+
 def create_release():
     # Versiyon bilgisini oku
     version = "unknown"
@@ -28,6 +92,16 @@ def create_release():
         "install_from_github.sh",
         "doktor.sh",
     ]
+
+    # Kurulum dogrulama kodunu tasiyan dosya (3 Agustos 2026 karari):
+    # Paket, MEBRE'NIN KENDI SITESINDEN ve KAPI ARKASINDAN (giris/kurum kodu ile)
+    # dagitiliyor. Bu yuzden kod artik pakete DAHIL edilebiliyor; sahada teknisyen
+    # elle kod girmek zorunda kalmiyor.
+    # ⚠ SART: bu paket ASLA herkese acik bir baglantidan servis edilmemeli.
+    #   Kodu eline gecirren biri HERHANGI bir okulun tahtasinin kimligini uzerine
+    #   alabilir (mevcut token'i ezer) ve o okulun ogrenci/yoklama/sinav verisini ceker.
+    if os.path.isfile("Readme.txt"):
+        files_to_include.append("Readme.txt")
     
     # Directory to include
     client_dir = os.path.join("fatih_projesi_python", "client")
@@ -62,8 +136,16 @@ def create_release():
         # Add individual files
         for item in files_to_include:
             if os.path.isfile(item):
-                zf.write(item)
-                print(f"  ✅ Eklendi: {item}")
+                if item.endswith('.sh'):
+                    with open(item, 'r', encoding='utf-8') as fh:
+                        ham = fh.read()
+                    temiz = sadelestir_kabuk(ham)
+                    zf.writestr(item, temiz)
+                    fark = ham.count('\n') - temiz.count('\n')
+                    print(f"  ✅ Eklendi: {item} ({fark} açıklama satırı çıkarıldı)")
+                else:
+                    zf.write(item)
+                    print(f"  ✅ Eklendi: {item}")
             else:
                 print(f"  ⚠ UYARI: Bulunamadı: {item}")
         
@@ -89,6 +171,27 @@ def create_release():
                         file_path = os.path.join(root, f)
                         zf.write(file_path, file_path)
             print(f"  ✅ Eklendi (Klasör): {client_dir}")
+
+        # --- HAZIR DERLENMIS .so (3 Agustos 2026) ---
+        # Tahtada derleme, saha kurulumunun en kirilgan adimi: internet + apt deposu +
+        # gcc + Cython gerekiyor ve zayif islemcide dakikalar suruyor. Bir kez bir tahtada
+        # derlenip 'hazir/' klasorune konan .so pakete girer; setup.sh Python surumu uyan
+        # dosyayi bulursa derlemeyi TAMAMEN atlar.
+        # NOT: client klasorundeki .so'lar DISLANMAYA devam eder (onlar derleme artigi);
+        # yalnizca bilerek konan hazir/ klasoru paketlenir.
+        hazir_dir = "hazir"
+        if os.path.isdir(hazir_dir):
+            eklenen = 0
+            for f in sorted(os.listdir(hazir_dir)):
+                if f.startswith("client") and f.endswith(".so"):
+                    zf.write(os.path.join(hazir_dir, f), os.path.join(hazir_dir, f))
+                    print(f"  ✅ Eklendi (hazır derleme): {f}")
+                    eklenen += 1
+            if eklenen == 0:
+                print("  ⚠ 'hazir/' klasörü var ama içinde client*.so yok.")
+        else:
+            print("  ℹ 'hazir/' klasörü yok — tahtalar kodu KENDİSİ derleyecek "
+                  "(internet + gcc gerekir, yavaş).")
         
     # Create standard name copy
     import shutil
@@ -106,10 +209,20 @@ def create_release():
     with zipfile.ZipFile(release_name, 'r') as zf:
         for name in zf.namelist():
             # v6: enroll sırrı ASLA pakete girmez. Paket WhatsApp/GitHub üzerinden dolaşıyor;
-            # secret.txt yalnızca kurulum USB'sinde, setup.sh'ın yanında durur.
-            if os.path.basename(name).lower() == 'secret.txt':
-                print(f"  ❌ ENROLL SIRRI PAKETTE: {name} — bu paket DAĞITILMAMALI!")
-                issues_found = True
+            # Kurulum dogrulama kodu YALNIZCA kurulum USB'sinde, setup.sh'in yaninda durur.
+            # (Readme.txt = yeni ad, secret.txt = eski ad; ikisi de pakete GIRMEZ.)
+            if os.path.basename(name).lower() in ('secret.txt', 'readme.txt'):
+                print("")
+                print("  ⚠  ═══════════════════════════════════════════════════════")
+                print(f"  ⚠  KURULUM KODU BU PAKETİN İÇİNDE: {name}")
+                print("  ⚠  ═══════════════════════════════════════════════════════")
+                print("  ⚠  Bu paketi YALNIZCA kapı arkasındaki (giriş isteyen)")
+                print("  ⚠  indirme adresinden servis edin.")
+                print("  ⚠  Herkese açık bir bağlantıya konursa, kodu indiren herkes")
+                print("  ⚠  HERHANGİ bir okulun tahtasının kimliğini üzerine alabilir")
+                print("  ⚠  ve o okulun öğrenci/yoklama/sınav verisini çekebilir.")
+                print("  ⚠  WhatsApp/GitHub/genel link ile PAYLAŞMAYIN.")
+                print("")
 
             # Check for C# files
             if name.endswith('.cs') or name.endswith('.csproj') or name.endswith('.sln'):
@@ -133,6 +246,19 @@ def create_release():
         print("")
         print("  ⚠ UYARI: Yukarıdaki sorunlar düzeltilmelidir!")
     
+    # --- Siteye konacak KORUMALI (sifreli) paket ---
+    korumali_ad = standard_name.replace(".zip", "_KORUMALI.zip")
+    print("")
+    print("=" * 60)
+    print("🔐 KORUMALI PAKET (siteye konacak olan)")
+    print("=" * 60)
+    if korumali_paket_uret(release_name, korumali_ad, ZIP_SIFRE):
+        print(f"  ✅ Üretildi: {korumali_ad}  (AES-256)")
+        print(f"  🔑 Şifre   : {ZIP_SIFRE}")
+        print("")
+        print("  → SİTEYE bu dosyayı koyun, şifresiz olanı DEĞİL.")
+        print("  → Şifreyi ayda bir değiştirin: FATIH_ZIP_SIFRE=yenisifre python paket_olustur.py")
+
     # Summary
     zip_size = os.path.getsize(release_name) / (1024 * 1024)
     print("")

@@ -14,9 +14,40 @@ echo ""
 # Şifre SORULMAZ çünkü yetkilendirme zaten sunucuda yapıldı: istemci cihaz token'ıyla
 # kimlik doğrulayıp komutu sunucudan aldı. Bu modu SADECE client.py remove_system()
 # çağırır; teknisyen elle kaldırırken şifre kapısı aynen devam eder.
+# YETKILENDIRME (3 Agustos 2026 - yeniden yazildi)
+# ---------------------------------------------------------------------
+# ESKI ACIK: `--force` sifreyi tamamen atliyordu ve setup.sh sudoers kurali
+# ARGUMAN KISITLAMIYORDU. Tahtada terminale erisen herkes
+#     sudo fatih-uninstall --force
+# yazip kilit sistemini tek komutla kaldirabiliyordu. Tahta ders sirasinda
+# ACIK oldugu icin bunu bir ogrenci de yapabilirdi.
+#
+# YENI: sudoers yalnizca ARGUMANSIZ cagriya izin verir; --force sudo ile
+# gecmez. Yetki stdin'den gelir:
+#   a) teknisyen kaldirma sifresi
+#   b) uzaktan kaldirma kaniti = sha256(device_token + REMOVE_SALT)
+#      Kaniti yalnizca istemci uretebilir; REMOVE_SALT bu dosyada durur ve
+#      bu dosya root:700 oldugu icin etapadmin OKUYAMAZ.
+# --force yalnizca DOGRUDAN root kabukta (sudo degil) gecerlidir.
+REMOVE_SALT="mebre-remove-v1"
+
 FORCE_MODE=0
-if [ "$1" = "--force" ] || [ "$FATIH_UNINSTALL_FORCE" = "1" ]; then
+if [ "$1" = "--force" ] && [ -z "$SUDO_USER" ]; then
     FORCE_MODE=1
+fi
+
+if [ "$FORCE_MODE" = "0" ] && [ ! -t 0 ]; then
+    read -r _GELEN 2>/dev/null
+    _TOKEN_ENC=$(sed -nr 's/^device_token[[:space:]]*=[[:space:]]*(.*)$/\1/p' /home/etapadmin/.config/fatih-client/config.ini 2>/dev/null | head -n 1)
+    _TOKEN=$(printf '%s' "$_TOKEN_ENC" | sed 's/^ENC://' | base64 -d 2>/dev/null)
+    if [ -n "$_TOKEN" ] && [ -n "$_GELEN" ]; then
+        _BEKLENEN=$(printf '%s' "${_TOKEN}${REMOVE_SALT}" | sha256sum | awk '{print $1}')
+        if [ "$_GELEN" = "$_BEKLENEN" ]; then
+            FORCE_MODE=1
+            echo "Uzaktan kaldirma kaniti dogrulandi."
+        fi
+    fi
+    _TOKEN=""; _GELEN=""; _BEKLENEN=""
 fi
 
 if [ "$FORCE_MODE" = "1" ]; then

@@ -53,6 +53,29 @@ logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("--- Fatih Client Starting Up ---")
 
+
+# ==================== KURESEL ISTISNA YAKALAYICI ====================
+# PyQt5 (>=5.5) bir slot icinde yakalanmamis Python istisnasi olusursa VARSAYILAN
+# excepthook'u cagirir ve ardindan qFatal() ile SURECI OLDURUR. Ana uygulamada 11
+# zamanlayici geri cagrisi var (poll, duyuru slider'i, sinav, saat, yoklama...);
+# bunlarin ucunde (duyuru durumu, slayt gecisi, saat) try/except YOKTU.
+#
+# Boyle bir cokme tahtayi calisir durumda BIRAKMIYOR: kilit penceresi kayboluyor ama
+# gorev cubugu gizli / kisayollar kapali kaliyor (geri alma unlock_system'de yapiliyor,
+# cokmede calismiyor). Uygulamayi yeniden baslatan bir gozcu de yok -> tahta yeniden
+# baslatilana kadar kullanilamaz halde kaliyor.
+#
+# OZEL excepthook kurulunca PyQt5 abort ETMEZ; istisna loglanir ve dongu devam eder.
+# Bir panel cizilemezse yalnizca o panel eksik kalir, tahta ayakta durur.
+def _kuresel_istisna(tur, deger, iz):
+    try:
+        logging.critical("YAKALANMAMIS ISTISNA — surec ayakta tutuluyor", exc_info=(tur, deger, iz))
+    except Exception:
+        pass
+
+
+sys.excepthook = _kuresel_istisna
+
 # --- Configuration ---
 # Define paths for user-specific and default configurations
 APP_NAME = "fatih-client"
@@ -517,6 +540,60 @@ def _kriz_kodu(kurum_kodu: str, gun: datetime) -> str:
 # tekrar kilitlenip kodu yeniden istemesin. Sure config.ini'ye yazilir -> tahta yeniden
 # baslatilsa bile pencere devam eder (kriz sirasinda reboot cok olasi).
 KRIZ_ACIK_SURE_SAAT = 24
+
+# ==================== ADMIN SIFRESI (PBKDF2) ====================
+# SORUN (3 Agustos 2026 incelemesi): admin_password config.ini'de DUZ METIN duruyordu
+# ve dogrulama duz karsilastirmaydi. Kullanici config'i
+#     /home/etapadmin/.config/fatih-client/config.ini
+# etapadmin'e ait ve 600 — ama tahta ZATEN etapadmin olarak otomatik giris yapiyor.
+# Yani tahta acikken (ogretmen actiktan sonra) terminale/dosya yoneticisine ulasan bir
+# ogrenci tek `cat` ile sifreyi okuyup tahtayi ISTEDIGI ZAMAN acabiliyordu. Bu, urunun
+# var olma sebebini dogrudan cokertiyordu ("ogrenciler tahtayi ele geciriyor").
+#
+# COZUM: sifre PBKDF2-HMAC-SHA256 ile, tahtaya ozel rastgele tuzla saklanir.
+#   admin_password = PBKDF2:<tuz_hex>:<hash_hex>
+#
+# GERIYE DONUK UYUMLU: bu bicimde OLMAYAN deger eski duz metin kabul edilir; sahadaki
+# 70 okul guncellemeden once de calismaya devam eder. setup.sh yeni kurulumda/guncellemede
+# duz metni hash'e cevirir.
+#
+# DURUSTCE SINIR: sifre 6 haneli sayi. PBKDF2 sozluk saldirisini YAVASLATIR (10^6 aday
+# ~40 saat), IMKANSIZ KILMAZ. Asil koruma, dosyayi okuyabilecek kisinin tahtaya
+# fiziksel erisiminin zaten sinirli olmasi.
+_ADMIN_PBKDF2_TUR = 200000
+
+
+def admin_sifre_uret(sifre: str) -> str:
+    """Duz sifreden saklanabilir 'PBKDF2:tuz:hash' dizisi uretir."""
+    tuz = os.urandom(16)
+    ozet = hashlib.pbkdf2_hmac('sha256', (sifre or '').encode('utf-8'), tuz, _ADMIN_PBKDF2_TUR)
+    return f"PBKDF2:{tuz.hex()}:{ozet.hex()}"
+
+
+def admin_sifre_dogru(girilen: str) -> bool:
+    """Girilen sifre config'teki degerle eslesiyor mu? Hem PBKDF2 hem eski duz metin."""
+    saklanan = SETTINGS.get('admin_password', '803580') or '803580'
+
+    if saklanan.startswith('PBKDF2:'):
+        try:
+            _, tuz_hex, ozet_hex = saklanan.split(':', 2)
+            ozet = hashlib.pbkdf2_hmac(
+                'sha256', (girilen or '').encode('utf-8'), bytes.fromhex(tuz_hex), _ADMIN_PBKDF2_TUR)
+            return hmac.compare_digest(ozet.hex(), ozet_hex)
+        except Exception as e:
+            logging.error(f"admin_password PBKDF2 cozulemedi: {e}")
+            return False
+
+    # --- Eski bicim: duz metin ---
+    if saklanan == 'mebre':          # cok eski kurulumlarda kalan deger
+        saklanan = '803580'
+    return hmac.compare_digest(str(girilen or ''), str(saklanan))
+
+
+def admin_sifre_varsayilan_mi() -> bool:
+    """Fabrika sifresi (803580) hala kullaniliyor mu? (Sifre degistir ekrani icin)"""
+    return admin_sifre_dogru('803580')
+
 
 def kriz_penceresi_kalan() -> int:
     """Kriz penceresinden kalan saniye (0 = pencere yok)."""
@@ -1298,8 +1375,10 @@ class LoginDialog(QDialog):
         
         if self.parent.validate_admin_password(password):
             logging.info("Password validated successfully")
-            # NEW: Immediately notify the server that the board is unlocked
-            self.parent.acknowledge_command("tahtaLock", "0")
+            # NOT: burada SEBEPSIZ ack ATILMAZ. Sunucu "yerel acilis" kaydini open_close
+            # 1->0 gecisinde yaziyor; sebepsiz ack once gidince gecis orada tuketiliyor,
+            # unlock_system'in sebepli ack'i "degisiklik yok" sayilip sebep KAYBOLUYORDU.
+            # Ack'i tek yerden, sebebiyle birlikte unlock_system gonderir.
             _y = getattr(self.parent, 'son_acilis_yontemi', 'Admin sifresi')
             self.parent.save_log("Admin şifre ile giriş yapıldı", "login")
             self.parent.unlock_system(f"{_y} ile acildi")
@@ -1481,12 +1560,8 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Şifre gerekli!")
             return
 
-        # Şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if password != config_password:
+        # Şifre doğrulama — PBKDF2 veya eski düz metin (bkz. admin_sifre_dogru)
+        if not admin_sifre_dogru(password):
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Şifre yanlış!")
             return
@@ -1530,13 +1605,28 @@ class BoardConfigWidget(QWidget):
                 else:
                     self.status_label.setStyleSheet("color: #ffaa00;")
                     self.status_label.setText("Uyarı: Bu kurum için tahta bulunamadı.")
-            elif not get_setting('enroll_secret', ''):
-                # Sik yapilan saha hatasi: kurulum medyasinda secret.txt yoktu.
-                self.status_label.setStyleSheet("color: #ff5555;")
-                self.status_label.setText("Hata: Kurulum sırrı yok. Tahta yeniden kurulmalı.")
             else:
+                # Teknisyen sahada ne yapacagini EKRANDAN gorsun: eskiden her sebep icin
+                # ayni cumle yaziliyordu ve hata ancak sunucu loglarindan bulunabiliyordu.
+                _h = getattr(self.network_client, 'son_enroll_hata', '')
+                if not get_setting('enroll_secret', '') and not get_setting('device_token', ''):
+                    _msg = "Hata: Kurulum dosyası eksik. Tahtanın yeniden kurulması gerekiyor."
+                elif _h == "401":
+                    _msg = "Hata: Kurulum kodu geçersiz (401). Kurulum medyası güncel değil."
+                elif _h == "403":
+                    _msg = "Hata: Bu tahta bu kuruma ait değil (403). Kurum kodunu kontrol edin."
+                elif _h == "500":
+                    _msg = "Hata: Sunucu yapılandırması eksik (500). Mebre'yi arayın."
+                elif _h == "404":
+                    _msg = "Hata: Sunucuda bu servis yok (404). Mebre'yi arayın."
+                elif _h == "ssl":
+                    _msg = "Hata: Güvenli bağlantı kurulamadı. Okul ağı engelliyor olabilir."
+                elif _h == "ag":
+                    _msg = "Hata: İnternet yok. Ağ bağlantısını kontrol edin."
+                else:
+                    _msg = "Hata: Sunucudan tahta listesi alınamadı."
                 self.status_label.setStyleSheet("color: #ff5555;")
-                self.status_label.setText("Hata: Sunucudan tahta listesi alınamadı.")
+                self.status_label.setText(_msg)
         except Exception as e:
             logging.error(f"[BoardConfig] fetch_boards failed: {e}")
             self.status_label.setStyleSheet("color: #ff5555;")
@@ -1699,13 +1789,9 @@ class ChangePasswordWidget(QWidget):
         self.current_field.setMinimumHeight(35)
         self.current_field.setFont(QFont("Arial", 12))
         
-        # Mevcut şifre gösterimi mantığı
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        
-        self._is_default_password = (config_password == '803580')
+        # Mevcut şifre gösterimi mantığı — hash'li saklamada şifre OKUNAMAZ,
+        # yalnızca "fabrika şifresi mi" sorusu cevaplanabilir.
+        self._is_default_password = admin_sifre_varsayilan_mi()
         
         if self._is_default_password:
             # Varsayılan şifre: göster ve readOnly yap (kullanıcı değiştirmesin)
@@ -1808,12 +1894,8 @@ class ChangePasswordWidget(QWidget):
             logging.warning("[ChangePassword] Empty fields detected")
             return
 
-        # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if current != config_password:
+        # Mevcut şifre doğrulama — PBKDF2 veya eski düz metin
+        if not admin_sifre_dogru(current):
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Mevcut şifre yanlış!")
             logging.warning("[ChangePassword] Wrong current password")
@@ -1840,7 +1922,9 @@ class ChangePasswordWidget(QWidget):
         # Update configuration
         config = configparser.ConfigParser()
         config.read(CONFIG_PATH)
-        config.set('settings', 'admin_password', new)
+        # Sifre ARTIK DUZ METIN SAKLANMIYOR (bkz. admin_sifre_uret).
+        new_saklanan = admin_sifre_uret(new)
+        config.set('settings', 'admin_password', new_saklanan)
         config.set('settings', 'password_changed', 'true')
 
         try:
@@ -1855,7 +1939,7 @@ class ChangePasswordWidget(QWidget):
                 sys_config.read(system_config_path)
                 if 'settings' not in sys_config:
                     sys_config.add_section('settings')
-                sys_config.set('settings', 'admin_password', new)
+                sys_config.set('settings', 'admin_password', new_saklanan)
                 sys_config.set('settings', 'password_changed', 'true')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
@@ -1870,7 +1954,7 @@ class ChangePasswordWidget(QWidget):
                 kiosk_config.read(kiosk_config_path)
                 if 'settings' not in kiosk_config:
                     kiosk_config.add_section('settings')
-                kiosk_config.set('settings', 'admin_password', new)
+                kiosk_config.set('settings', 'admin_password', new_saklanan)
                 kiosk_config.set('settings', 'password_changed', 'true')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
@@ -1879,7 +1963,7 @@ class ChangePasswordWidget(QWidget):
                 logging.warning(f"[ChangePassword] Could not update kiosk config: {e}")
 
             # Update current SETTINGS
-            SETTINGS['admin_password'] = new
+            SETTINGS['admin_password'] = new_saklanan
             SETTINGS['password_changed'] = 'true'
 
             # Log kaydet - parent üzerinden güvenli erişim
@@ -2427,12 +2511,19 @@ class NetworkClient:
         Sir config'e setup.sh tarafindan ENC'li yazilir (kurulum medyasindaki secret.txt'ten) ve
         enroll basarili olur olmaz silinir (bkz. BoardConfig._strip_enroll_secret)."""
         secret = get_setting('enroll_secret', '')
-        if not secret:
-            logging.error("enroll_secret config'te yok — kurulum medyasinda secret.txt eksik olabilir.")
+        # YENIDEN TANITMA: tanitim basarili olunca sir config'ten SILINIYOR. Tahta adini/sinifini
+        # degistirmek ya da baska bir tahta kaydina gecmek isteyen teknisyen bu yuzden duvara
+        # tosluyordu ("Kurulum sirri yok"). Sir yoksa mevcut cihaz token'i ile devam ediyoruz;
+        # sunucu token'i kabul eder ama YALNIZCA kendi okulu icin (bkz. checkDeviceToken).
+        token = get_setting('device_token', '') or None
+        if not secret and not token:
+            logging.error("Ne enroll_secret ne device_token var — kurulum medyasinda secret.txt eksik.")
             return None
 
+        self.son_enroll_hata = ""
         if not self.check_network():
             logging.warning("Network is unavailable. Aborting enroll request.")
+            self.son_enroll_hata = "ag"
             return None
 
         _k = "pardus2026!"
@@ -2440,35 +2531,74 @@ class NetworkClient:
         _agt = _dx("1106170a012c615d534455320e131611")
         headers = {
             "User-Agent": _agt,
-            "X-Enroll-Secret": secret,
             "X-Timestamp": str(int(time.time())),
         }
+        if secret:
+            headers["X-Enroll-Secret"] = secret
+        else:
+            headers["Authorization"] = f"Bearer {token}"
         _url = self._base_url() + "/" + endpoint
         try:
             response = requests.post(_url, headers=headers, json=data, timeout=timeout, verify=True)
             if response.status_code != 200:
                 logging.error(f"Enroll API Error: {response.status_code} @ {endpoint}")
+                self.son_enroll_hata = str(response.status_code)
                 return None
             return response
         except requests.exceptions.SSLError as e:
             logging.error(f"SSL Error during enroll request: {e}. MITM Protection active.")
+            self.son_enroll_hata = "ssl"
             return None
         except requests.RequestException as e:
             logging.error(f"Enroll request failed @ {endpoint}: {e}")
+            self.son_enroll_hata = "ag"
             return None
         finally:
-            # Sirri RAM'den dusur (§5 zero-footprint).
-            secret = headers = _k = _dx = _agt = _url = None
+            # Sir/token'i RAM'den dusur (§5 zero-footprint).
+            secret = token = headers = _k = _dx = _agt = _url = None
+
+    def duyuru_resmi_indir(self, url: str):
+        """Duyuru fotografini CIHAZ KIMLIGIYLE indirir; ham bayt doner, hata olursa None.
+
+        Uc: GET /client/akilli_tahta_cihaz/duyuru_resim/<id> (deviceAuth).
+        Adres /display icinde `resimUrl` olarak geliyor; anahtar tahtaya HIC verilmez,
+        sunucu duyuru id'sini tahtanin KENDI okuluyla dogruluyor.
+        """
+        if not url:
+            return None
+        headers = self._headers()
+        if "Authorization" not in headers:
+            return None
+        try:
+            r = requests.get(url, headers=headers, timeout=20, verify=True, stream=True)
+            if r.status_code != 200:
+                logging.warning(f"Duyuru resmi alinamadi ({r.status_code}): {url}")
+                return None
+            # Kotu niyetli/bozuk buyuk govde kilit ekranini bogmasin.
+            veri = r.raw.read(DUYURU_RESIM_MAX_BAYT + 1, decode_content=True)
+            if veri is None:
+                return None
+            if len(veri) > DUYURU_RESIM_MAX_BAYT:
+                logging.warning("Duyuru resmi cok buyuk, atlandi.")
+                return None
+            return veri
+        except Exception as e:
+            logging.warning(f"Duyuru resmi indirilemedi: {e}")
+            return None
+        finally:
+            headers = None
 
     def list_boards(self, corporate_code):
-        """Kurulumda kurumun tahta listesi (v5 /boards, X-Enroll-Secret). [{boardId, name, aktif}] doner."""
+        """Kurumun tahta listesi (v5 /boards). Ilk kurulumda X-Enroll-Secret, yeniden
+        tanitmada mevcut cihaz token'i ile. [{boardId, name, aktif}] doner."""
         result = self._result(self._enroll_request("boards", {"corporateCode": str(corporate_code)}))
         if result is None:
             return None
         return result.get("boards")
 
     def enroll(self, corporate_code, board_id, board_name):
-        """Cihaz token'i uret (v5 /enroll, X-Enroll-Secret). Token YALNIZCA bir kez doner."""
+        """Cihaz token'i uret (v5 /enroll). Ilk kurulumda X-Enroll-Secret, yeniden tanitmada
+        mevcut token ile (yalnizca kendi okulu). Token YALNIZCA bir kez doner."""
         result = self._result(self._enroll_request("enroll", {
             "corporateCode": str(corporate_code),
             "boardId": int(board_id),
@@ -2858,6 +2988,9 @@ QLabel#duyuruDots {
 # slider'i devralir. Tenefusler 5 dk kadar kisa olabildigi icin dusuk tutuldu (kullanici karari).
 DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
+DUYURU_MAX_NOKTA = 12
+DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
+DUYURU_RESIM_MAX_YUKSEKLIK = 300          # panelde resme ayrilan azami yukseklik            # bunun ustunde nokta yerine '3 / 27' sayaci
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -2990,6 +3123,10 @@ class FatihClientApp(QWidget):
     # /display verisi arka plan thread'inden UI thread'ine (tum sonuc sozlugu ya da None).
     # Icinden hem aferinTop5 (Feature 5) hem dogumGunleri (Feature 1) beslenir.
     _display_ready = pyqtSignal(object)
+
+    # Duyuru fotografi arka planda inince UI thread'e tasinir.
+    # QPixmap YALNIZCA UI thread'inde uretilebilir; thread ham bayt yollar.
+    _duyuru_resim_geldi = pyqtSignal(int, object)
 
     # /sinav_oturma verisi arka plan thread'inden UI thread'ine (result dict ya da None).
     _exam_ready = pyqtSignal(object)
@@ -3283,6 +3420,7 @@ class FatihClientApp(QWidget):
         self.duyuru_gonderen.setObjectName("duyuruGonderen")
         self.duyuru_gonderen.setAlignment(Qt.AlignCenter)
         self.duyuru_gonderen.setWordWrap(True)
+        self.duyuru_gonderen.setTextFormat(Qt.PlainText)   # gonderen adi da duz metin
         _dy_lay.addWidget(self.duyuru_gonderen)
 
         _dy_rule = QFrame(self.duyuru_panel)
@@ -3296,6 +3434,11 @@ class FatihClientApp(QWidget):
         self.duyuru_baslik.setObjectName("duyuruBaslik")
         self.duyuru_baslik.setAlignment(Qt.AlignCenter)
         self.duyuru_baslik.setWordWrap(True)  # uzun başlık dar kartta kesilmesin
+        # GUVENLIK: QLabel varsayilani Qt.AutoText -> gelen metin HTML'e benziyorsa
+        # ZENGIN METIN olarak islenir. Duyuru yazabilen biri <b>/<a>/<img src="http://...">
+        # gonderip tahtanin ekranini bicimlendirebilir, hatta disari istek attirabilirdi.
+        # Duyuru metni her zaman DUZ METIN. (Sunucu da etiketleri temizliyor; iki katman.)
+        self.duyuru_baslik.setTextFormat(Qt.PlainText)
         _dy_lay.addWidget(self.duyuru_baslik)
 
         _dy_lay.addSpacing(10)
@@ -3303,7 +3446,16 @@ class FatihClientApp(QWidget):
         self.duyuru_mesaj.setObjectName("duyuruMesaj")
         self.duyuru_mesaj.setAlignment(Qt.AlignCenter)
         self.duyuru_mesaj.setWordWrap(True)
+        self.duyuru_mesaj.setTextFormat(Qt.PlainText)   # bkz. duyuru_baslik — HTML calistirilmaz
         _dy_lay.addWidget(self.duyuru_mesaj)
+
+        # Duyuru fotografi (opsiyonel). Idare/ogretmen masaustunden resim eklerse
+        # burada gosterilir; resmi olmayan duyuruda etiket gizli kalir.
+        self.duyuru_resim = QLabel("", self.duyuru_panel)
+        self.duyuru_resim.setObjectName("duyuruResim")
+        self.duyuru_resim.setAlignment(Qt.AlignCenter)
+        self.duyuru_resim.hide()
+        _dy_lay.addWidget(self.duyuru_resim)
 
         _dy_lay.addSpacing(18)
         # Slayt noktaları (birden fazla duyuru varsa) — ortalı.
@@ -4104,6 +4256,12 @@ class FatihClientApp(QWidget):
 
         self.duyuru_slide_timer = QTimer(self)
         self.duyuru_slide_timer.timeout.connect(self._advance_duyuru_slide)
+
+        # id -> QPixmap (basarili) | False (denendi, olmadi) | yok (henuz denenmedi)
+        # Slayt 8 saniyede bir donuyor; onbellek olmadan ayni resim tekrar tekrar
+        # indirilir ve okul agi bosuna mesgul edilirdi.
+        self._duyuru_resim_onbellek = {}
+        self._duyuru_resim_geldi.connect(self._on_duyuru_resim_geldi)
         # start/stop _update_duyuru_state içinde yönetilir (yalnız >1 duyuru varken çalışır).
 
     # ----------------------------------------------------------------------------
@@ -4593,6 +4751,39 @@ class FatihClientApp(QWidget):
             return 14
         return 13
 
+    def _duyuru_resmi_iste(self, duyuru_id: int, url: str):
+        """Fotografi ARKA PLANDA indirir. UI asla beklemez; gelince slayt yenilenir."""
+        if not url or duyuru_id in self._duyuru_resim_onbellek:
+            return
+        # None = "indiriliyor" isareti; ayni resim icin ikinci istek acilmasin.
+        self._duyuru_resim_onbellek[duyuru_id] = None
+
+        def _indir():
+            veri = self.network_client.duyuru_resmi_indir(url) if self.network_client else None
+            self._duyuru_resim_geldi.emit(duyuru_id, veri)
+
+        threading.Thread(target=_indir, daemon=True).start()
+
+    def _on_duyuru_resim_geldi(self, duyuru_id: int, veri):
+        """UI thread: ham bayttan QPixmap uretir, onbellege koyar, slaydi tazeler."""
+        pix = False
+        if veri:
+            try:
+                aday = QPixmap()
+                if aday.loadFromData(veri) and not aday.isNull():
+                    pix = aday
+            except Exception as e:
+                logging.warning(f"Duyuru resmi cozulemedi: {e}")
+        self._duyuru_resim_onbellek[duyuru_id] = pix
+
+        # Ekranda o duyuru duruyorsa hemen ciz.
+        try:
+            if self._duyuru_active and self._duyuru_index < len(self._duyuru_active):
+                if int(self._duyuru_active[self._duyuru_index].get('id', 0) or 0) == duyuru_id:
+                    self._render_duyuru_slide()
+        except Exception:
+            pass
+
     def _render_duyuru_slide(self):
         """Geçerli slaytı (başlık/mesaj/gönderen/noktalar) çizer ve paneli konumlandırır."""
         if not self._duyuru_active:
@@ -4614,13 +4805,42 @@ class FatihClientApp(QWidget):
         self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
         self.duyuru_mesaj.setText(mesaj)
 
+        # --- Fotograf (varsa) ---
+        _did = int(item.get('id', 0) or 0)
+        _rurl = str(item.get('resimUrl', '') or '').strip()
+        _pix = self._duyuru_resim_onbellek.get(_did) if _rurl else None
+        if _rurl and _did not in self._duyuru_resim_onbellek:
+            self._duyuru_resmi_iste(_did, _rurl)
+
+        if _rurl and isinstance(_pix, QPixmap) and not _pix.isNull():
+            # Panele sigacak sekilde olcekle; en-boy orani korunur.
+            _gen = max(200, self.duyuru_panel.width() - 72)
+            # Yukseklik EKRANA GORE sinirlanir: panel ekrandan uzun olursa
+            # _position_center_panel negatif y veriyor ve kart ustten/alttan kirpiliyor.
+            # Dusuk cozunurluklu tahtada resim kucuk kalir ama metin okunur kalir.
+            _maks_h = max(120, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.22)))
+            _olcekli = _pix.scaled(_gen, _maks_h,
+                                   Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.duyuru_resim.setPixmap(_olcekli)
+            self.duyuru_resim.show()
+        else:
+            # Resmi yok, henuz inmedi ya da indirilemedi -> duyuru metin olarak devam eder.
+            self.duyuru_resim.clear()
+            self.duyuru_resim.hide()
+
         gonderen = str(item.get('gonderenAd', '') or '').strip()
         self.duyuru_gonderen.setText(f"— {gonderen}" if gonderen else "")
         self.duyuru_gonderen.setVisible(bool(gonderen))
 
         if n > 1:
-            self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
-                                                 for i in range(n)))
+            # Nokta sayisi SINIRLI: sunucu gunde 50 duyuruya kadar gonderebiliyor ve
+            # 50 nokta tek satira sigmiyordu (panel en fazla 920px). Cok duyuruda
+            # noktalar yerine sayac gosterilir.
+            if n <= DUYURU_MAX_NOKTA:
+                self.duyuru_dots.setText("   ".join("●" if i == self._duyuru_index else "○"
+                                                     for i in range(n)))
+            else:
+                self.duyuru_dots.setText(f"{self._duyuru_index + 1} / {n}")
             self.duyuru_dots.show()
         else:
             self.duyuru_dots.setText("")
@@ -5167,8 +5387,15 @@ class FatihClientApp(QWidget):
                 self.network_status_signal.emit(has_connection)
                 
                 if not has_connection:
-                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa)
-                    if not self.is_locked and not check_usb_password():
+                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa).
+                    # KRIZ PENCERESI ISTISNA: kriz kodu tam da "sunucu/internet yok" diye
+                    # giriliyor. Burada kriz kontrolu olmayinca ilk basarisiz poll tahtayi
+                    # tekrar kilitliyor ve 24 saatlik pencere hicbir ise yaramiyordu.
+                    _kriz = kriz_penceresi_kalan()
+                    if _kriz > 0:
+                        logging.warning(
+                            f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
+                    elif not self.is_locked and not check_usb_password():
                         logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
                         QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
                         
@@ -5511,6 +5738,22 @@ class FatihClientApp(QWidget):
 
         threading.Thread(target=send_ack, daemon=True).start()
 
+    def _kaldirma_kaniti(self) -> str:
+        """Uzaktan kaldirma yetki kaniti: sha256(device_token + REMOVE_SALT).
+
+        uninstall.sh ile BIREBIR ayni formul; ikisi birlikte degismeli.
+        Tuz betikte duruyor ve betik root:700 oldugu icin etapadmin okuyamaz.
+        Token cihaza ozeldir -> bir tahtadan sizan kanit baska tahtayi kaldiramaz.
+        """
+        try:
+            token = get_setting('device_token', '') or ''
+            if not token:
+                return ''
+            return hashlib.sha256((token + "mebre-remove-v1").encode('utf-8')).hexdigest()
+        except Exception as e:
+            logging.error(f"Kaldirma kaniti uretilemedi: {e}")
+            return ''
+
     def remove_system(self):
         """Uzaktan kaldirma (ynt5 -> system_Remove=1).
 
@@ -5536,13 +5779,27 @@ class FatihClientApp(QWidget):
         try:
             # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
             # biz olsek de temizlik sonuna kadar devam etsin.
-            _subprocess.Popen(
-                ["sudo", "-n", uninstaller, "--force"],
+            # YETKI ARTIK ARGUMANLA DEGIL, STDIN'DEN GIDIYOR (3 Agustos 2026).
+            # Eskiden `--force` yolluyorduk ve sudoers argumani kisitlamadigi icin
+            # tahtada terminale erisen HERKES ayni komutu yazip kilit sistemini
+            # kaldirabiliyordu. Artik sudoers yalnizca argumansiz cagriya izin veriyor;
+            # kaldirma betigi yetkiyi stdin'deki kanittan dogruluyor.
+            _kanit = self._kaldirma_kaniti()
+            _p = _subprocess.Popen(
+                ["sudo", "-n", uninstaller],
+                stdin=_subprocess.PIPE,
                 start_new_session=True,
                 stdout=_subprocess.DEVNULL,
                 stderr=_subprocess.DEVNULL,
             )
-            logging.info("sudo fatih-uninstall --force started (detached). Exiting.")
+            try:
+                _p.stdin.write((_kanit + "\n").encode("utf-8"))
+                _p.stdin.flush()
+                _p.stdin.close()
+            except Exception:
+                pass
+            _kanit = None
+            logging.info("sudo fatih-uninstall (kanit stdin) started (detached). Exiting.")
             QApplication.quit()
             return
         except Exception as e:
@@ -5712,7 +5969,7 @@ class FatihClientApp(QWidget):
             self.login_panel.hide()
             # C# stms=true'ya dönüş (başarılı giriş)
             self.start_work = True
-            self.acknowledge_command("tahtaLock", "0")
+            # Sebepsiz ack YOK — bkz. attempt_login'deki aciklama; sebep unlock_system'de gider.
             _y = getattr(self, 'son_acilis_yontemi', 'Admin sifresi')
             self.save_log("Admin şifre ile giriş yapıldı", "login")
             self.unlock_system(f"{_y} ile acildi")
@@ -5757,12 +6014,8 @@ class FatihClientApp(QWidget):
             logging.warning(f"Şifre denemesi kilitli, {rem} sn kaldı.")
             return False
 
-        # Önce config'deki admin şifresi ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if password == config_password:
+        # Önce config'deki admin şifresi ile kontrol et (PBKDF2 veya eski düz metin)
+        if admin_sifre_dogru(password):
             logging.info("Password validated via config admin_password")
             self.son_acilis_yontemi = "Admin sifresi"
             offline_register_success()

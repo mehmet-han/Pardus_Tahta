@@ -13,6 +13,144 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Proje dizinine EN BASTA gec: kurulum dosyasi "setup.sh'in yanindaki" dosyadir, calistirildigi
+# dizindeki degil. Eskiden bu cd [2/7]'de yapiliyordu; baska bir klasorden calistirilinca
+# dosya bulunamiyordu.
+cd "$(dirname "$0")" || { echo "❌ HATA: Kurulum klasörüne geçilemedi."; exit 1; }
+
+# --- KURULUM DOGRULAMA KODU (3 Agustos 2026: dosya adi degisti) ---
+# Kod artik `Readme.txt` icinde, kurulum talimatlarinin arasinda gomulu duruyor.
+# NEDEN: dosya adi `secret.txt` iken USB'yi eline alan herkesin ilk actigi dosya oluyordu —
+# tahtalari kuran yalnizca biz degiliz (diger firmalar ve ogretmenler de kuruyor).
+# Bu bir GIZLEME onlemidir, sifreleme DEGILDIR; dosyayi acan yine gorur.
+#
+# Kod, dosyadaki ILK 64 haneli onaltilik dizidir — ozel bir etiket aranmaz ki
+# "sir burada" diye isaret vermesin.
+#
+# ESKI USB'LER: `secret.txt` de kabul edilmeye devam eder (sahadaki medyalar bir
+# gecede degismiyor). Once Readme.txt, yoksa secret.txt bakilir.
+
+kurulum_kodu_oku() {
+    local dosya
+    for dosya in "./Readme.txt" "./readme.txt" "./secret.txt"; do
+        if [ -f "$dosya" ]; then
+            local kod
+            kod=$(grep -oE '[0-9a-fA-F]{64}' "$dosya" 2>/dev/null | head -n 1)
+            if [ -n "$kod" ]; then
+                printf '%s' "$kod"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+_KURULUM_KODU=$(kurulum_kodu_oku)
+_ONCEKI_TOKEN=$(sed -nr 's/^device_token[[:space:]]*=[[:space:]]*(.*)$/\1/p' /home/etapadmin/.config/fatih-client/config.ini 2>/dev/null)
+
+if [ -n "$_KURULUM_KODU" ]; then
+    echo "  ✅ Kurulum dosyası doğrulandı."
+elif [ -n "$_ONCEKI_TOKEN" ]; then
+    echo "  ℹ Kurulum dosyası yok ama tahta zaten tanıtılmış — mevcut kimlik korunacak."
+else
+    # INTERNETTEN KURULUM: git klonunda Readme.txt YOKTUR (.gitignore). Kurulumlarin
+    # ~%90'i internetten yapildigi icin dosyayi sart kosmak bu yolu tamamen kapatirdi.
+    # Bu yuzden once ELLE GIRIS istenir; bos birakilirsa kurulum durur.
+    echo ""
+    echo "  ℹ Kurulum dosyası bulunamadı (internetten kurulumda normaldir)."
+    echo "    Mebre'den aldığınız 64 haneli kurulum kodunu girin."
+    echo "    Boş bırakırsanız kurulum durur."
+    read -p "  Kurulum kodu: " _ELLE_KOD
+    _ELLE_KOD=$(printf '%s' "$_ELLE_KOD" | tr -d '[:space:]')
+
+    case "$_ELLE_KOD" in
+        *[!0-9a-fA-F]*|"")
+            _ELLE_KOD=""
+            ;;
+        *)
+            if [ ${#_ELLE_KOD} -ne 64 ]; then
+                echo "  ⚠ Kod 64 hane olmalı — girilen: ${#_ELLE_KOD} hane."
+                _ELLE_KOD=""
+            fi
+            ;;
+    esac
+
+    if [ -n "$_ELLE_KOD" ]; then
+        _KURULUM_KODU="$_ELLE_KOD"
+        _ELLE_KOD=""
+        echo "  ✅ Kurulum kodu alındı."
+    else
+
+    echo ""
+    echo "========================================================="
+    echo "❌ KURULUM DURDURULDU: Kurulum kodu girilmedi."
+    echo "========================================================="
+    echo "Bu tahta daha önce tanıtılmamış, bu haliyle kurulursa TANITILAMAZ."
+    echo ""
+    echo "Yapılması gereken:"
+    echo "  1) 'Readme.txt' dosyasını setup.sh ile AYNI klasöre koyun:"
+    echo "     $(pwd)/Readme.txt"
+    echo "  2) Kurulumu tekrar başlatın: sudo ./setup.sh"
+    echo ""
+    echo "Dosya kurulum USB'sindedir. Yoksa Mebre'den isteyin."
+    echo "(Git deposundan kurulum yapıyorsanız bu dosya orada BULUNMAZ.)"
+    echo "========================================================="
+    exit 1
+    fi
+fi
+
+# --- ON KONTROLLER (3 Agustos 2026: kurulum sahada cok takiliyordu) ---
+# Amac: 5 dakikalik agir isten SONRA patlamak yerine, eksigi BASTA soylemek.
+echo "[0/7] Ön kontroller..."
+
+_EKSIK=""
+for _d in "fatih_projesi_python/client/client.py" "compile_client.py" "uninstall.sh"; do
+    [ -f "$_d" ] || _EKSIK="$_EKSIK $_d"
+done
+if [ -n "$_EKSIK" ]; then
+    echo "❌ KURULUM DURDURULDU: kurulum dosyaları eksik:$_EKSIK"
+    echo "   USB'yi olduğu gibi kullanın, dosyaları tek tek kopyalamayın."
+    exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ KURULUM DURDURULDU: python3 bulunamadı."
+    exit 1
+fi
+
+# Disk alani (en az 500 MB)
+_BOS_MB=$(df -Pm /opt 2>/dev/null | awk 'NR==2{print $4}')
+if [ -n "$_BOS_MB" ] && [ "$_BOS_MB" -lt 500 ]; then
+    echo "❌ KURULUM DURDURULDU: /opt bölümünde yalnızca ${_BOS_MB} MB boş yer var (en az 500 MB gerekli)."
+    exit 1
+fi
+
+# Internet: derleme icin paket indirmek gerekebilir, tanitim icin de sart
+if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+    _NET=1
+else
+    _NET=0
+    echo "  ⚠ İnternet yok. Hazır derlenmiş dosya varsa kurulum devam eder,"
+    echo "    ancak tahta tanıtımı için internet GEREKLİ."
+fi
+
+# KURUM KODU EN BASTA soruluyor: eskiden [4/7]'de soruluyordu, yani teknisyen
+# yanlis yazarsa ya da vazgecerse 5 dakikalik derleme cope gidiyordu.
+echo ""
+read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
+if [ -z "$CORPORATE_CODE" ]; then
+    echo "❌ KURULUM DURDURULDU: kurum kodu boş olamaz."
+    exit 1
+fi
+case "$CORPORATE_CODE" in
+    *[!0-9]*)
+        echo "❌ KURULUM DURDURULDU: kurum kodu yalnızca rakam olmalı ('$CORPORATE_CODE' girildi)."
+        exit 1
+        ;;
+esac
+echo "  ✅ Kurum kodu: $CORPORATE_CODE"
+echo ""
+
 echo "[1/7] Gerekli paketler yükleniyor..."
 apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
 # Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
@@ -20,27 +158,61 @@ apt-get install -y python3-pip python3-pyqt5 python3-dev gcc python3-setuptools 
 pip3 install Cython==3.0.11 setuptools evdev --break-system-packages || pip3 install Cython==3.0.11 setuptools evdev
 
 echo "[2/7] Python kodları şifreleniyor (Obfuscation)..."
-# Ana projenin olduğu dizine geç
-cd "$(dirname "$0")"
+# NOT: proje dizinine gecis scriptin EN BASINDA yapildi (on kontrol secret.txt'e bakiyor).
 
 # Git'ten en son sürümü çek (Eğer çalıştırılan dizin git reposu ise)
+# NOT: eskiden KOSULSUZ `git pull origin main` yapiliyordu. Tahta kodu `v6` dalinda;
+# v6 klonundan kurulum yapan teknisyende bu, main'i v6 uzerine cekmeye calisip
+# ya catisma cikariyor ya da YANLIS SURUMU kuruyordu. Artik bulunulan dal cekilir
+# ve basarisizlik sessizce yutulmaz.
 if [ -d ".git" ]; then
-    echo "Git reposu algılandı, güncellemeler çekiliyor..."
-    git pull origin main || echo "Uyarı: git pull başarısız, yerel dosyalarla devam edilecek."
+    _DAL=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -n "$_DAL" ] && [ "$_DAL" != "HEAD" ]; then
+        echo "Git reposu algılandı (dal: $_DAL), güncellemeler çekiliyor..."
+        git pull origin "$_DAL" || echo "  ⚠ git pull başarısız — YEREL dosyalarla devam ediliyor."
+    fi
 fi
 
-# Eski derlemeleri kök dizinde ve client klasöründe tamamen temizle
-rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
+# --- HAZIR DERLENMIS DOSYA VARSA DERLEME YAPILMAZ ---
+# Kurulum sahada en cok BURADA takiliyordu: derleme icin apt deposu + internet +
+# gcc + python3-dev + Cython indirmesi gerekiyor, okul agi bunlardan birini
+# engelleyince kurulum ortada kaliyordu. Ayrica zayif tahta islemcisinde dakikalar suruyor.
+# Pakette tahtanin Python surumune uyan hazir .so varsa dogrudan kullanilir.
+_PYTAG=$(python3 -c "import sys; print('cpython-%d%d' % sys.version_info[:2])" 2>/dev/null)
+COMPILED_FILE=""
 
-# Cython ile client.py'yi C uzantısına (.so) derle
-python3 compile_client.py build_ext --inplace
+if [ -n "$_PYTAG" ]; then
+    for _hazir in hazir/client*.so fatih_projesi_python/client/client*.so; do
+        case "$_hazir" in
+            *"$_PYTAG"*)
+                [ -f "$_hazir" ] && COMPILED_FILE="$_hazir" && break
+                ;;
+        esac
+    done
+fi
 
-# Derlenen .so dosyasını bul (önceki adımda eski .so dosyaları zaten silindiği için güvenlidir)
-COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+if [ -n "$COMPILED_FILE" ]; then
+    echo "  ✅ Hazır derlenmiş dosya bulundu ($COMPILED_FILE) — derleme atlanıyor."
+else
+    echo "  ℹ Hazır dosya yok, tahtada derlenecek (internet ve derleyici gerekir)."
 
-if [ -z "$COMPILED_FILE" ]; then
-    echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
-    exit 1
+    # Eski derlemeleri temizle
+    rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
+
+    if ! command -v gcc >/dev/null 2>&1; then
+        echo "❌ KURULUM DURDURULDU: gcc yok ve hazır derlenmiş dosya da yok."
+        echo "   İnternet bağlayıp tekrar deneyin ya da hazır paketi isteyin."
+        exit 1
+    fi
+
+    python3 compile_client.py build_ext --inplace
+    COMPILED_FILE=$(find . -name "client*.so" -print -quit)
+
+    if [ -z "$COMPILED_FILE" ]; then
+        echo "❌ HATA: Kod şifreleme başarısız oldu! .so dosyası bulunamadı."
+        echo "   En sık sebep: python3-dev / gcc / Cython kurulamamış (internet yok)."
+        exit 1
+    fi
 fi
 
 echo "✅ Kodlar başarıyla şifrelendi (.so oluşturuldu: $COMPILED_FILE)."
@@ -92,7 +264,11 @@ chmod 700 /usr/local/bin/fatih-uninstall
 # Bedeli kabul edildi: tahtada terminale erisebilen biri kaldirmayi tetikleyebilir —
 # asil koruma kiosk'un terminali kapatmasi.
 _SUDOERS_FILE="/etc/sudoers.d/fatih-client"
-echo "etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall" > "$_SUDOERS_FILE"
+# ARGUMANSIZ bicim (""): `sudo fatih-uninstall --force` REDDEDILIR.
+# Eski kural argumani serbest birakiyordu, --force ise sifreyi atliyordu;
+# tahtada terminale erisen herkes kilit sistemini kaldirabiliyordu.
+# Uzaktan kaldirma artik stdin uzerinden kanit yolluyor (bkz. uninstall.sh).
+printf '%s\n' 'etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall ""' > "$_SUDOERS_FILE"
 chmod 440 "$_SUDOERS_FILE"
 chown root:root "$_SUDOERS_FILE"
 # Bozuk bir sudoers dosyasi TUM sudo'yu kilitler -> dogrula, gecersizse geri al.
@@ -104,11 +280,15 @@ else
 fi
 
 # İzinleri ayarla
-chmod -R 755 "$INSTALL_DIR"
-chown -R root:root "$INSTALL_DIR"
+# 755 idi: TUM kullanicilar (ogretmen, ogrenci) derlenmis .so dosyasini okuyup
+# kopyalayabiliyordu. 750 + root:etapadmin -> yalnizca tahtayi calistiran
+# hesap ve root erisir.
+chown -R root:etapadmin "$INSTALL_DIR"
+chmod -R 750 "$INSTALL_DIR"
 
 echo "[4/7] Kurum Kodu (Corporate Code) ayarlanıyor..."
-read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
+# Kurum kodu ON KONTROLDE alindi (agir isten once) — burada tekrar sorulmaz.
+echo "  → Kurum kodu: $CORPORATE_CODE"
 
 # Eski ayarları korumak için yapılandırma dosyasını oku
 EXISTING_CONFIG="/home/etapadmin/.config/fatih-client/config.ini"
@@ -133,24 +313,16 @@ if [ -f "$EXISTING_CONFIG" ]; then
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
 fi
 
-# --- v6: Enroll sirri (kurulum medyasindaki secret.txt) ---
-# Sir teknisyene GOSTERILMEZ ve elle yazilmaz: setup.sh yanindaki secret.txt'ten okunur,
+# --- v6: Kurulum dogrulama kodu config'e gomulur ---
+# Kod teknisyene GOSTERILMEZ ve elle yazilmaz: Readme.txt'ten okunur (on kontrolde),
 # config'e ENC'li gomulur ve tahta tanitilir tanitilmaz istemci tarafindan SILINIR.
-# NOT: secret.txt USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
+# NOT: dosya USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
 ENROLL_SECRET_ENC=""
-if [ -f "./secret.txt" ]; then
-    _SECRET=$(tr -d ' \t\n\r' < ./secret.txt)
-    if [ -n "$_SECRET" ]; then
-        ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_SECRET" | base64 -w0)"
-        echo "  ✅ Kurulum sırrı okundu ve yapılandırmaya gömüldü."
-    else
-        echo "  ⚠ secret.txt boş! Tahta tanıtılamaz."
-    fi
-    _SECRET=""
-elif [ -z "$DEVICE_TOKEN" ]; then
-    echo "  ⚠ UYARI: secret.txt bulunamadı ve tahta daha önce tanıtılmamış."
-    echo "     Tahta kilitli açılır. secret.txt'i setup.sh'ın yanına koyup tekrar kurun."
+if [ -n "$_KURULUM_KODU" ]; then
+    ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_KURULUM_KODU" | base64 -w0)"
+    echo "  ✅ Kurulum kodu yapılandırmaya gömüldü."
 fi
+_KURULUM_KODU=""
 
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
 # Tamamen Fatih Client'in içinde XOR şifresiyle çalışma zamanında deşifre edilecek.
@@ -161,6 +333,33 @@ fi
 _PKG_VERSION=$(tr -d ' \t\n\r' < fatih_projesi_python/client/version.txt 2>/dev/null)
 [ -z "$_PKG_VERSION" ] && _PKG_VERSION="V6.00.00"
 echo "  → Kurulan sürüm: $_PKG_VERSION"
+
+# --- Admin sifresi ARTIK DUZ METIN SAKLANMIYOR (3 Agustos 2026 incelemesi) ---
+# Eskiden config.ini'de duz metindi. Kullanici config'i etapadmin'e ait (600) ama tahta
+# zaten etapadmin olarak otomatik giris yapiyor -> tahta acikken terminale ulasan biri
+# tek `cat` ile sifreyi okuyup tahtayi istedigi zaman acabiliyordu.
+# Burada PBKDF2'ye cevriliyor; boylece GUNCELLENEN eski tahtalar da korunmus oluyor.
+# Zaten hash'liyse dokunulmaz (cift hash olmasin).
+case "$ADMIN_PASSWORD" in
+    PBKDF2:*)
+        echo "  ℹ Admin şifresi zaten korumalı biçimde."
+        ;;
+    *)
+        _HASHLI=$(python3 -c "
+import hashlib, os, sys
+p = sys.argv[1] if len(sys.argv) > 1 else '803580'
+t = os.urandom(16)
+print('PBKDF2:%s:%s' % (t.hex(), hashlib.pbkdf2_hmac('sha256', p.encode(), t, 200000).hex()))
+" "$ADMIN_PASSWORD" 2>/dev/null)
+        if [ -n "$_HASHLI" ]; then
+            ADMIN_PASSWORD="$_HASHLI"
+            echo "  ✅ Admin şifresi korumalı biçime çevrildi (düz metin saklanmıyor)."
+        else
+            echo "  ⚠ Şifre dönüştürülemedi, eski biçimde bırakıldı."
+        fi
+        _HASHLI=""
+        ;;
+esac
 
 # Config dosyasını oluştur (Sadece yetkisiz kurum ve tahta bilgisi, parola saklaması BİTTİ)
 cat <<EOF > "$INSTALL_DIR/config.ini"
@@ -228,18 +427,23 @@ rm -f "$INSTALL_DIR/client.py" 2>/dev/null
 echo "✅ Kaynak Python kodu temizlendi (sadece derlenmiş .so mevcut)."
 
 # --- Pardus Kullanıcı Şifrelerini Kaldır ---
-echo "Kullanıcı şifreleri kaldırılıyor (Fatih kilit ekranı aktif)..."
+# ogretmen/ogrenci: `passwd -d` (SIFREYI SIL) yerine `passwd -l` (HESABI KILITLE).
+# -d bos sifre birakiyordu; Debian/Pardus varsayilan PAM'i nullok tasidigi icin bu
+# hesaplara TTY'den BOS SIFREYLE giris yapilabiliyordu. -l ile sifreli giris tamamen kapanir.
+# etapadmin BILEREK dokunulmadi: lightdm otomatik girisi o hesapla yapiliyor, kilitlemek
+# tahtayi aciimaz hale getirebilir (bkz. inceleme notu - acik madde).
+echo "Kullanıcı hesapları kilitleniyor (Fatih kilit ekranı aktif)..."
 
 if id "etapadmin" &>/dev/null; then
     passwd -d etapadmin 2>/dev/null && echo "  ✅ etapadmin şifresi kaldırıldı" || echo "  ⚠ etapadmin şifresi kaldırılamadı"
 fi
 
 if id "ogretmen" &>/dev/null; then
-    passwd -d ogretmen 2>/dev/null && echo "  ✅ ogretmen şifresi kaldırıldı" || echo "  ⚠ ogretmen şifresi kaldırılamadı"
+    passwd -l ogretmen 2>/dev/null && echo "  ✅ ogretmen hesabı kilitlendi" || echo "  ⚠ ogretmen hesabı kilitlenemedi"
 fi
 
 if id "ogrenci" &>/dev/null; then
-    passwd -d ogrenci 2>/dev/null && echo "  ✅ ogrenci şifresi kaldırıldı" || echo "  ⚠ ogrenci şifresi kaldırılamadı"
+    passwd -l ogrenci 2>/dev/null && echo "  ✅ ogrenci hesabı kilitlendi" || echo "  ⚠ ogrenci hesabı kilitlenemedi"
 fi
 
 # --- LightDM Otomatik Giriş Ayarı ---
@@ -270,6 +474,20 @@ echo "  ✅ Cinnamon ekran kilidi devre dışı bırakıldı"
 echo "========================================================="
 echo "✅ KURULUM TAMAMLANDI!"
 echo "Sistem başarıyla kuruldu ve kodlar şifrelendi."
+echo "---------------------------------------------------------"
+echo "Kurulan sürüm : $_PKG_VERSION"
+echo "Kurum kodu    : ${CORPORATE_CODE:-(girilmedi)}"
+# Teknisyen sahadan ayrilmadan once tahtanin tanitilabilir olup olmadigini GORSUN.
+if [ -n "$DEVICE_TOKEN" ]; then
+    echo "Tahta kimliği : ✅ Zaten tanıtılmış (mevcut kimlik korundu)"
+elif [ -n "$ENROLL_SECRET_ENC" ]; then
+    echo "Tahta kimliği : ⏳ Tanıtılmadı — kurulum kodu gömüldü."
+    echo "                Yeniden başlattıktan sonra ekrandan kurum kodunu girip"
+    echo "                'Tahtaları Getir' ile tahtayı seçin."
+else
+    echo "Tahta kimliği : ❌ Kurulum kodu yok — tahta tanıtılamaz! (bu satırı görmemeniz gerekir)"
+fi
+echo "---------------------------------------------------------"
 echo "Tahtayı test etmek için yeniden başlatmanız önerilir."
 echo "Komut: sudo reboot"
 echo "========================================================="
