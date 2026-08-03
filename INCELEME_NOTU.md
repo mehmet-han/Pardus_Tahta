@@ -6,6 +6,60 @@
 
 ---
 
+## Sıfırdan başlayan biri için: bu proje nedir
+
+**Mebre**, Türkiye'de okullara okul yönetim yazılımı satan bir firma. Bu depo,
+onun ürünlerinden yalnızca birine ait: **sınıflardaki akıllı tahtalara kurulan
+kilit programı**.
+
+Akıllı tahta, sınıfın önünde duran dokunmatik bir bilgisayar (Pardus Linux).
+Sorun şu: ders dışında öğrenciler tahtayla oynuyor, ayar bozuyor, oyun açıyor.
+Bu program tahtayı ders dışında **kilitliyor** — ekranı tam kaplayan bir pencere
+açıyor, klavyeyi devre dışı bırakıyor. Öğretmen derse girince kendi telefonundan
+(MebreCep) veya tahtadaki şifreyle açıyor; ders bitince tahta kendiliğinden
+tekrar kilitleniyor.
+
+Kilit ekranı boş durmasın diye üzerinde okulun günlük bilgileri gösteriliyor:
+o gün doğum günü olan öğrenciler, en çok "aferin" alan ilk 5 öğrenci, o gün
+okula gelmeyenler, öğretmenin gönderdiği duyurular ve sınav saatinde oturma düzeni.
+
+### Ekosistem — hangi parça ne
+
+| Parça | Ne | Kim kullanır |
+|---|---|---|
+| **Bu depo** (`Pardus_Tahta`, dal `v6`) | Tahtaya kurulan Python/PyQt5 istemcisi | Tahtanın kendisi |
+| **v5** (`apiv5.mebre.com.tr`) | Node.js + MySQL sunucu. Tahtanın, mobilin ve masaüstünün konuştuğu API | Hepsi |
+| **MebreCep** | Mobil uygulama | Öğretmen, veli, öğrenci, okul idaresi |
+| **MebreOkul** (masaüstü, C#) | Okulun kendi bilgisayarındaki yönetim programı | Okul idaresi |
+| **ynt5** | Mebre'nin KENDİ iç yönetim paneli (React) | Yalnızca Mebre çalışanları |
+| **v4** | Eski PHP sistemi (`s_brt.php`), hâlâ kısmen ayakta | Eski istemciler |
+
+**Sık yapılan karışıklık:** `ynt5` okul idaresinin paneli DEĞİL — Mebre'nin kendi
+iç yönetim ekranı. Okul idaresi masaüstü programı ve mobili kullanır.
+
+### Sözlük (Türkçe alan terimleri)
+
+| Terim | Anlamı |
+|---|---|
+| **Kurum kodu** | MEB'in her okula verdiği numara. Sistemde okulun kimliği (ör. `353535`) |
+| **Yoklama** | Devamsızlık kaydı; hangi öğrenci hangi ders saatinde yok |
+| **Aferin** | Öğretmenin öğrenciye verdiği ödül puanı |
+| **Ders saati** | Günün kaçıncı dersi (1-18). Duyuru ve program hep bununla hedeflenir |
+| **Nöbetçi** | O gün nöbet tutan öğretmen/öğrenci |
+| **Veli** | Öğrencinin ebeveyni |
+| **İdare** | Okul yönetimi (müdür/müdür yardımcısı) |
+| **Tahta no** | Okul içinde tahtanın sıra numarası (`tahta_no`) |
+| **Sınıf id** | `mbl_Login_val.sinifId` — ör. 12 = "6-B" |
+
+### Yayın topolojisi — DİKKAT
+
+- `v5` deposunda **`main`'e push = doğrudan CANLI sunucuya yayın** (GitHub Actions).
+  Şu anda 70 okul bu sunucuya bağlı. İnceleme sırasında push YAPILMAMALI.
+- Tahta istemcisi elle paketlenip (`paket_olustur.py`) USB ile kuruluyor.
+- Veritabanı değişiklikleri önce dev, sonra prod çalıştırılır.
+
+---
+
 ## Neden bu inceleme isteniyor
 
 70 okulda tahta kurulu. Sahada tahtayı yeniden kurmak veya elle güncellemek
@@ -185,3 +239,21 @@ cd ../v5 && for f in $(git ls-files 'src/**/*.js'); do node --check "$f" || echo
 
 **Not:** Bu depoda `Readme.txt` / `secret.txt` **yoktur** (`.gitignore`). Kurulum
 kodunu taşıyan dosya yalnızca kurulum USB'sindedir.
+
+---
+
+## Bu notun sınırı
+
+Bu notu, projeyi yazan taraf hazırladı. Dolayısıyla **yazarın kör noktaları bu nota
+da yansımış olabilir**: bir hatayı görmediysem, muhtemelen burada da yazmadım.
+
+Yukarıdaki "bakılması istenenler" listesi bir **sınır değil, başlangıç noktasıdır.**
+Listede hiç geçmeyen bir yerde bulunacak hata, listedekilerden daha değerlidir.
+Özellikle şu türden bulgular beklenmektedir:
+
+- Notta "çözüldü" denen bir şeyin aslında çözülmemiş olması
+- Notta hiç bahsedilmeyen bir bileşende, kurulumdan sonra düzeltilmesi zor bir hata
+- Buradaki bir varsayımın (ör. "fail-safe kapalıdır", "kimlik token'dan gelir")
+  kodda tutmuyor olması
+
+Notta anlatılan davranışı **kodda doğrulamadan** doğru kabul etmeyin.
