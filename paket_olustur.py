@@ -2,6 +2,40 @@ import os
 import zipfile
 import datetime
 
+
+# Pakete giren kabuk betiklerinden ACIKLAYICI yorumlar temizlenir.
+#
+# NEDEN (3 Agustos 2026): gelistirici yorumlari, savunmanin nasil kuruldugunu
+# adim adim anlatiyordu ve bu yorumlar dagitim paketinin ICINE giriyordu:
+#   "kod, dosyadaki ILK 64 haneli onaltilik dizidir"
+#   "bu bir GIZLEME onlemidir, sifreleme DEGILDIR"
+#   "sudo fatih-uninstall --force ile sifre atlanabiliyordu"
+# Yani paketi acan birine yol haritasi veriyorduk. Aciklamalar depoda KALIR
+# (bakim icin gerekli), pakete giden kopyadan cikarilir.
+#
+# Yalnizca TAM SATIR yorumlar ve yalnizca hassas anahtar kelime iceriyorsa silinir;
+# kod satirlarina ve satir-ici yorumlara DOKUNULMAZ (davranis degismez).
+HASSAS_KELIMELER = (
+    '64 hane', '64 haneli', 'gizleme', 'GIZLEME', 'sifreleme degil', 'sifreleme DEGILDIR',
+    'sudoers', '--force', 'PBKDF2', 'REMOVE_SALT', 'kanit', 'KANIT',
+    'duz metin', 'DUZ METIN', 'sir ', 'SIR ', 'sirri', 'SIRRI', 'acik', 'ACIK',
+    'atlan', 'ATLAN', 'ogrenci', 'saldiri', 'guvenlik', 'GUVENLIK',
+)
+
+
+def sadelestir_kabuk(icerik: str) -> str:
+    """Kabuk betiginden hassas ACIKLAMA yorumlarini cikarir."""
+    cikti = []
+    for satir in icerik.split('\n'):
+        kirp = satir.strip()
+        # Shebang ve kod satirlari korunur; yalnizca tam-satir yorumlara bakilir.
+        if kirp.startswith('#') and not kirp.startswith('#!'):
+            if any(k in satir for k in HASSAS_KELIMELER):
+                continue
+        cikti.append(satir)
+    return '\n'.join(cikti)
+
+
 def create_release():
     # Versiyon bilgisini oku
     version = "unknown"
@@ -72,8 +106,16 @@ def create_release():
         # Add individual files
         for item in files_to_include:
             if os.path.isfile(item):
-                zf.write(item)
-                print(f"  ✅ Eklendi: {item}")
+                if item.endswith('.sh'):
+                    with open(item, 'r', encoding='utf-8') as fh:
+                        ham = fh.read()
+                    temiz = sadelestir_kabuk(ham)
+                    zf.writestr(item, temiz)
+                    fark = ham.count('\n') - temiz.count('\n')
+                    print(f"  ✅ Eklendi: {item} ({fark} açıklama satırı çıkarıldı)")
+                else:
+                    zf.write(item)
+                    print(f"  ✅ Eklendi: {item}")
             else:
                 print(f"  ⚠ UYARI: Bulunamadı: {item}")
         
