@@ -2990,7 +2990,7 @@ DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
 DUYURU_MAX_NOKTA = 12
 DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
-DUYURU_RESIM_MAX_YUKSEKLIK = 300          # panelde resme ayrilan azami yukseklik            # bunun ustunde nokta yerine '3 / 27' sayaci
+DUYURU_RESIM_MAX_YUKSEKLIK = 620          # panelde resme ayrilan azami yukseklik (px). Yuksek cozunurluklu tahtada foto buyuk gorunsun; dusuk cozunurlukte zaten ekran orani (0.40H) sinirlar.
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -4802,23 +4802,32 @@ class FatihClientApp(QWidget):
         px = self._duyuru_msg_px(mesaj)
         self.duyuru_mesaj.setStyleSheet(
             f"color:#EAF4FF; font-family:'DejaVu Sans'; font-size:{px}px; background:transparent;")
-        self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
-        self.duyuru_mesaj.setText(mesaj)
 
         # --- Fotograf (varsa) ---
         _did = int(item.get('id', 0) or 0)
         _rurl = str(item.get('resimUrl', '') or '').strip()
         _pix = self._duyuru_resim_onbellek.get(_did) if _rurl else None
+        _foto_var = bool(_rurl and isinstance(_pix, QPixmap) and not _pix.isNull())
+
+        # Foto VARSA mesaj rezervini kucult (bos alan gitsin), o alani fotografa ver.
+        # Net panel yuksekligi ~AYNI kalir (mesaj 0.36->0.18, foto 0.22->0.40 => toplam 0.58H sabit),
+        # yani _position_center_panel'de tasma/kirpilma riski ARTMAZ ama foto ~2x buyur.
+        if _foto_var:
+            self.duyuru_mesaj.setFixedHeight(max(90, min(260, int(self.height() * 0.18))))
+        else:
+            self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
+        self.duyuru_mesaj.setText(mesaj)
+
         if _rurl and _did not in self._duyuru_resim_onbellek:
             self._duyuru_resmi_iste(_did, _rurl)
 
-        if _rurl and isinstance(_pix, QPixmap) and not _pix.isNull():
+        if _foto_var:
             # Panele sigacak sekilde olcekle; en-boy orani korunur.
-            _gen = max(200, self.duyuru_panel.width() - 72)
-            # Yukseklik EKRANA GORE sinirlanir: panel ekrandan uzun olursa
-            # _position_center_panel negatif y veriyor ve kart ustten/alttan kirpiliyor.
-            # Dusuk cozunurluklu tahtada resim kucuk kalir ama metin okunur kalir.
-            _maks_h = max(120, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.22)))
+            _gen = max(240, self.duyuru_panel.width() - 48)
+            # Yukseklik EKRANA GORE sinirlanir (0.40H): panel ekrandan uzun olursa
+            # _position_center_panel negatif y verip karti kirpiyor. Mesaj rezervini
+            # yukarida kisitladigimiz icin bu deger yukseldi ama toplam panel ayni kaldi.
+            _maks_h = max(200, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.40)))
             _olcekli = _pix.scaled(_gen, _maks_h,
                                    Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.duyuru_resim.setPixmap(_olcekli)
