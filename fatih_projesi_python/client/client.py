@@ -1298,8 +1298,10 @@ class LoginDialog(QDialog):
         
         if self.parent.validate_admin_password(password):
             logging.info("Password validated successfully")
-            # NEW: Immediately notify the server that the board is unlocked
-            self.parent.acknowledge_command("tahtaLock", "0")
+            # NOT: burada SEBEPSIZ ack ATILMAZ. Sunucu "yerel acilis" kaydini open_close
+            # 1->0 gecisinde yaziyor; sebepsiz ack once gidince gecis orada tuketiliyor,
+            # unlock_system'in sebepli ack'i "degisiklik yok" sayilip sebep KAYBOLUYORDU.
+            # Ack'i tek yerden, sebebiyle birlikte unlock_system gonderir.
             _y = getattr(self.parent, 'son_acilis_yontemi', 'Admin sifresi')
             self.parent.save_log("Admin şifre ile giriş yapıldı", "login")
             self.parent.unlock_system(f"{_y} ile acildi")
@@ -5211,8 +5213,15 @@ class FatihClientApp(QWidget):
                 self.network_status_signal.emit(has_connection)
                 
                 if not has_connection:
-                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa)
-                    if not self.is_locked and not check_usb_password():
+                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa).
+                    # KRIZ PENCERESI ISTISNA: kriz kodu tam da "sunucu/internet yok" diye
+                    # giriliyor. Burada kriz kontrolu olmayinca ilk basarisiz poll tahtayi
+                    # tekrar kilitliyor ve 24 saatlik pencere hicbir ise yaramiyordu.
+                    _kriz = kriz_penceresi_kalan()
+                    if _kriz > 0:
+                        logging.warning(
+                            f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
+                    elif not self.is_locked and not check_usb_password():
                         logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
                         QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
                         
@@ -5756,7 +5765,7 @@ class FatihClientApp(QWidget):
             self.login_panel.hide()
             # C# stms=true'ya dönüş (başarılı giriş)
             self.start_work = True
-            self.acknowledge_command("tahtaLock", "0")
+            # Sebepsiz ack YOK — bkz. attempt_login'deki aciklama; sebep unlock_system'de gider.
             _y = getattr(self, 'son_acilis_yontemi', 'Admin sifresi')
             self.save_log("Admin şifre ile giriş yapıldı", "login")
             self.unlock_system(f"{_y} ile acildi")
