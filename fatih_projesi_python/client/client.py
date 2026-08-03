@@ -518,6 +518,60 @@ def _kriz_kodu(kurum_kodu: str, gun: datetime) -> str:
 # baslatilsa bile pencere devam eder (kriz sirasinda reboot cok olasi).
 KRIZ_ACIK_SURE_SAAT = 24
 
+# ==================== ADMIN SIFRESI (PBKDF2) ====================
+# SORUN (3 Agustos 2026 incelemesi): admin_password config.ini'de DUZ METIN duruyordu
+# ve dogrulama duz karsilastirmaydi. Kullanici config'i
+#     /home/etapadmin/.config/fatih-client/config.ini
+# etapadmin'e ait ve 600 — ama tahta ZATEN etapadmin olarak otomatik giris yapiyor.
+# Yani tahta acikken (ogretmen actiktan sonra) terminale/dosya yoneticisine ulasan bir
+# ogrenci tek `cat` ile sifreyi okuyup tahtayi ISTEDIGI ZAMAN acabiliyordu. Bu, urunun
+# var olma sebebini dogrudan cokertiyordu ("ogrenciler tahtayi ele geciriyor").
+#
+# COZUM: sifre PBKDF2-HMAC-SHA256 ile, tahtaya ozel rastgele tuzla saklanir.
+#   admin_password = PBKDF2:<tuz_hex>:<hash_hex>
+#
+# GERIYE DONUK UYUMLU: bu bicimde OLMAYAN deger eski duz metin kabul edilir; sahadaki
+# 70 okul guncellemeden once de calismaya devam eder. setup.sh yeni kurulumda/guncellemede
+# duz metni hash'e cevirir.
+#
+# DURUSTCE SINIR: sifre 6 haneli sayi. PBKDF2 sozluk saldirisini YAVASLATIR (10^6 aday
+# ~40 saat), IMKANSIZ KILMAZ. Asil koruma, dosyayi okuyabilecek kisinin tahtaya
+# fiziksel erisiminin zaten sinirli olmasi.
+_ADMIN_PBKDF2_TUR = 200000
+
+
+def admin_sifre_uret(sifre: str) -> str:
+    """Duz sifreden saklanabilir 'PBKDF2:tuz:hash' dizisi uretir."""
+    tuz = os.urandom(16)
+    ozet = hashlib.pbkdf2_hmac('sha256', (sifre or '').encode('utf-8'), tuz, _ADMIN_PBKDF2_TUR)
+    return f"PBKDF2:{tuz.hex()}:{ozet.hex()}"
+
+
+def admin_sifre_dogru(girilen: str) -> bool:
+    """Girilen sifre config'teki degerle eslesiyor mu? Hem PBKDF2 hem eski duz metin."""
+    saklanan = SETTINGS.get('admin_password', '803580') or '803580'
+
+    if saklanan.startswith('PBKDF2:'):
+        try:
+            _, tuz_hex, ozet_hex = saklanan.split(':', 2)
+            ozet = hashlib.pbkdf2_hmac(
+                'sha256', (girilen or '').encode('utf-8'), bytes.fromhex(tuz_hex), _ADMIN_PBKDF2_TUR)
+            return hmac.compare_digest(ozet.hex(), ozet_hex)
+        except Exception as e:
+            logging.error(f"admin_password PBKDF2 cozulemedi: {e}")
+            return False
+
+    # --- Eski bicim: duz metin ---
+    if saklanan == 'mebre':          # cok eski kurulumlarda kalan deger
+        saklanan = '803580'
+    return hmac.compare_digest(str(girilen or ''), str(saklanan))
+
+
+def admin_sifre_varsayilan_mi() -> bool:
+    """Fabrika sifresi (803580) hala kullaniliyor mu? (Sifre degistir ekrani icin)"""
+    return admin_sifre_dogru('803580')
+
+
 def kriz_penceresi_kalan() -> int:
     """Kriz penceresinden kalan saniye (0 = pencere yok)."""
     try:
@@ -1483,12 +1537,8 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Şifre gerekli!")
             return
 
-        # Şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if password != config_password:
+        # Şifre doğrulama — PBKDF2 veya eski düz metin (bkz. admin_sifre_dogru)
+        if not admin_sifre_dogru(password):
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Şifre yanlış!")
             return
@@ -1716,13 +1766,9 @@ class ChangePasswordWidget(QWidget):
         self.current_field.setMinimumHeight(35)
         self.current_field.setFont(QFont("Arial", 12))
         
-        # Mevcut şifre gösterimi mantığı
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        
-        self._is_default_password = (config_password == '803580')
+        # Mevcut şifre gösterimi mantığı — hash'li saklamada şifre OKUNAMAZ,
+        # yalnızca "fabrika şifresi mi" sorusu cevaplanabilir.
+        self._is_default_password = admin_sifre_varsayilan_mi()
         
         if self._is_default_password:
             # Varsayılan şifre: göster ve readOnly yap (kullanıcı değiştirmesin)
@@ -1825,12 +1871,8 @@ class ChangePasswordWidget(QWidget):
             logging.warning("[ChangePassword] Empty fields detected")
             return
 
-        # Mevcut şifre doğrulama - config'deki admin_password ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if current != config_password:
+        # Mevcut şifre doğrulama — PBKDF2 veya eski düz metin
+        if not admin_sifre_dogru(current):
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Mevcut şifre yanlış!")
             logging.warning("[ChangePassword] Wrong current password")
@@ -1857,7 +1899,9 @@ class ChangePasswordWidget(QWidget):
         # Update configuration
         config = configparser.ConfigParser()
         config.read(CONFIG_PATH)
-        config.set('settings', 'admin_password', new)
+        # Sifre ARTIK DUZ METIN SAKLANMIYOR (bkz. admin_sifre_uret).
+        new_saklanan = admin_sifre_uret(new)
+        config.set('settings', 'admin_password', new_saklanan)
         config.set('settings', 'password_changed', 'true')
 
         try:
@@ -1872,7 +1916,7 @@ class ChangePasswordWidget(QWidget):
                 sys_config.read(system_config_path)
                 if 'settings' not in sys_config:
                     sys_config.add_section('settings')
-                sys_config.set('settings', 'admin_password', new)
+                sys_config.set('settings', 'admin_password', new_saklanan)
                 sys_config.set('settings', 'password_changed', 'true')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
@@ -1887,7 +1931,7 @@ class ChangePasswordWidget(QWidget):
                 kiosk_config.read(kiosk_config_path)
                 if 'settings' not in kiosk_config:
                     kiosk_config.add_section('settings')
-                kiosk_config.set('settings', 'admin_password', new)
+                kiosk_config.set('settings', 'admin_password', new_saklanan)
                 kiosk_config.set('settings', 'password_changed', 'true')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
@@ -1896,7 +1940,7 @@ class ChangePasswordWidget(QWidget):
                 logging.warning(f"[ChangePassword] Could not update kiosk config: {e}")
 
             # Update current SETTINGS
-            SETTINGS['admin_password'] = new
+            SETTINGS['admin_password'] = new_saklanan
             SETTINGS['password_changed'] = 'true'
 
             # Log kaydet - parent üzerinden güvenli erişim
@@ -5840,12 +5884,8 @@ class FatihClientApp(QWidget):
             logging.warning(f"Şifre denemesi kilitli, {rem} sn kaldı.")
             return False
 
-        # Önce config'deki admin şifresi ile kontrol et
-        config_password = SETTINGS.get('admin_password', '803580')
-        # Eski "mebre" değeri kaldıysa 803580 olarak düzelt
-        if config_password == 'mebre':
-            config_password = '803580'
-        if password == config_password:
+        # Önce config'deki admin şifresi ile kontrol et (PBKDF2 veya eski düz metin)
+        if admin_sifre_dogru(password):
             logging.info("Password validated via config admin_password")
             self.son_acilis_yontemi = "Admin sifresi"
             offline_register_success()

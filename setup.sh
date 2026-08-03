@@ -217,6 +217,33 @@ _PKG_VERSION=$(tr -d ' \t\n\r' < fatih_projesi_python/client/version.txt 2>/dev/
 [ -z "$_PKG_VERSION" ] && _PKG_VERSION="V6.00.00"
 echo "  → Kurulan sürüm: $_PKG_VERSION"
 
+# --- Admin sifresi ARTIK DUZ METIN SAKLANMIYOR (3 Agustos 2026 incelemesi) ---
+# Eskiden config.ini'de duz metindi. Kullanici config'i etapadmin'e ait (600) ama tahta
+# zaten etapadmin olarak otomatik giris yapiyor -> tahta acikken terminale ulasan biri
+# tek `cat` ile sifreyi okuyup tahtayi istedigi zaman acabiliyordu.
+# Burada PBKDF2'ye cevriliyor; boylece GUNCELLENEN eski tahtalar da korunmus oluyor.
+# Zaten hash'liyse dokunulmaz (cift hash olmasin).
+case "$ADMIN_PASSWORD" in
+    PBKDF2:*)
+        echo "  ℹ Admin şifresi zaten korumalı biçimde."
+        ;;
+    *)
+        _HASHLI=$(python3 -c "
+import hashlib, os, sys
+p = sys.argv[1] if len(sys.argv) > 1 else '803580'
+t = os.urandom(16)
+print('PBKDF2:%s:%s' % (t.hex(), hashlib.pbkdf2_hmac('sha256', p.encode(), t, 200000).hex()))
+" "$ADMIN_PASSWORD" 2>/dev/null)
+        if [ -n "$_HASHLI" ]; then
+            ADMIN_PASSWORD="$_HASHLI"
+            echo "  ✅ Admin şifresi korumalı biçime çevrildi (düz metin saklanmıyor)."
+        else
+            echo "  ⚠ Şifre dönüştürülemedi, eski biçimde bırakıldı."
+        fi
+        _HASHLI=""
+        ;;
+esac
+
 # Config dosyasını oluştur (Sadece yetkisiz kurum ve tahta bilgisi, parola saklaması BİTTİ)
 cat <<EOF > "$INSTALL_DIR/config.ini"
 [settings]
