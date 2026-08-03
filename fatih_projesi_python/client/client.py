@@ -2990,7 +2990,7 @@ DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
 DUYURU_MAX_NOKTA = 12
 DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
-DUYURU_RESIM_MAX_YUKSEKLIK = 620          # panelde resme ayrilan azami yukseklik (px). Yuksek cozunurluklu tahtada foto buyuk gorunsun; dusuk cozunurlukte zaten ekran orani (0.40H) sinirlar.
+DUYURU_RESIM_MAX_YUKSEKLIK = 1600          # panelde resme ayrilan azami yukseklik (px). Yuksek cozunurluklu tahtada foto buyuk gorunsun; dusuk cozunurlukte zaten ekran orani (0.40H) sinirlar.
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -4812,6 +4812,12 @@ class FatihClientApp(QWidget):
         # Foto VARSA mesaj rezervini kucult (bos alan gitsin), o alani fotografa ver.
         # Net panel yuksekligi ~AYNI kalir (mesaj 0.36->0.18, foto 0.22->0.40 => toplam 0.58H sabit),
         # yani _position_center_panel'de tasma/kirpilma riski ARTMAZ ama foto ~2x buyur.
+        # Tahtaya gonderilen fotograflar cogunlukla RESMI YAZI (A4, dikey, metin dolu).
+        # Kirpmak metni goturur, tahtada parmakla buyutmek de yok -> belge TEK SEFERDE
+        # ve OLABILDIGINCE BUYUK gorunmeli. Bu yuzden foto varken kart icindeki her sey
+        # kisilir: ust satir ("SINIF DUYURUSU") gizlenir, mesaj icerigi kadar yer kaplar.
+        self.duyuru_kicker.setVisible(not _foto_var)
+
         if _foto_var:
             # Foto varken mesaj kutusu ICERIGI KADAR yer kaplasin: "FOTO" gibi tek
             # kelimelik mesajda 0.18H rezerve etmek panelin ortasinda bos bir bosluk
@@ -4860,7 +4866,9 @@ class FatihClientApp(QWidget):
                 _h0 = int(self.height() * 0.45)
 
             # 2. gecis: kalan bosluk fotografin olsun (ust/alt icin pay birakilir)
-            _kalan = int(self.height() * 0.92) - _h0 - 24
+            # Belge okunabilirligi icin ekranin neredeyse tamami kullanilir.
+            # (Kart zaten dikeyde ortalaniyor; %97 pay ust/alt kenarda ince bosluk birakir.)
+            _kalan = int(self.height() * 0.97) - _h0 - 12
             _maks_h = max(220, min(DUYURU_RESIM_MAX_YUKSEKLIK, _kalan))
 
             _olcekli = _pix.scaled(_gen, _maks_h,
