@@ -106,8 +106,9 @@ def create_release():
     with zipfile.ZipFile(release_name, 'r') as zf:
         for name in zf.namelist():
             # v6: enroll sırrı ASLA pakete girmez. Paket WhatsApp/GitHub üzerinden dolaşıyor;
-            # secret.txt yalnızca kurulum USB'sinde, setup.sh'ın yanında durur.
-            if os.path.basename(name).lower() == 'secret.txt':
+            # Kurulum dogrulama kodu YALNIZCA kurulum USB'sinde, setup.sh'in yaninda durur.
+            # (Readme.txt = yeni ad, secret.txt = eski ad; ikisi de pakete GIRMEZ.)
+            if os.path.basename(name).lower() in ('secret.txt', 'readme.txt'):
                 print(f"  ❌ ENROLL SIRRI PAKETTE: {name} — bu paket DAĞITILMAMALI!")
                 issues_found = True
 

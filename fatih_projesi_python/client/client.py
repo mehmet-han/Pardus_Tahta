@@ -1535,9 +1535,9 @@ class BoardConfigWidget(QWidget):
                 # ayni cumle yaziliyordu ve hata ancak sunucu loglarindan bulunabiliyordu.
                 _h = getattr(self.network_client, 'son_enroll_hata', '')
                 if not get_setting('enroll_secret', '') and not get_setting('device_token', ''):
-                    _msg = "Hata: Kurulum sırrı yok. secret.txt ile yeniden kurun."
+                    _msg = "Hata: Kurulum dosyası eksik. Tahtanın yeniden kurulması gerekiyor."
                 elif _h == "401":
-                    _msg = "Hata: Kurulum sırrı geçersiz (401). USB'deki secret.txt yanlış."
+                    _msg = "Hata: Kurulum kodu geçersiz (401). Kurulum medyası güncel değil."
                 elif _h == "403":
                     _msg = "Hata: Bu tahta bu kuruma ait değil (403). Kurum kodunu kontrol edin."
                 elif _h == "500":

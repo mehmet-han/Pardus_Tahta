@@ -13,40 +13,59 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Proje dizinine EN BASTA gec: secret.txt "setup.sh'in yanindaki" dosyadir, calistirildigi
+# Proje dizinine EN BASTA gec: kurulum dosyasi "setup.sh'in yanindaki" dosyadir, calistirildigi
 # dizindeki degil. Eskiden bu cd [2/7]'de yapiliyordu; baska bir klasorden calistirilinca
-# ./secret.txt bulunamiyordu.
+# dosya bulunamiyordu.
 cd "$(dirname "$0")" || { echo "❌ HATA: Kurulum klasörüne geçilemedi."; exit 1; }
 
-# --- ON KONTROL: kurulum sirri (2 Agustos 2026) ---
-# Sirsiz ve token'siz kurulum, tahtayi ASLA tanitilamayacak halde birakiyor: ekranda
-# "Kurulum sırrı yok" cikiyor ve teknisyen sahadan donmus oluyor. Eskiden burada sadece
-# uyari basilip kuruluma devam ediliyordu, uyari da ekrandan akip gidiyordu.
-# Artik ON KOSUL: agir islere (apt, Cython, kopyalama) girmeden ONCE durur.
-# NOT: secret.txt git deposunda YOKTUR (.gitignore) — depodan kurulum yapiliyorsa
-#      dosyanin elle konmasi gerekir.
-_ONCEKI_TOKEN=$(sed -nr 's/^device_token\s*=\s*(.*)/\1/p' \
-    /home/etapadmin/.config/fatih-client/config.ini 2>/dev/null)
+# --- KURULUM DOGRULAMA KODU (3 Agustos 2026: dosya adi degisti) ---
+# Kod artik `Readme.txt` icinde, kurulum talimatlarinin arasinda gomulu duruyor.
+# NEDEN: dosya adi `secret.txt` iken USB'yi eline alan herkesin ilk actigi dosya oluyordu —
+# tahtalari kuran yalnizca biz degiliz (diger firmalar ve ogretmenler de kuruyor).
+# Bu bir GIZLEME onlemidir, sifreleme DEGILDIR; dosyayi acan yine gorur.
+#
+# Kod, dosyadaki ILK 64 haneli onaltilik dizidir — ozel bir etiket aranmaz ki
+# "sir burada" diye isaret vermesin.
+#
+# ESKI USB'LER: `secret.txt` de kabul edilmeye devam eder (sahadaki medyalar bir
+# gecede degismiyor). Once Readme.txt, yoksa secret.txt bakilir.
 
-if [ -f "./secret.txt" ] && [ -n "$(tr -d ' \t\n\r' < ./secret.txt)" ]; then
-    echo "  ✅ Kurulum sırrı bulundu (secret.txt)."
+kurulum_kodu_oku() {
+    local dosya
+    for dosya in "./Readme.txt" "./readme.txt" "./secret.txt"; do
+        if [ -f "$dosya" ]; then
+            local kod
+            kod=$(grep -oE '[0-9a-fA-F]{64}' "$dosya" 2>/dev/null | head -n 1)
+            if [ -n "$kod" ]; then
+                printf '%s' "$kod"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+_KURULUM_KODU=$(kurulum_kodu_oku)
+_ONCEKI_TOKEN=$(sed -nr 's/^device_token[[:space:]]*=[[:space:]]*(.*)$/\1/p' /home/etapadmin/.config/fatih-client/config.ini 2>/dev/null)
+
+if [ -n "$_KURULUM_KODU" ]; then
+    echo "  ✅ Kurulum dosyası doğrulandı."
 elif [ -n "$_ONCEKI_TOKEN" ]; then
-    echo "  ℹ secret.txt yok ama tahta zaten tanıtılmış — mevcut kimlik korunacak."
+    echo "  ℹ Kurulum dosyası yok ama tahta zaten tanıtılmış — mevcut kimlik korunacak."
 else
     echo ""
     echo "========================================================="
-    echo "❌ KURULUM DURDURULDU: Kurulum sırrı (secret.txt) yok."
+    echo "❌ KURULUM DURDURULDU: Kurulum dosyası eksik."
     echo "========================================================="
-    echo "Bu tahta daha önce tanıtılmamış, sırsız kurulursa TANITILAMAZ."
-    echo "Ekranda 'Kurulum sırrı yok' hatası çıkar ve tahta açılmaz."
+    echo "Bu tahta daha önce tanıtılmamış, bu haliyle kurulursa TANITILAMAZ."
     echo ""
     echo "Yapılması gereken:"
-    echo "  1) 'secret.txt' dosyasını setup.sh ile AYNI klasöre koyun:"
-    echo "     $(pwd)/secret.txt"
+    echo "  1) 'Readme.txt' dosyasını setup.sh ile AYNI klasöre koyun:"
+    echo "     $(pwd)/Readme.txt"
     echo "  2) Kurulumu tekrar başlatın: sudo ./setup.sh"
     echo ""
     echo "Dosya kurulum USB'sindedir. Yoksa Mebre'den isteyin."
-    echo "(Git deposundan kurulum yapıyorsanız secret.txt orada BULUNMAZ.)"
+    echo "(Git deposundan kurulum yapıyorsanız bu dosya orada BULUNMAZ.)"
     echo "========================================================="
     exit 1
 fi
@@ -170,20 +189,16 @@ if [ -f "$EXISTING_CONFIG" ]; then
     [ -z "$PASSWORD_CHANGED" ] && PASSWORD_CHANGED="false"
 fi
 
-# --- v6: Enroll sirri (kurulum medyasindaki secret.txt) ---
-# Sir teknisyene GOSTERILMEZ ve elle yazilmaz: setup.sh yanindaki secret.txt'ten okunur,
+# --- v6: Kurulum dogrulama kodu config'e gomulur ---
+# Kod teknisyene GOSTERILMEZ ve elle yazilmaz: Readme.txt'ten okunur (on kontrolde),
 # config'e ENC'li gomulur ve tahta tanitilir tanitilmaz istemci tarafindan SILINIR.
-# NOT: secret.txt USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
-# Gecerlilik EN BASTAKI on kontrolde dogrulandi; burada yalnizca gomuluyor.
+# NOT: dosya USB'den SILINMEZ — ayni USB birden fazla tahtada kullaniliyor (bkz. doktor.sh).
 ENROLL_SECRET_ENC=""
-if [ -f "./secret.txt" ]; then
-    _SECRET=$(tr -d ' \t\n\r' < ./secret.txt)
-    if [ -n "$_SECRET" ]; then
-        ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_SECRET" | base64 -w0)"
-        echo "  ✅ Kurulum sırrı yapılandırmaya gömüldü."
-    fi
-    _SECRET=""
+if [ -n "$_KURULUM_KODU" ]; then
+    ENROLL_SECRET_ENC="ENC:$(printf '%s' "$_KURULUM_KODU" | base64 -w0)"
+    echo "  ✅ Kurulum kodu yapılandırmaya gömüldü."
 fi
+_KURULUM_KODU=""
 
 # Credential'lar artık setup.sh veya config.ini'de barınmıyor. 
 # Tamamen Fatih Client'in içinde XOR şifresiyle çalışma zamanında deşifre edilecek.
@@ -310,11 +325,11 @@ echo "Kurum kodu    : ${CORPORATE_CODE:-(girilmedi)}"
 if [ -n "$DEVICE_TOKEN" ]; then
     echo "Tahta kimliği : ✅ Zaten tanıtılmış (mevcut kimlik korundu)"
 elif [ -n "$ENROLL_SECRET_ENC" ]; then
-    echo "Tahta kimliği : ⏳ Tanıtılmadı — kurulum sırrı gömüldü."
+    echo "Tahta kimliği : ⏳ Tanıtılmadı — kurulum kodu gömüldü."
     echo "                Yeniden başlattıktan sonra ekrandan kurum kodunu girip"
     echo "                'Tahtaları Getir' ile tahtayı seçin."
 else
-    echo "Tahta kimliği : ❌ SIR YOK — tahta tanıtılamaz! (bu satırı görmemeniz gerekir)"
+    echo "Tahta kimliği : ❌ Kurulum kodu yok — tahta tanıtılamaz! (bu satırı görmemeniz gerekir)"
 fi
 echo "---------------------------------------------------------"
 echo "Tahtayı test etmek için yeniden başlatmanız önerilir."
