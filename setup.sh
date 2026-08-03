@@ -148,7 +148,11 @@ chmod 700 /usr/local/bin/fatih-uninstall
 # Bedeli kabul edildi: tahtada terminale erisebilen biri kaldirmayi tetikleyebilir —
 # asil koruma kiosk'un terminali kapatmasi.
 _SUDOERS_FILE="/etc/sudoers.d/fatih-client"
-echo "etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall" > "$_SUDOERS_FILE"
+# ARGUMANSIZ bicim (""): `sudo fatih-uninstall --force` REDDEDILIR.
+# Eski kural argumani serbest birakiyordu, --force ise sifreyi atliyordu;
+# tahtada terminale erisen herkes kilit sistemini kaldirabiliyordu.
+# Uzaktan kaldirma artik stdin uzerinden kanit yolluyor (bkz. uninstall.sh).
+printf '%s\n' 'etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall ""' > "$_SUDOERS_FILE"
 chmod 440 "$_SUDOERS_FILE"
 chown root:root "$_SUDOERS_FILE"
 # Bozuk bir sudoers dosyasi TUM sudo'yu kilitler -> dogrula, gecersizse geri al.
@@ -160,8 +164,11 @@ else
 fi
 
 # İzinleri ayarla
-chmod -R 755 "$INSTALL_DIR"
-chown -R root:root "$INSTALL_DIR"
+# 755 idi: TUM kullanicilar (ogretmen, ogrenci) derlenmis .so dosyasini okuyup
+# kopyalayabiliyordu. 750 + root:etapadmin -> yalnizca tahtayi calistiran
+# hesap ve root erisir.
+chown -R root:etapadmin "$INSTALL_DIR"
+chmod -R 750 "$INSTALL_DIR"
 
 echo "[4/7] Kurum Kodu (Corporate Code) ayarlanıyor..."
 read -p "Lütfen Kurum Kodunu Girin: " CORPORATE_CODE
@@ -276,18 +283,23 @@ rm -f "$INSTALL_DIR/client.py" 2>/dev/null
 echo "✅ Kaynak Python kodu temizlendi (sadece derlenmiş .so mevcut)."
 
 # --- Pardus Kullanıcı Şifrelerini Kaldır ---
-echo "Kullanıcı şifreleri kaldırılıyor (Fatih kilit ekranı aktif)..."
+# ogretmen/ogrenci: `passwd -d` (SIFREYI SIL) yerine `passwd -l` (HESABI KILITLE).
+# -d bos sifre birakiyordu; Debian/Pardus varsayilan PAM'i nullok tasidigi icin bu
+# hesaplara TTY'den BOS SIFREYLE giris yapilabiliyordu. -l ile sifreli giris tamamen kapanir.
+# etapadmin BILEREK dokunulmadi: lightdm otomatik girisi o hesapla yapiliyor, kilitlemek
+# tahtayi aciimaz hale getirebilir (bkz. inceleme notu - acik madde).
+echo "Kullanıcı hesapları kilitleniyor (Fatih kilit ekranı aktif)..."
 
 if id "etapadmin" &>/dev/null; then
     passwd -d etapadmin 2>/dev/null && echo "  ✅ etapadmin şifresi kaldırıldı" || echo "  ⚠ etapadmin şifresi kaldırılamadı"
 fi
 
 if id "ogretmen" &>/dev/null; then
-    passwd -d ogretmen 2>/dev/null && echo "  ✅ ogretmen şifresi kaldırıldı" || echo "  ⚠ ogretmen şifresi kaldırılamadı"
+    passwd -l ogretmen 2>/dev/null && echo "  ✅ ogretmen hesabı kilitlendi" || echo "  ⚠ ogretmen hesabı kilitlenemedi"
 fi
 
 if id "ogrenci" &>/dev/null; then
-    passwd -d ogrenci 2>/dev/null && echo "  ✅ ogrenci şifresi kaldırıldı" || echo "  ⚠ ogrenci şifresi kaldırılamadı"
+    passwd -l ogrenci 2>/dev/null && echo "  ✅ ogrenci hesabı kilitlendi" || echo "  ⚠ ogrenci hesabı kilitlenemedi"
 fi
 
 # --- LightDM Otomatik Giriş Ayarı ---

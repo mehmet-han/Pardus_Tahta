@@ -5564,6 +5564,22 @@ class FatihClientApp(QWidget):
 
         threading.Thread(target=send_ack, daemon=True).start()
 
+    def _kaldirma_kaniti(self) -> str:
+        """Uzaktan kaldirma yetki kaniti: sha256(device_token + REMOVE_SALT).
+
+        uninstall.sh ile BIREBIR ayni formul; ikisi birlikte degismeli.
+        Tuz betikte duruyor ve betik root:700 oldugu icin etapadmin okuyamaz.
+        Token cihaza ozeldir -> bir tahtadan sizan kanit baska tahtayi kaldiramaz.
+        """
+        try:
+            token = get_setting('device_token', '') or ''
+            if not token:
+                return ''
+            return hashlib.sha256((token + "mebre-remove-v1").encode('utf-8')).hexdigest()
+        except Exception as e:
+            logging.error(f"Kaldirma kaniti uretilemedi: {e}")
+            return ''
+
     def remove_system(self):
         """Uzaktan kaldirma (ynt5 -> system_Remove=1).
 
@@ -5589,13 +5605,27 @@ class FatihClientApp(QWidget):
         try:
             # Betik client.py'yi de oldurecegi icin AYRI OTURUMDA baslatiyoruz;
             # biz olsek de temizlik sonuna kadar devam etsin.
-            _subprocess.Popen(
-                ["sudo", "-n", uninstaller, "--force"],
+            # YETKI ARTIK ARGUMANLA DEGIL, STDIN'DEN GIDIYOR (3 Agustos 2026).
+            # Eskiden `--force` yolluyorduk ve sudoers argumani kisitlamadigi icin
+            # tahtada terminale erisen HERKES ayni komutu yazip kilit sistemini
+            # kaldirabiliyordu. Artik sudoers yalnizca argumansiz cagriya izin veriyor;
+            # kaldirma betigi yetkiyi stdin'deki kanittan dogruluyor.
+            _kanit = self._kaldirma_kaniti()
+            _p = _subprocess.Popen(
+                ["sudo", "-n", uninstaller],
+                stdin=_subprocess.PIPE,
                 start_new_session=True,
                 stdout=_subprocess.DEVNULL,
                 stderr=_subprocess.DEVNULL,
             )
-            logging.info("sudo fatih-uninstall --force started (detached). Exiting.")
+            try:
+                _p.stdin.write((_kanit + "\n").encode("utf-8"))
+                _p.stdin.flush()
+                _p.stdin.close()
+            except Exception:
+                pass
+            _kanit = None
+            logging.info("sudo fatih-uninstall (kanit stdin) started (detached). Exiting.")
             QApplication.quit()
             return
         except Exception as e:
