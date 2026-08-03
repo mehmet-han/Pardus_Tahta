@@ -2557,6 +2557,37 @@ class NetworkClient:
             # Sir/token'i RAM'den dusur (§5 zero-footprint).
             secret = token = headers = _k = _dx = _agt = _url = None
 
+    def duyuru_resmi_indir(self, url: str):
+        """Duyuru fotografini CIHAZ KIMLIGIYLE indirir; ham bayt doner, hata olursa None.
+
+        Uc: GET /client/akilli_tahta_cihaz/duyuru_resim/<id> (deviceAuth).
+        Adres /display icinde `resimUrl` olarak geliyor; anahtar tahtaya HIC verilmez,
+        sunucu duyuru id'sini tahtanin KENDI okuluyla dogruluyor.
+        """
+        if not url:
+            return None
+        headers = self._headers()
+        if "Authorization" not in headers:
+            return None
+        try:
+            r = requests.get(url, headers=headers, timeout=20, verify=True, stream=True)
+            if r.status_code != 200:
+                logging.warning(f"Duyuru resmi alinamadi ({r.status_code}): {url}")
+                return None
+            # Kotu niyetli/bozuk buyuk govde kilit ekranini bogmasin.
+            veri = r.raw.read(DUYURU_RESIM_MAX_BAYT + 1, decode_content=True)
+            if veri is None:
+                return None
+            if len(veri) > DUYURU_RESIM_MAX_BAYT:
+                logging.warning("Duyuru resmi cok buyuk, atlandi.")
+                return None
+            return veri
+        except Exception as e:
+            logging.warning(f"Duyuru resmi indirilemedi: {e}")
+            return None
+        finally:
+            headers = None
+
     def list_boards(self, corporate_code):
         """Kurumun tahta listesi (v5 /boards). Ilk kurulumda X-Enroll-Secret, yeniden
         tanitmada mevcut cihaz token'i ile. [{boardId, name, aktif}] doner."""
@@ -2957,7 +2988,9 @@ QLabel#duyuruDots {
 # slider'i devralir. Tenefusler 5 dk kadar kisa olabildigi icin dusuk tutuldu (kullanici karari).
 DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
-DUYURU_MAX_NOKTA = 12            # bunun ustunde nokta yerine '3 / 27' sayaci
+DUYURU_MAX_NOKTA = 12
+DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
+DUYURU_RESIM_MAX_YUKSEKLIK = 300          # panelde resme ayrilan azami yukseklik            # bunun ustunde nokta yerine '3 / 27' sayaci
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
 EXAM_VARSAYILAN_SURE_DK = 120
@@ -3090,6 +3123,10 @@ class FatihClientApp(QWidget):
     # /display verisi arka plan thread'inden UI thread'ine (tum sonuc sozlugu ya da None).
     # Icinden hem aferinTop5 (Feature 5) hem dogumGunleri (Feature 1) beslenir.
     _display_ready = pyqtSignal(object)
+
+    # Duyuru fotografi arka planda inince UI thread'e tasinir.
+    # QPixmap YALNIZCA UI thread'inde uretilebilir; thread ham bayt yollar.
+    _duyuru_resim_geldi = pyqtSignal(int, object)
 
     # /sinav_oturma verisi arka plan thread'inden UI thread'ine (result dict ya da None).
     _exam_ready = pyqtSignal(object)
@@ -3411,6 +3448,14 @@ class FatihClientApp(QWidget):
         self.duyuru_mesaj.setWordWrap(True)
         self.duyuru_mesaj.setTextFormat(Qt.PlainText)   # bkz. duyuru_baslik — HTML calistirilmaz
         _dy_lay.addWidget(self.duyuru_mesaj)
+
+        # Duyuru fotografi (opsiyonel). Idare/ogretmen masaustunden resim eklerse
+        # burada gosterilir; resmi olmayan duyuruda etiket gizli kalir.
+        self.duyuru_resim = QLabel("", self.duyuru_panel)
+        self.duyuru_resim.setObjectName("duyuruResim")
+        self.duyuru_resim.setAlignment(Qt.AlignCenter)
+        self.duyuru_resim.hide()
+        _dy_lay.addWidget(self.duyuru_resim)
 
         _dy_lay.addSpacing(18)
         # Slayt noktaları (birden fazla duyuru varsa) — ortalı.
@@ -4211,6 +4256,12 @@ class FatihClientApp(QWidget):
 
         self.duyuru_slide_timer = QTimer(self)
         self.duyuru_slide_timer.timeout.connect(self._advance_duyuru_slide)
+
+        # id -> QPixmap (basarili) | False (denendi, olmadi) | yok (henuz denenmedi)
+        # Slayt 8 saniyede bir donuyor; onbellek olmadan ayni resim tekrar tekrar
+        # indirilir ve okul agi bosuna mesgul edilirdi.
+        self._duyuru_resim_onbellek = {}
+        self._duyuru_resim_geldi.connect(self._on_duyuru_resim_geldi)
         # start/stop _update_duyuru_state içinde yönetilir (yalnız >1 duyuru varken çalışır).
 
     # ----------------------------------------------------------------------------
@@ -4700,6 +4751,39 @@ class FatihClientApp(QWidget):
             return 14
         return 13
 
+    def _duyuru_resmi_iste(self, duyuru_id: int, url: str):
+        """Fotografi ARKA PLANDA indirir. UI asla beklemez; gelince slayt yenilenir."""
+        if not url or duyuru_id in self._duyuru_resim_onbellek:
+            return
+        # None = "indiriliyor" isareti; ayni resim icin ikinci istek acilmasin.
+        self._duyuru_resim_onbellek[duyuru_id] = None
+
+        def _indir():
+            veri = self.network_client.duyuru_resmi_indir(url) if self.network_client else None
+            self._duyuru_resim_geldi.emit(duyuru_id, veri)
+
+        threading.Thread(target=_indir, daemon=True).start()
+
+    def _on_duyuru_resim_geldi(self, duyuru_id: int, veri):
+        """UI thread: ham bayttan QPixmap uretir, onbellege koyar, slaydi tazeler."""
+        pix = False
+        if veri:
+            try:
+                aday = QPixmap()
+                if aday.loadFromData(veri) and not aday.isNull():
+                    pix = aday
+            except Exception as e:
+                logging.warning(f"Duyuru resmi cozulemedi: {e}")
+        self._duyuru_resim_onbellek[duyuru_id] = pix
+
+        # Ekranda o duyuru duruyorsa hemen ciz.
+        try:
+            if self._duyuru_active and self._duyuru_index < len(self._duyuru_active):
+                if int(self._duyuru_active[self._duyuru_index].get('id', 0) or 0) == duyuru_id:
+                    self._render_duyuru_slide()
+        except Exception:
+            pass
+
     def _render_duyuru_slide(self):
         """Geçerli slaytı (başlık/mesaj/gönderen/noktalar) çizer ve paneli konumlandırır."""
         if not self._duyuru_active:
@@ -4720,6 +4804,29 @@ class FatihClientApp(QWidget):
             f"color:#EAF4FF; font-family:'DejaVu Sans'; font-size:{px}px; background:transparent;")
         self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
         self.duyuru_mesaj.setText(mesaj)
+
+        # --- Fotograf (varsa) ---
+        _did = int(item.get('id', 0) or 0)
+        _rurl = str(item.get('resimUrl', '') or '').strip()
+        _pix = self._duyuru_resim_onbellek.get(_did) if _rurl else None
+        if _rurl and _did not in self._duyuru_resim_onbellek:
+            self._duyuru_resmi_iste(_did, _rurl)
+
+        if _rurl and isinstance(_pix, QPixmap) and not _pix.isNull():
+            # Panele sigacak sekilde olcekle; en-boy orani korunur.
+            _gen = max(200, self.duyuru_panel.width() - 72)
+            # Yukseklik EKRANA GORE sinirlanir: panel ekrandan uzun olursa
+            # _position_center_panel negatif y veriyor ve kart ustten/alttan kirpiliyor.
+            # Dusuk cozunurluklu tahtada resim kucuk kalir ama metin okunur kalir.
+            _maks_h = max(120, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.22)))
+            _olcekli = _pix.scaled(_gen, _maks_h,
+                                   Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.duyuru_resim.setPixmap(_olcekli)
+            self.duyuru_resim.show()
+        else:
+            # Resmi yok, henuz inmedi ya da indirilemedi -> duyuru metin olarak devam eder.
+            self.duyuru_resim.clear()
+            self.duyuru_resim.hide()
 
         gonderen = str(item.get('gonderenAd', '') or '').strip()
         self.duyuru_gonderen.setText(f"— {gonderen}" if gonderen else "")
