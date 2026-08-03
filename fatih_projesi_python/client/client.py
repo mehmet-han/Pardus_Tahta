@@ -4813,7 +4813,21 @@ class FatihClientApp(QWidget):
         # Net panel yuksekligi ~AYNI kalir (mesaj 0.36->0.18, foto 0.22->0.40 => toplam 0.58H sabit),
         # yani _position_center_panel'de tasma/kirpilma riski ARTMAZ ama foto ~2x buyur.
         if _foto_var:
-            self.duyuru_mesaj.setFixedHeight(max(90, min(260, int(self.height() * 0.18))))
+            # Foto varken mesaj kutusu ICERIGI KADAR yer kaplasin: "FOTO" gibi tek
+            # kelimelik mesajda 0.18H rezerve etmek panelin ortasinda bos bir bosluk
+            # birakiyor ve fotografa kalan alani gereksiz yere daraltiyordu.
+            _tavan_m = max(90, min(260, int(self.height() * 0.18)))
+            _dogal_m = 0
+            try:
+                _pw_m = self.duyuru_panel.maximumWidth()
+                if _pw_m <= 0 or _pw_m >= 16777215:
+                    _pw_m = self.duyuru_panel.width() or 760
+                _dogal_m = self.duyuru_mesaj.heightForWidth(max(240, _pw_m - 72))
+            except Exception:
+                _dogal_m = 0
+            if _dogal_m and _dogal_m > 0:
+                _tavan_m = max(48, min(_tavan_m, _dogal_m + 10))
+            self.duyuru_mesaj.setFixedHeight(_tavan_m)
         else:
             self.duyuru_mesaj.setFixedHeight(max(150, min(430, int(self.height() * 0.36))))
         self.duyuru_mesaj.setText(mesaj)
@@ -4822,12 +4836,33 @@ class FatihClientApp(QWidget):
             self._duyuru_resmi_iste(_did, _rurl)
 
         if _foto_var:
-            # Panele sigacak sekilde olcekle; en-boy orani korunur.
-            _gen = max(240, self.duyuru_panel.width() - 48)
-            # Yukseklik EKRANA GORE sinirlanir (0.40H): panel ekrandan uzun olursa
-            # _position_center_panel negatif y verip karti kirpiyor. Mesaj rezervini
-            # yukarida kisitladigimiz icin bu deger yukseldi ama toplam panel ayni kaldi.
-            _maks_h = max(200, min(DUYURU_RESIM_MAX_YUKSEKLIK, int(self.height() * 0.40)))
+            # --- Fotografa GERCEK bos alan verilir (sabit oran DEGIL) ---
+            # Sabit oranli (0.40H) siniri, DIKEY fotograflarda yetersiz kaliyordu:
+            # en-boy orani korundugu icin yukseklik sinirlaninca genislik de kuculuyor
+            # ve 760px'lik panelde daracik bir serit olusuyordu (iki yani bos).
+            #
+            # Iki gecisli olcum: once fotograf YOKKEN panel ne kadar yer kapliyor
+            # olculur, ekranda kalan bosluk fotografa verilir. Boylece kisa mesajda
+            # foto buyur, uzun mesajda kendiliginden kuculur ve panel HICBIR ZAMAN
+            # ekrandan tasmaz (tasarsa _position_center_panel negatif y verip kirpardi).
+            _pw = self.duyuru_panel.maximumWidth()
+            if _pw <= 0 or _pw >= 16777215:
+                _pw = self.duyuru_panel.width() or 760
+            _gen = max(240, _pw - 48)
+
+            # 1. gecis: resim gizliyken panelin dogal yuksekligi
+            self.duyuru_resim.clear()
+            self.duyuru_resim.hide()
+            try:
+                self._fit_panel_height(self.duyuru_panel)
+                _h0 = self.duyuru_panel.height()
+            except Exception:
+                _h0 = int(self.height() * 0.45)
+
+            # 2. gecis: kalan bosluk fotografin olsun (ust/alt icin pay birakilir)
+            _kalan = int(self.height() * 0.92) - _h0 - 24
+            _maks_h = max(220, min(DUYURU_RESIM_MAX_YUKSEKLIK, _kalan))
+
             _olcekli = _pix.scaled(_gen, _maks_h,
                                    Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.duyuru_resim.setPixmap(_olcekli)
