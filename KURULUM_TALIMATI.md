@@ -1,6 +1,9 @@
 # Akıllı Tahta Kurulum Talimatı
 
-**Sürüm:** V6.00.40 · Pardus ETAP · Mebre Yazılım
+**Pardus ETAP · Mebre Yazılım**
+
+> Bu talimat sürümden bağımsızdır. Elinizdeki paketin sürümü dosya adında yazar
+> (`Fatih_Client_Kurulum_V6_00_47_KORUMALI.zip` gibi) ve kurulum sonunda ekranda görünür.
 
 Bu talimat, akıllı tahtaya kilit programının kurulmasını anlatır.
 İnternetten ve USB'den kurulum **aynı adımlardan** oluşur; tek fark dosyayı
@@ -12,7 +15,7 @@ nereden aldığınızdır.
 
 | | Ne |
 |---|---|
-| 1 | Kurulum paketi (`Fatih_Client_Kurulum_KORUMALI.zip`) |
+| 1 | Kurulum paketi — adı `Fatih_Client_Kurulum_V6_00_XX_KORUMALI.zip` biçimindedir |
 | 2 | **Zip şifresi** — Mebre'den alınır |
 | 3 | **Okulun kurum kodu** (MEB kurum kodu, sadece rakam) |
 | 4 | Tahtada çalışan **internet bağlantısı** |
@@ -64,13 +67,14 @@ adımları görürsünüz.
 ```
 ✅ KURULUM TAMAMLANDI!
 ---------------------------------------------------------
-Kurulan sürüm : V6.00.40
+Kurulan sürüm : V6.00.47
 Kurum kodu    : 353535
 Tahta kimliği : ⏳ Tanıtılmadı — kurulum kodu gömüldü.
 ---------------------------------------------------------
 ```
 
-**Bu üç satırı mutlaka okuyun.** Sürüm ve kurum kodu doğru mu, bakın.
+**Bu üç satırı mutlaka okuyun.** Sürüm, indirdiğiniz paketin adındaki sürümle
+aynı olmalı; kurum kodu da doğru okul olmalı.
 
 ---
 
