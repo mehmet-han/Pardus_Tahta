@@ -28,6 +28,16 @@ def create_release():
         "install_from_github.sh",
         "doktor.sh",
     ]
+
+    # Kurulum dogrulama kodunu tasiyan dosya (3 Agustos 2026 karari):
+    # Paket, MEBRE'NIN KENDI SITESINDEN ve KAPI ARKASINDAN (giris/kurum kodu ile)
+    # dagitiliyor. Bu yuzden kod artik pakete DAHIL edilebiliyor; sahada teknisyen
+    # elle kod girmek zorunda kalmiyor.
+    # ⚠ SART: bu paket ASLA herkese acik bir baglantidan servis edilmemeli.
+    #   Kodu eline gecirren biri HERHANGI bir okulun tahtasinin kimligini uzerine
+    #   alabilir (mevcut token'i ezer) ve o okulun ogrenci/yoklama/sinav verisini ceker.
+    if os.path.isfile("Readme.txt"):
+        files_to_include.append("Readme.txt")
     
     # Directory to include
     client_dir = os.path.join("fatih_projesi_python", "client")
@@ -130,8 +140,17 @@ def create_release():
             # Kurulum dogrulama kodu YALNIZCA kurulum USB'sinde, setup.sh'in yaninda durur.
             # (Readme.txt = yeni ad, secret.txt = eski ad; ikisi de pakete GIRMEZ.)
             if os.path.basename(name).lower() in ('secret.txt', 'readme.txt'):
-                print(f"  ❌ ENROLL SIRRI PAKETTE: {name} — bu paket DAĞITILMAMALI!")
-                issues_found = True
+                print("")
+                print("  ⚠  ═══════════════════════════════════════════════════════")
+                print(f"  ⚠  KURULUM KODU BU PAKETİN İÇİNDE: {name}")
+                print("  ⚠  ═══════════════════════════════════════════════════════")
+                print("  ⚠  Bu paketi YALNIZCA kapı arkasındaki (giriş isteyen)")
+                print("  ⚠  indirme adresinden servis edin.")
+                print("  ⚠  Herkese açık bir bağlantıya konursa, kodu indiren herkes")
+                print("  ⚠  HERHANGİ bir okulun tahtasının kimliğini üzerine alabilir")
+                print("  ⚠  ve o okulun öğrenci/yoklama/sınav verisini çekebilir.")
+                print("  ⚠  WhatsApp/GitHub/genel link ile PAYLAŞMAYIN.")
+                print("")
 
             # Check for C# files
             if name.endswith('.cs') or name.endswith('.csproj') or name.endswith('.sln'):
