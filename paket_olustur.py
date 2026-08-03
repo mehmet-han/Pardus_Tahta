@@ -36,6 +36,36 @@ def sadelestir_kabuk(icerik: str) -> str:
     return '\n'.join(cikti)
 
 
+# Siteye konacak KORUMALI paket icin sifre.
+# Ortam degiskeniyle gecilebilir: FATIH_ZIP_SIFRE=... python paket_olustur.py
+# Sifre AYLIK degistirilir; degistirince paketi yeniden uretip siteye koyun.
+# NOT: klasik zip sifrelemesi (ZipCrypto) kiriktir; burada AES-256 kullanilir.
+ZIP_SIFRE = os.environ.get("FATIH_ZIP_SIFRE", "803417")
+
+
+def korumali_paket_uret(kaynak_zip: str, hedef_zip: str, sifre: str) -> bool:
+    """Normal paketin icerigini AES-256 sifreli bir zip'e kopyalar."""
+    try:
+        import pyzipper
+    except ImportError:
+        print("  ⚠ 'pyzipper' kurulu değil — korumalı paket üretilemedi.")
+        print("    Kurmak için:  pip install pyzipper")
+        return False
+
+    try:
+        with zipfile.ZipFile(kaynak_zip, "r") as kaynak:
+            with pyzipper.AESZipFile(hedef_zip, "w",
+                                     compression=pyzipper.ZIP_DEFLATED,
+                                     encryption=pyzipper.WZ_AES) as hedef:
+                hedef.setpassword(sifre.encode("utf-8"))
+                for ad in kaynak.namelist():
+                    hedef.writestr(ad, kaynak.read(ad))
+        return True
+    except Exception as e:
+        print(f"  ⚠ Korumalı paket üretilemedi: {e}")
+        return False
+
+
 def create_release():
     # Versiyon bilgisini oku
     version = "unknown"
@@ -216,6 +246,19 @@ def create_release():
         print("")
         print("  ⚠ UYARI: Yukarıdaki sorunlar düzeltilmelidir!")
     
+    # --- Siteye konacak KORUMALI (sifreli) paket ---
+    korumali_ad = standard_name.replace(".zip", "_KORUMALI.zip")
+    print("")
+    print("=" * 60)
+    print("🔐 KORUMALI PAKET (siteye konacak olan)")
+    print("=" * 60)
+    if korumali_paket_uret(release_name, korumali_ad, ZIP_SIFRE):
+        print(f"  ✅ Üretildi: {korumali_ad}  (AES-256)")
+        print(f"  🔑 Şifre   : {ZIP_SIFRE}")
+        print("")
+        print("  → SİTEYE bu dosyayı koyun, şifresiz olanı DEĞİL.")
+        print("  → Şifreyi ayda bir değiştirin: FATIH_ZIP_SIFRE=yenisifre python paket_olustur.py")
+
     # Summary
     zip_size = os.path.getsize(release_name) / (1024 * 1024)
     print("")
