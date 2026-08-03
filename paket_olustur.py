@@ -251,7 +251,9 @@ def create_release():
         print("  ⚠ UYARI: Yukarıdaki sorunlar düzeltilmelidir!")
     
     # --- Siteye konacak KORUMALI (sifreli) paket ---
-    korumali_ad = standard_name.replace(".zip", "_KORUMALI.zip")
+    # Ada SURUM girer: eskiden hep "Fatih_Client_Kurulum_KORUMALI.zip" idi ve
+    # siteye hangi surumun konuldugu dosya adindan anlasilmiyordu.
+    korumali_ad = release_name.replace(".zip", "_KORUMALI.zip")
     print("")
     print("=" * 60)
     print("🔐 KORUMALI PAKET (siteye konacak olan)")
