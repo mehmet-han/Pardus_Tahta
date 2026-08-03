@@ -53,6 +53,29 @@ logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("--- Fatih Client Starting Up ---")
 
+
+# ==================== KURESEL ISTISNA YAKALAYICI ====================
+# PyQt5 (>=5.5) bir slot icinde yakalanmamis Python istisnasi olusursa VARSAYILAN
+# excepthook'u cagirir ve ardindan qFatal() ile SURECI OLDURUR. Ana uygulamada 11
+# zamanlayici geri cagrisi var (poll, duyuru slider'i, sinav, saat, yoklama...);
+# bunlarin ucunde (duyuru durumu, slayt gecisi, saat) try/except YOKTU.
+#
+# Boyle bir cokme tahtayi calisir durumda BIRAKMIYOR: kilit penceresi kayboluyor ama
+# gorev cubugu gizli / kisayollar kapali kaliyor (geri alma unlock_system'de yapiliyor,
+# cokmede calismiyor). Uygulamayi yeniden baslatan bir gozcu de yok -> tahta yeniden
+# baslatilana kadar kullanilamaz halde kaliyor.
+#
+# OZEL excepthook kurulunca PyQt5 abort ETMEZ; istisna loglanir ve dongu devam eder.
+# Bir panel cizilemezse yalnizca o panel eksik kalir, tahta ayakta durur.
+def _kuresel_istisna(tur, deger, iz):
+    try:
+        logging.critical("YAKALANMAMIS ISTISNA — surec ayakta tutuluyor", exc_info=(tur, deger, iz))
+    except Exception:
+        pass
+
+
+sys.excepthook = _kuresel_istisna
+
 # --- Configuration ---
 # Define paths for user-specific and default configurations
 APP_NAME = "fatih-client"
