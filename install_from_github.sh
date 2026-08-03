@@ -44,7 +44,12 @@ fi
 
 # Repoyu klonla
 echo -e "${CYAN}[2/5] Proje dosyaları indiriliyor...${NC}"
-git clone --depth 1 https://github.com/mehmet-han/Pardus_Tahta.git "$TEMP_DIR/Pardus_Tahta" 2>/dev/null
+# DAL: yayin dali degiskenle secilir. Eskiden varsayilan dal (main) cekiliyordu ve
+# main, v6'nin gerisinde kalabiliyordu -> internetten kurulan tahtalara ESKI surum
+# gidiyordu. Yayin oncesi v6 -> main birlestirilmeli.
+KURULUM_DALI="${FATIH_BRANCH:-main}"
+echo -e "${CYAN}     (dal: $KURULUM_DALI)${NC}"
+git clone --depth 1 --branch "$KURULUM_DALI" https://github.com/mehmet-han/Pardus_Tahta.git "$TEMP_DIR/Pardus_Tahta" 2>/dev/null
 
 if [ ! -d "$TEMP_DIR/Pardus_Tahta" ]; then
     echo -e "${RED}HATA: Repo klonlanamadı! İnternet bağlantınızı kontrol edin.${NC}"
@@ -58,14 +63,19 @@ echo -e "${GREEN}✅ Proje dosyaları indirildi.${NC}"
 echo -e "${CYAN}[3/5] Kurulum başlatılıyor...${NC}"
 cd "$TEMP_DIR/Pardus_Tahta"
 
-# fatih-manager.sh üzerinden birleştirilmiş kurulumu kullan
-if [ -f "fatih_projesi_python/client/install-unified.sh" ]; then
-    cd fatih_projesi_python/client
-    bash install-unified.sh
-elif [ -f "setup.sh" ]; then
+# DIKKAT (3 Agustos 2026 incelemesi): burada eskiden install-unified.sh TERCIH
+# EDILIYORDU. O betik 14 Temmuz'dan kalma AYRI bir kurulum yolu ve setup.sh'a
+# eklenen guvenlik duzeltmelerinin HICBIRINI icermiyor:
+#   - admin sifresini duz metin sakliyor
+#   - fatih-uninstall sudoers kuralini arguman kisitlamadan yaziyor (--force acigi)
+#   - /opt izinlerini 755 birakiyor
+#   - "ALL ALL=(ALL) NOPASSWD: /sbin/reboot" gibi HERKESE acik kurallar yaziyor
+# Kurulumlarin ~%90'i internetten yapildigi icin bu, sertlestirmelerin sahaya
+# HIC ULASMAMASI demekti. Artik TEK kurulum yolu var: setup.sh.
+if [ -f "setup.sh" ]; then
     bash setup.sh
 else
-    echo -e "${RED}HATA: Kurulum scripti bulunamadı!${NC}"
+    echo -e "${RED}HATA: setup.sh bulunamadı!${NC}"
     rm -rf "$TEMP_DIR"
     exit 1
 fi

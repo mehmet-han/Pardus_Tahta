@@ -1,5 +1,31 @@
 #!/bin/bash
 
+# =====================================================================
+# EMEKLIYE AYRILDI (3 Agustos 2026)
+# ---------------------------------------------------------------------
+# Bu betik AYRI bir kurulum yoluydu ve setup.sh'a eklenen guvenlik
+# duzeltmelerinin hicbirini icermiyor:
+#   - admin sifresini DUZ METIN sakliyor (PBKDF2 yok)
+#   - fatih-uninstall sudoers kuralini arguman kisitlamadan yaziyor
+#     -> `sudo fatih-uninstall --force` ile sifre atlanabiliyor
+#   - /opt/fatih-client izinlerini 755 birakiyor
+#   - "ALL ALL=(ALL) NOPASSWD: /sbin/reboot" gibi TUM kullanicilara acik
+#     sudoers kurallari yaziyor
+#   - kurulum dogrulama kodunu hic kontrol etmiyor
+#
+# TEK gecerli kurulum yolu: depo kokundeki setup.sh
+# =====================================================================
+echo "═══════════════════════════════════════════════════════════"
+echo "❌ BU KURULUM YOLU KULLANIMDAN KALDIRILDI"
+echo "═══════════════════════════════════════════════════════════"
+echo "Guvenlik duzeltmelerini icermedigi icin devre disi birakildi."
+echo ""
+echo "Bunun yerine depo kokunden:"
+echo "    sudo ./setup.sh"
+echo "═══════════════════════════════════════════════════════════"
+exit 1
+
+
 # =============================================================
 # Fatih Client - Birleştirilmiş Kurulum Scripti
 # Login ekranı ÖNCESİ kilitleme için tam kurulum

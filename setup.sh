@@ -53,9 +53,37 @@ if [ -n "$_KURULUM_KODU" ]; then
 elif [ -n "$_ONCEKI_TOKEN" ]; then
     echo "  ℹ Kurulum dosyası yok ama tahta zaten tanıtılmış — mevcut kimlik korunacak."
 else
+    # INTERNETTEN KURULUM: git klonunda Readme.txt YOKTUR (.gitignore). Kurulumlarin
+    # ~%90'i internetten yapildigi icin dosyayi sart kosmak bu yolu tamamen kapatirdi.
+    # Bu yuzden once ELLE GIRIS istenir; bos birakilirsa kurulum durur.
+    echo ""
+    echo "  ℹ Kurulum dosyası bulunamadı (internetten kurulumda normaldir)."
+    echo "    Mebre'den aldığınız 64 haneli kurulum kodunu girin."
+    echo "    Boş bırakırsanız kurulum durur."
+    read -p "  Kurulum kodu: " _ELLE_KOD
+    _ELLE_KOD=$(printf '%s' "$_ELLE_KOD" | tr -d '[:space:]')
+
+    case "$_ELLE_KOD" in
+        *[!0-9a-fA-F]*|"")
+            _ELLE_KOD=""
+            ;;
+        *)
+            if [ ${#_ELLE_KOD} -ne 64 ]; then
+                echo "  ⚠ Kod 64 hane olmalı — girilen: ${#_ELLE_KOD} hane."
+                _ELLE_KOD=""
+            fi
+            ;;
+    esac
+
+    if [ -n "$_ELLE_KOD" ]; then
+        _KURULUM_KODU="$_ELLE_KOD"
+        _ELLE_KOD=""
+        echo "  ✅ Kurulum kodu alındı."
+    else
+
     echo ""
     echo "========================================================="
-    echo "❌ KURULUM DURDURULDU: Kurulum dosyası eksik."
+    echo "❌ KURULUM DURDURULDU: Kurulum kodu girilmedi."
     echo "========================================================="
     echo "Bu tahta daha önce tanıtılmamış, bu haliyle kurulursa TANITILAMAZ."
     echo ""
@@ -68,6 +96,7 @@ else
     echo "(Git deposundan kurulum yapıyorsanız bu dosya orada BULUNMAZ.)"
     echo "========================================================="
     exit 1
+    fi
 fi
 
 # --- ON KONTROLLER (3 Agustos 2026: kurulum sahada cok takiliyordu) ---
