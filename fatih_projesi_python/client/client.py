@@ -2990,6 +2990,7 @@ DUYURU_BIRTHDAY_GATE_SEC = 180  # 3 dk
 DUYURU_SLIDE_MS = 8000
 DUYURU_MAX_NOKTA = 12
 DUYURU_RESIM_MAX_BAYT = 6 * 1024 * 1024   # 6 MB ustu resim cizilmez
+DUYURU_YEDEK_OMUR_SAAT = 4       # ders programi cozulemezse duyuru bu kadar sonra duser
 DUYURU_RESIM_MAX_YUKSEKLIK = 1600          # panelde resme ayrilan azami yukseklik (px). Yuksek cozunurluklu tahtada foto buyuk gorunsun; dusuk cozunurlukte zaten ekran orani (0.40H) sinirlar.
 
 # Sinav bitis saati gonderilmemisse ekran gun boyu acik kalmasin diye varsayilan sure.
@@ -4681,7 +4682,7 @@ class FatihClientApp(QWidget):
         # Ders saati BITEN duyurular slider'dan cikarilir (bkz. _ders_saati_bitti_mi).
         # Sunucu gun bazinda suzuyor; bu da gun ICINDE eskiyeni temizler.
         _once = len(duyurular)
-        duyurular = [x for x in duyurular if not self._ders_saati_bitti_mi(x.get('dersSaati'))]
+        duyurular = [x for x in duyurular if not self._duyuru_suresi_doldu(x)]
         if _once != len(duyurular):
             logging.debug(f"Duyuru: {_once - len(duyurular)} adet ders saati gectigi icin gizlendi.")
 
@@ -4822,6 +4823,34 @@ class FatihClientApp(QWidget):
                 self.foto_tam_ekran.hide()
         except Exception:
             pass
+
+    def _duyuru_suresi_doldu(self, duyuru) -> bool:
+        """Duyuru artik gosterilmemeli mi?
+
+        IKI KURAL, sirayla:
+        1) Ders saati cozulebiliyorsa: o saatin CIKIS saati gectiyse duser (kesin kural).
+        2) Cozulemiyorsa (okul ders programini girmemis, tatil, hafta sonu):
+           duyuru DUYURU_YEDEK_OMUR_SAAT saatten eskiyse duser.
+
+        NEDEN 2. KURAL: sahada 36 duyuru birikti. Sebep, okulun ders programindaki
+        saatlerin BOS olmasiydi ([null,"",""]) — tahta dersin ne zaman bittigini
+        bilemeyince hicbir duyuruyu dusuremiyordu. Yalnizca 1. kurala guvenmek,
+        programi girilmemis her okulda duyurularin gun boyu birikmesi demekti.
+
+        Yas bilgisi yoksa (eski sunucu) 2. kural uygulanmaz -> duyuru gorunur kalir.
+        """
+        if self._ders_saati_bitti_mi(duyuru.get('dersSaati')):
+            return True
+
+        try:
+            ts = int(duyuru.get('olusturmaTs') or 0)
+        except (TypeError, ValueError):
+            return False
+        if ts <= 0:
+            return False   # sunucu yas gondermiyor -> dokunma
+
+        yas_saat = (time.time() - ts) / 3600.0
+        return yas_saat > DUYURU_YEDEK_OMUR_SAAT
 
     def _ders_saati_bitti_mi(self, ders_saati) -> bool:
         """Verilen ders saatinin CIKIS saati gecti mi?
