@@ -4678,6 +4678,13 @@ class FatihClientApp(QWidget):
         d = getattr(self, '_last_display_data', None) or {}
         duyurular = [x for x in (d.get('duyurular') or []) if isinstance(x, dict)]
 
+        # Ders saati BITEN duyurular slider'dan cikarilir (bkz. _ders_saati_bitti_mi).
+        # Sunucu gun bazinda suzuyor; bu da gun ICINDE eskiyeni temizler.
+        _once = len(duyurular)
+        duyurular = [x for x in duyurular if not self._ders_saati_bitti_mi(x.get('dersSaati'))]
+        if _once != len(duyurular):
+            logging.debug(f"Duyuru: {_once - len(duyurular)} adet ders saati gectigi icin gizlendi.")
+
         # Duyuru yoksa -> gizle, doğum günü (varsa) yeniden görünür.
         if not duyurular:
             self._hide_duyuru_panel()
@@ -4815,6 +4822,57 @@ class FatihClientApp(QWidget):
                 self.foto_tam_ekran.hide()
         except Exception:
             pass
+
+    def _ders_saati_bitti_mi(self, ders_saati) -> bool:
+        """Verilen ders saatinin CIKIS saati gecti mi?
+
+        NEDEN: sunucu o GUNUN duyurularini gonderiyor (hedef_tarih = bugun), yani
+        duyurular gece yarisi kendiliginden temizleniyor. Ama GUN ICINDE hicbiri
+        dusmuyordu: 1. saat icin yazilan "Konu: Elementler" 8. saatte de donuyor,
+        tahta gun sonunda alakasiz duyurularla doluyordu.
+
+        Artik hedef ders saatinin cikis saati gecince o duyuru slider'dan cikarilir.
+        Gun boyu kalsin istenen duyuru icin gonderen TUM saatleri isaretler (her saat
+        icin ayri satir olusur; sonuncusu gun sonunda duser).
+
+        FAIL-OPEN: ders programi yoksa, saat cozulemezse ya da ders_saati gecersizse
+        FALSE doner (duyuru GORUNMEYE devam eder). Belirsizlikte duyuruyu gizlemek,
+        gostermekten daha kotudur.
+        """
+        try:
+            no = int(ders_saati or 0)
+        except (TypeError, ValueError):
+            return False
+        if no <= 0:
+            return False   # saat bilgisi yok -> dokunma
+
+        sch = getattr(self, 'schedule', None)
+        if not sch or 'hours' not in sch:
+            return False   # program yok -> dokunma
+
+        try:
+            hours = sch['hours']
+            if not isinstance(hours, list):
+                return False
+            gun = simdi().isoweekday()          # 1=Pazartesi ... 7=Pazar
+            if gun >= len(hours):
+                return False
+            gun_prog = hours[gun]
+            if not isinstance(gun_prog, list) or no >= len(gun_prog):
+                return False
+
+            saat_verisi = gun_prog[no]
+            if not isinstance(saat_verisi, list) or len(saat_verisi) < 3:
+                return False
+
+            cikis = self._format_time(saat_verisi[2])
+            if not cikis or len(cikis) != 5:
+                return False
+
+            return simdi().strftime("%H:%M") > cikis
+        except Exception as e:
+            logging.debug(f"Ders saati bitis kontrolu yapilamadi: {e}")
+            return False
 
     def _duyuru_resmi_iste(self, duyuru_id: int, url: str):
         """Fotografi ARKA PLANDA indirir. UI asla beklemez; gelince slayt yenilenir."""
