@@ -119,6 +119,23 @@ Yeni şifreyi okul yönetimine bırakın ve kendi kaydınıza yazın.
 
 Üçü de çalışıyorsa okuldan ayrılabilirsiniz.
 
+### ÖNEMLİ — Ders programı girilmiş mi?
+
+Okuldan ayrılmadan önce **okul yönetimine sorun**: Mebre masaüstü programında
+akıllı tahta **çalışma saatleri** (ders giriş/çıkış saatleri) girilmiş mi?
+
+Girilmemişse tahta **ders bitiminde kendiliğinden kilitlenmez.** Öğretmen açar,
+açık kalır — kilit sisteminin en önemli işi yapılmamış olur. Ayrıca tahtaya
+gönderilen duyurular da gün içinde düşmez, birikir.
+
+Program girilmemişse okul yönetimine masaüstü programdan girmesini söyleyin ve
+girdikten sonra **veri gönderdiğinden** emin olun. Tahta yeni saatleri bir
+sonraki yoklamada alır.
+
+Bunu kontrol etmenin en pratik yolu: bir ders çıkış saatini bekleyip tahtanın
+kendiliğinden kilitlenmesini görmek. Zaman yoksa en azından okul yönetiminden
+"çalışma saatleri girildi" teyidini alın ve Mebre'ye bildirin.
+
 ---
 
 ## Hata mesajları ve ne yapmalı
@@ -147,6 +164,14 @@ Yeni şifreyi okul yönetimine bırakın ve kendi kaydınıza yazın.
 | `İnternet yok` | Ağ bağlantısı yok | Tahtanın internetini kontrol edin |
 | `Güvenli bağlantı kurulamadı` | Okul ağı engelliyor | Okul BT sorumlusuyla görüşün |
 | `Uyarı: Bu kurum için tahta bulunamadı` | Okulun tahtaları tanımlı değil | Okul yönetimi masaüstü programdan tahtaları tanımlasın |
+
+### Kurulum sonrası görülen durumlar
+
+| Belirti | Sebebi | Ne yapmalı |
+|---|---|---|
+| Tahta ders bitiminde kilitlenmiyor | Çalışma saatleri (ders programı) girilmemiş | Okul yönetimi masaüstünden girip veri göndersin (bkz. ADIM 5) |
+| Duyurular gün boyu birikiyor, düşmüyor | Aynı sebep — tahta dersin ne zaman bittiğini bilmiyor | Aynı çözüm |
+| Kilit ekranında hiçbir panel yok (aferin, doğum günü, duyuru) | Tahtanın adı hiçbir sınıf adıyla eşleşmiyor | Tahta adı sınıf adıyla birebir aynı olmalı ("5AC", "5-A"). Okulda o sınıfta öğrenci kaydı da olmalı |
 
 ---
 
