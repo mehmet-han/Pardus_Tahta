@@ -4720,6 +4720,8 @@ class FatihClientApp(QWidget):
             self._render_birthday_panel(bd)
 
     def _hide_duyuru_panel(self, keep_state=False):
+        # Panel gizleniyorsa tam ekran fotograf da kapanmali (ekranda asili kalmasin).
+        self._foto_tam_ekran_kapat()
         """Slider'ı gizler + slayt timer'ını durdurur. keep_state=False durumunda slider
         bağlamını (periyot/liste/index) da sıfırlar."""
         if getattr(self, 'duyuru_panel', None) is not None:
@@ -4731,6 +4733,8 @@ class FatihClientApp(QWidget):
             self._duyuru_index = 0
 
     def _advance_duyuru_slide(self):
+        # Slayt degisiyor -> acik tam ekran fotograf onceki duyuruya aitti, kapat.
+        self._foto_tam_ekran_kapat()
         """Sonraki slayta geç (slayt timer'ından)."""
         if not self._duyuru_active:
             return
@@ -4750,6 +4754,67 @@ class FatihClientApp(QWidget):
         if n <= 520:
             return 14
         return 13
+
+    # ==================== FOTOGRAF TAM EKRAN ====================
+    # Tahtaya gonderilen fotograflar resmi yazi oluyor; kartta buyuk gosterilse bile
+    # kucuk punto okunmayabiliyor. Tahta dokunmatik: fotografa dokununca tam ekran acilir.
+    #
+    # GUVENLIK (kilidi zayiflatmamak icin bilincli kisitlar):
+    #  - Katman AYRI PENCERE DEGIL, kilit ekraninin COCUGU. Kilidin ustune cikamaz,
+    #    kilit ekrani kapanirsa o da kapanir.
+    #  - Uzerinde HICBIR etkilesim yok: buton yok, bag yok, metin girisi yok. Yalniz resim.
+    #  - Her dokunusta kapanir; 20 sn'de kendiliginden de kapanir (acik unutulmasin).
+    #  - Acilir acilmaz 'Tahtayi Acin' ve (i) butonlari USTE alinir -> ogretmen tahtayi
+    #    her an acabilir, katman onu engellemez.
+    #  - Slayt degisince, duyuru paneli gizlenince ve tahta acilinca kapatilir.
+    #  - Klavye grab'ina dokunmaz; kilit mantigi bu katmandan tamamen bagimsizdir.
+
+    def _foto_tam_ekran_hazirla(self):
+        """Katmani (ilk kullanimda) olusturur."""
+        if getattr(self, 'foto_tam_ekran', None) is not None:
+            return
+        self.foto_tam_ekran = QLabel(self)
+        self.foto_tam_ekran.setObjectName("fotoTamEkran")
+        self.foto_tam_ekran.setAlignment(Qt.AlignCenter)
+        self.foto_tam_ekran.setStyleSheet("background-color: rgba(0,0,0,235);")
+        self.foto_tam_ekran.hide()
+        # Dokununca kapansin.
+        self.foto_tam_ekran.mousePressEvent = lambda e: self._foto_tam_ekran_kapat()
+
+        self.foto_tam_ekran_timer = QTimer(self)
+        self.foto_tam_ekran_timer.setSingleShot(True)
+        self.foto_tam_ekran_timer.timeout.connect(self._foto_tam_ekran_kapat)
+
+    def _foto_tam_ekran_ac(self, pix):
+        """Fotografi ekrani kaplayacak sekilde gosterir."""
+        if pix is None or not isinstance(pix, QPixmap) or pix.isNull():
+            return
+        try:
+            self._foto_tam_ekran_hazirla()
+            # Ekranin tamamina sigdir; en-boy orani korunur (resmi yazi KIRPILMAZ).
+            buyuk = pix.scaled(max(320, self.width() - 40), max(240, self.height() - 40),
+                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.foto_tam_ekran.setPixmap(buyuk)
+            self.foto_tam_ekran.setGeometry(0, 0, self.width(), self.height())
+            self.foto_tam_ekran.show()
+            self.foto_tam_ekran.raise_()
+            # Tahtayi acma butonlari HER ZAMAN erisilebilir kalir.
+            self._raise_exam_controls()
+            self.foto_tam_ekran_timer.start(20000)
+        except Exception as e:
+            logging.warning(f"Fotograf tam ekran acilamadi: {e}")
+            self._foto_tam_ekran_kapat()
+
+    def _foto_tam_ekran_kapat(self):
+        """Katmani kapatir. Cagrilmasi HER DURUMDA guvenlidir."""
+        try:
+            if getattr(self, 'foto_tam_ekran_timer', None) is not None:
+                self.foto_tam_ekran_timer.stop()
+            if getattr(self, 'foto_tam_ekran', None) is not None:
+                self.foto_tam_ekran.clear()
+                self.foto_tam_ekran.hide()
+        except Exception:
+            pass
 
     def _duyuru_resmi_iste(self, duyuru_id: int, url: str):
         """Fotografi ARKA PLANDA indirir. UI asla beklemez; gelince slayt yenilenir."""
@@ -4875,6 +4940,10 @@ class FatihClientApp(QWidget):
                                    Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.duyuru_resim.setPixmap(_olcekli)
             self.duyuru_resim.show()
+            # Dokununca tam ekran (resmi yazinin kucuk puntosu okunabilsin).
+            self.duyuru_resim.setCursor(Qt.PointingHandCursor)
+            self.duyuru_resim.mousePressEvent = (
+                lambda e, _p=_pix: self._foto_tam_ekran_ac(_p))
         else:
             # Resmi yok, henuz inmedi ya da indirilemedi -> duyuru metin olarak devam eder.
             self.duyuru_resim.clear()
@@ -5712,6 +5781,9 @@ class FatihClientApp(QWidget):
             self.manual_override = True
             logging.info("Manual override activated (or server unlock received). Timer started.")
 
+        # Tam ekran fotograf acik kaldiysa kapat: kilit ekrani gidiyor.
+        self._foto_tam_ekran_kapat()
+
         self.is_locked = False
         self.hide()
         if self.keyboard_locker:
@@ -5960,7 +6032,11 @@ class FatihClientApp(QWidget):
         # Bilgi panelleri (aferin/dogum gunu) giris ekranini ve numpad'i kapatmasin.
         self._hide_info_panels()
 
+        # Tam ekran fotograf acikken sifre paneli ALTINDA kalabilirdi -> once kapat.
+        self._foto_tam_ekran_kapat()
+
         self.login_panel.show()
+        self.login_panel.raise_()
         # Force window to stay on top and regain focus if Cinnamon dropped it
         self.raise_()
         try:
