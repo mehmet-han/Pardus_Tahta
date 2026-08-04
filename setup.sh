@@ -151,11 +151,61 @@ esac
 echo "  ✅ Kurum kodu: $CORPORATE_CODE"
 echo ""
 
+# --- apt/dpkg kilidi (4 Agustos 2026 saha hatasi) ---
+# Tahtada otomatik guncelleme (unattended-upgrades) calisirken kurulum baslatilirsa
+# apt-get kilide takilip HATA verir. Eskiden bu hata "|| echo" ile yutuluyor, kurulum
+# devam ediyor ve 30 saniye sonra ALAKASIZ bir yerde patliyordu:
+#   pip3: komut yok -> ModuleNotFoundError: setuptools -> "Kod sifreleme basarisiz"
+# Teknisyen gercek sebebi (apt mesgul) gormuyordu. Artik once BEKLENIR, gecmezse
+# ne yapilacagini soyleyerek durulur.
+_KILIT_BEKLE=180
+_gecen=0
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+   || fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
+   || fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+    if [ "$_gecen" -eq 0 ]; then
+        echo "  ⏳ Tahtada başka bir paket işlemi çalışıyor (otomatik güncelleme olabilir)."
+        echo "     Bitmesi bekleniyor, lütfen kapatmayın..."
+    fi
+    sleep 5
+    _gecen=$((_gecen + 5))
+    if [ "$_gecen" -ge "$_KILIT_BEKLE" ]; then
+        echo ""
+        echo "========================================================="
+        echo "❌ KURULUM DURDURULDU: paket yöneticisi meşgul."
+        echo "========================================================="
+        echo "Tahtada başka bir program paket kuruyor/güncelliyor."
+        echo ""
+        echo "Yapılması gereken:"
+        echo "  1) Birkaç dakika bekleyin (otomatik güncelleme genelde kısa sürer)"
+        echo "  2) Yazılım Güncelleme / Bileşen Yöneticisi açıksa KAPATIN"
+        echo "  3) Kurulumu tekrar başlatın: sudo ./setup.sh"
+        echo ""
+        echo "Hangi işlemin tuttuğunu görmek için:  fuser -v /var/lib/dpkg/lock-frontend"
+        echo "========================================================="
+        exit 1
+    fi
+done
+[ "$_gecen" -gt 0 ] && echo "  ✅ Paket yöneticisi serbest kaldı, devam ediliyor."
+
 echo "[1/7] Gerekli paketler yükleniyor..."
 apt-get update -qq || echo "Uyarı: Depolar güncellenirken hata oluştu, devam ediliyor..."
 # Gerekli kütüphaneler ve Cython için kaynak kurucuları yükle
 apt-get install -y python3-pip python3-pyqt5 python3-dev gcc python3-setuptools python3-evdev || echo "Uyarı: Bazı apt paketleri bulunamadı, pip3 ile kurulmaya çalışılacak..."
-pip3 install Cython==3.0.11 setuptools evdev --break-system-packages || pip3 install Cython==3.0.11 setuptools evdev
+# pip3 komutu apt basarisiz oldugunda HIC KURULMAMIS olabiliyor (saha: "pip3: komut yok").
+# python3 -m pip yedegi, pip modul olarak varsa yine de kurulumu tamamlar.
+_PIP=""
+if command -v pip3 >/dev/null 2>&1; then
+    _PIP="pip3"
+elif python3 -m pip --version >/dev/null 2>&1; then
+    _PIP="python3 -m pip"
+fi
+if [ -n "$_PIP" ]; then
+    $_PIP install Cython==3.0.11 setuptools evdev --break-system-packages 2>/dev/null \
+        || $_PIP install Cython==3.0.11 setuptools evdev
+else
+    echo "  ⚠ pip bulunamadı — derleme araçları kurulamadı."
+fi
 
 echo "[2/7] Python kodları şifreleniyor (Obfuscation)..."
 # NOT: proje dizinine gecis scriptin EN BASINDA yapildi (on kontrol secret.txt'e bakiyor).
@@ -199,9 +249,29 @@ else
     # Eski derlemeleri temizle
     rm -rf build/ fatih_projesi_python/client/client.c fatih_projesi_python/client/*.so *.so 2>/dev/null
 
-    if ! command -v gcc >/dev/null 2>&1; then
-        echo "❌ KURULUM DURDURULDU: gcc yok ve hazır derlenmiş dosya da yok."
-        echo "   İnternet bağlayıp tekrar deneyin ya da hazır paketi isteyin."
+    # Sahada gcc VARDI ama setuptools/Cython yoktu; kontrol yalnizca gcc'ye baktigi icin
+    # gecti ve derleme "ModuleNotFoundError: setuptools" ile coktu. Artik ucu de bakiliyor.
+    _EKSIK_ARAC=""
+    command -v gcc >/dev/null 2>&1 || _EKSIK_ARAC="$_EKSIK_ARAC gcc"
+    python3 -c "import setuptools" >/dev/null 2>&1 || _EKSIK_ARAC="$_EKSIK_ARAC python3-setuptools"
+    python3 -c "import Cython"     >/dev/null 2>&1 || _EKSIK_ARAC="$_EKSIK_ARAC Cython"
+
+    if [ -n "$_EKSIK_ARAC" ]; then
+        echo ""
+        echo "========================================================="
+        echo "❌ KURULUM DURDURULDU: derleme araçları eksik."
+        echo "========================================================="
+        echo "Eksik olan:$_EKSIK_ARAC"
+        echo ""
+        echo "En sık sebebi: [1/7] adımında paketler kurulamadı."
+        echo "Yukarıdaki satırlarda apt hatası olup olmadığına bakın."
+        echo ""
+        echo "Yapılması gereken:"
+        echo "  1) Tahtanın internetini kontrol edin"
+        echo "  2) Birkaç dakika bekleyip kurulumu tekrar başlatın"
+        echo "  3) Sorun sürerse Mebre'den HAZIR DERLENMİŞ paketi isteyin"
+        echo "     (o pakette derlemeye hiç gerek kalmaz)"
+        echo "========================================================="
         exit 1
     fi
 
