@@ -178,3 +178,89 @@ duyurmanın tek yolu telefonla anlatmak; balonlar bu yükü azaltır.
 > sütununun tarif ettiği veri — şekli zamanla değişecek, tek tek sorgulanmayacak
 > ve her ipucu için ayrı sütun açmak anlamsız. Tablo standardı bu iş
 > başlamadan önce oturursa buraya hazır zemin olur.
+
+---
+
+## 4. Web girişi — okul kullanıcıları için web uygulaması
+
+**İstek (9 Ağu 2026):** Web sitesine "Giriş" düğmesi konsun. Kullanıcı cep
+numarası ve MebreCep şifresiyle girsin; **mobilde yapması zor olan işleri**
+web'den yapsın.
+
+### Verilen kararlar (9 Ağu 2026)
+
+| Konu | Karar |
+|---|---|
+| Konum | **Ayrı bir web uygulaması** — `kurum-panel` kurumsal kademeye özel kalacak |
+| İlk roller | **Yönetici / müdür yardımcısı** ve **öğretmen** |
+| Sonraki roller | Veli ve öğrenci — ilk faz oturduktan sonra |
+
+### Sıfırdan başlamıyoruz
+
+`kurum-panel` (React + Vite) zaten var ve giriş mekanizması tam bu desende:
+
+```
+Kurum Kodu + Cep Telefonu + Şifre  →  POST /client/login   (apiv5)
+```
+
+Ayrı uygulama yazılacak ama **kimlik doğrulama ucu yeniden yazılmamalı**;
+`/client/login` ve `client/*` uçları paylaşılmalı. `kurum-panel`'in
+`src/services/api.ts` ve `src/store/authStore.ts` dosyaları başlangıç deseni
+olarak alınabilir.
+
+### 🔴 Güvenlik — baştan tasarlanacak, sonradan eklenmeyecek
+
+Bu iş, bugüne kadar yalnızca mobil uygulamada duran bir kapıyı **herkese açık
+bir web adresine** taşıyor. Telefon numarası tahmin edilebilir bir bilgi ve
+şifre 6 hane; yani kaba kuvvet denemesi gerçekçi bir tehdit.
+
+- [ ] Deneme sınırı: IP + telefon başına, artan gecikmeli
+- [ ] Belirli sayıda hatalı denemeden sonra geçici kilit
+- [ ] Oturum süresi ve yenileme mantığı (mobildekiyle aynı olmak zorunda değil)
+- [ ] Her giriş denemesi denetim kaydına — başarılı/başarısız, IP, `kaynak='web'`
+- [ ] Şifre hiçbir zaman adres satırında taşınmaz
+
+> ⚠️ **Atlanması muhtemel kritik nokta — MebreCep izni.** `Mebre_Cep_Izni`
+> alanının polaritesi TERS: **1 = ENGELLİ**, 0/NULL = izinli. Bu kısıtı okul
+> koyuyor; yani okul bir öğretmenin veya velinin MebreCep kullanmasını bilerek
+> kapatmış olabilir. **Web girişi bu kontrolü uygulamazsa, okulun koyduğu
+> kısıtın etrafından dolaşan bir kapı açılmış olur.** Giriş ucunda bu alan
+> mutlaka kontrol edilmeli.
+> (bkz. hafıza: *MebreCep izin polaritesi*)
+
+### Netleşmesi gereken — ekran listesi
+
+**"Mobilde yapması zor olan işler" hangileri?** Cevap gelmeden tasarım tahmin
+olur. Aşağıdaki liste bir **öneri**, onaylanması/düzeltilmesi gerekiyor:
+
+*Yönetici / müdür yardımcısı*
+- Toplu yoklama düzeltme (geçmiş güne dönük)
+- Devamsızlık raporları, tarih aralığı seçerek
+- Veli sözleşmesi hazırlama ve yazdırma
+- Finans: tahsilat girişi ve dönemsel rapor
+- Ders programı görüntüleme / düzenleme
+
+*Öğretmen*
+- Not girişi (ölçme değerlendirme)
+- Ödev oluşturma ve gönderilen ödevleri değerlendirme
+- Kazanım işaretleme (işlenen / işlenmeyen)
+- Kendi dersinin yoklamasını düzeltme
+
+Ortak nokta: hepsi **klavye, geniş ekran veya yazıcı** isteyen işler. Telefonda
+yapılabilen bir işi web'e taşımanın kazancı yok; seçim ölçütü bu olmalı.
+
+### Sıralama
+
+- [ ] 1. Ekran listesi netleşsin
+- [ ] 2. Güvenlik tasarımı (yukarıdaki maddeler) yazılsın
+- [ ] 3. Uygulama iskeleti + giriş ekranı
+- [ ] 4. Yönetici ekranları → öğretmen ekranları
+- [ ] 5. **Siteye "Giriş" düğmesi en son eklenir**
+
+> Düğme neden en sona bırakılıyor: arkasında çalışan bir uygulama olmadan
+> konursa ziyaretçi ölü bir bağlantıya tıklar. Site bugün itibarıyla arama
+> motorlarına yeni açıldı; ilk izlenimi kırık bir düğmeyle vermek istemeyiz.
+
+> 🔗 Madde 1 ile bağlantılı: `kaynak` sütununa `web` değeri bu iş için eklendi.
+> Web'den yazılan her kayıt `kaynak='web'` taşıyacak — böylece bir veri sorunu
+> çıktığında hangi uçtan geldiği belli olur.
