@@ -95,9 +95,22 @@ sorgulardan düşsün diye tüm okuma sorgularına `deleted_at = 0` koşulu ekle
 
 ### Yapılacaklar
 
-- [ ] Standardı bir dosyaya yaz: `v5/veritabani_standardi.md` (SQL'in yaşadığı yerde dursun)
-- [ ] Mevcut eksik tablolara `ALTER TABLE` ile ekle — **önce dev, sonra prod**
-      (`finans_*`, `optik*`, `yedek_durum` öncelikli)
+- [x] Standardı bir dosyaya yaz ✅ `v5/veritabani_standardi.md`
+- [x] Mevcut eksik tablolara `ALTER TABLE` ile ekle ✅ **9 Ağu 2026 — 26 tablo,
+      dev ve prod tamam, veri kaybı yok**
+
+  | Dalga | Tablolar | Dosya |
+  |---|---|---|
+  | 1 | `finans_*` (4), `optik*` (4), `yedek_durum` | `migrations/2026_08_meta_sutunlari.sql` |
+  | 2 | `kazanim_*` (4), `rehberlik_*` (8), `sporzeka_*` (5) | `migrations/2026_08_meta_sutunlari_2_TEK_SATIR.sql` |
+
+  Yol boyunca çıkan üç tuzak (hepsi dosyalara not edildi):
+  - **`DATABASE()` phpMyAdmin'de boş dönüyor** → doğrulama sorgusu hiçbir şey
+    bulamıyor ve sütunlar eklenmemiş gibi görünüyor. Veritabanı adı elle yazılmalı.
+  - **phpMyAdmin çok satırlı `ALTER`'ı yanlış yerden bölüyor** ("Tanınmayan ifade
+    türü, near ADD"). Çözüm: her ifade tek satırda, yorumlarda tırnak/ters tırnak yok.
+  - **`surum` adı çakışıyordu** — `yedek_durum.surum` zaten "masaüstü sürümü"
+    demek. İyimser kilit sütunu `satir_surum` olarak netleştirildi.
 - [ ] Repository katmanına ortak yardımcı: insert/update'te `created_at`,
       `updated_at`, `kaynak` otomatik dolsun; her sorguda elle yazılmasın
 - [ ] Okuma sorgularına `deleted_at = 0` koşulunu ekle (tek tek gözden geçirme işi)
