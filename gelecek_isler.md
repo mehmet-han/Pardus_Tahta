@@ -93,9 +93,42 @@ sorgulardan düşsün diye tüm okuma sorgularına `deleted_at = 0` koşulu ekle
   ya da "adı belli, şekli belli" diye ayrı kalır — karar verilmeli, ikisi birden
   olmasın.
 
+### 🔴 Arşivleme kuralı — henüz sistemin tamamında geçerli değil
+
+**Kural (9 Ağu 2026):** Hiçbir bilgi fiziksel olarak silinmez. 2 yıllık
+arşivleme sorumluluğu var; kayıt "silinmiş gibi" davranır, yalnızca gösterilmez.
+
+**Mevcut durum ölçüldü:** `v5/src` içinde hâlâ **44 adet `DELETE FROM`** ifadesi
+var ve yaklaşık 30 tabloya dokunuyorlar. Aralarında ciddi olanlar:
+
+```
+ogrenciler (2)   kullanicilar (2)   mbl_Login_val (1)   ogretmen (1)
+kullanici_yetki (3)   VeliIzin (2)   okul_duyurular (1)   ogrenci_taksit (1)
+finans_tarife (1)   finans_indirim (1)   kesinti (1)   ilcePuantaj (1)
+```
+
+Yani kural şu an yalnızca **rehberlik** ve **kazanım** modüllerinde geçerli;
+gerisinde öğrenci, kullanıcı ve veli kaydı hâlâ kalıcı olarak siliniyor.
+
+- [ ] **Faz 1 — sütun:** Bu 30 tabloya meta sütunlarını ekle (aynı geçiş deseni)
+- [ ] **Faz 2 — kod:** 44 `DELETE FROM` ifadesini yumuşak silmeye çevir
+- [ ] **Faz 3 — okuma:** İlgili sorgulara `deleted_at = 0` ekle.
+      ⚠️ Faz 2'yi yapıp Faz 3'ü atlamak **en tehlikeli sıra**: silinen kayıtlar
+      listelerde görünmeye başlar. İkisi birlikte yapılmalı.
+- [ ] **Faz 4 — arşiv temizleme:** 2 yılı geçen pasif kayıtları silen zamanlanmış
+      iş. Yükümlülük "iki yıl sakla", "sonsuza kadar sakla" değil.
+
+> ⚠️ **Benzersiz indeks tuzağı:** Pasife alınan bir kaydın aynısı tekrar
+> eklenmek istenirse indeks çakışır. `kazanim_uyarlama`'da bu, upsert'e
+> `deleted_at = 0` yazılarak çözüldü (pasif kayıt canlanıyor). Diğer tablolarda
+> tek tek bakılmalı — atlanırsa kullanıcı "kaydettim ama gelmiyor" der.
+
 ### Yapılacaklar
 
 - [x] Standardı bir dosyaya yaz ✅ `v5/veritabani_standardi.md`
+- [x] Ortak yardımcı: `v5/src/helpers/meta.js` ✅
+- [x] **rehberlik** ve **kazanım** repository'leri geçti ✅ — 10 insert,
+      7 update, 23 okuma sorgusu; her iki modülde fiziksel silme **sıfır**
 - [x] Mevcut eksik tablolara `ALTER TABLE` ile ekle ✅ **9 Ağu 2026 — 26 tablo,
       dev ve prod tamam, veri kaybı yok**
 
