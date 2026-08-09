@@ -228,7 +228,16 @@ v4 bunu şöyle çözüyor: `workAll.php`, iki günden uzun süre hata üreten I
 
 - [ ] **Eylül–Ekim'de BAŞLATMA** — saha zirvede (3.547 tahta)
 - [ ] Okul okul, uzaktan güncelleme
-- [ ] Her dalgadan sonra ölç: v4'e hâlâ vuran tahta kaldı mı
+- [x] Her dalgadan sonra ölç: v4'e hâlâ vuran tahta kaldı mı
+      ✅ **Artık otomatik.** ynt5 → **Zamanlanmış İşler → v4 Nabzı** her sabah
+      06:15'te ölçüyor (`src/jobs/v4Nabiz.ts`, commit `7714776`). 14 günlük tablo:
+      v4 olay/tahta, v5 olay/tahta, v4 güvenlik kaydı, "v4 son görülme".
+      Ayrım `smart_boadr_logs.school_id` ile: v4 gerçek okul id yazıyor, v5 device
+      ucu sabit `0`. Tamamen okuma, hiçbir tabloya yazmıyor.
+      ⚠️ İki sınır panelde de yazılı: v5'in **panel** tarafı da gerçek id ile
+      yazdığı için "v4" sütununa elle yapılan işlemler karışır (sayı tek haneye
+      inince sıfır bekleme); `securtyphp_logs` yalnızca hata kaydı tuttuğu için
+      sıfır olması "v4 kullanılmıyor" demek değildir.
 - [ ] Geri dönüş yolu her zaman açık kalsın (v4 ayakta)
 
 ### [ ] 8. v4'ü emekliye ayır
