@@ -144,3 +144,37 @@ Yani masaüstünde zaten bir duyuru kanalı **var**. İlk karar bu yüzden şu:
 > (bkz. hafıza: *Duyuru suistimal & yeniden tasarım*). Etkinlik takvimi de bir
 > yayın kanalıdır — kimin kime ne gönderebileceği baştan sınırlanmalı, sonradan
 > eklenen kısıt tutmuyor.
+
+---
+
+## 3. Masaüstü programa bağlamsal ipucu balonları
+
+**İstek (9 Ağu 2026):** Google Search Console'da ekranın köşelerinde çıkan
+açıklama balonlarının benzeri masaüstü programına da konsun.
+
+**Ne işe yarar:** Kullanıcı bir ekranı ilk kez açtığında, o ekrandaki düğmenin
+ne yaptığını anlatan küçük bir balon çıkar. Yeni bir özellik eklendiğinde de
+"burada yeni bir şey var" diye işaret eder. Bugün yeni özellikleri kullanıcıya
+duyurmanın tek yolu telefonla anlatmak; balonlar bu yükü azaltır.
+
+### Tasarımda baştan düşünülmesi gerekenler
+
+- [ ] **"Gördüm" bilgisi nerede tutulacak?** Balon bir kez gösterilip
+      kapatıldıktan sonra bir daha çıkmamalı. Bu bilgi **kullanıcı bazında**
+      tutulmalı (okul bazında değil) — aynı okulda iki müdür yardımcısı varsa
+      ikisi de kendi rehberini görmeli.
+- [ ] **Sürüm bilgisi şart.** Balon "gördüm" olarak işaretlenirken hangi
+      ipucunun hangi sürümü görüldüğü de yazılmalı. Aksi halde ipucunun metni
+      güncellendiğinde kimse yeni hâlini görmez.
+- [ ] **Sunucudan mı gelecek, programa mı gömülü olacak?** Sunucudan gelirse
+      yeni sürüm dağıtmadan ipucu eklenebilir — asıl kazanç bu. Gömülü olursa
+      her değişiklik için istemci güncellemesi gerekir.
+- [ ] **Kapatma her zaman mümkün olmalı.** "Bir daha gösterme" seçeneği
+      olmayan rehberler kullanıcıyı bıktırır; program açılışında art arda dört
+      balon çıkarsa özellik ters teper.
+- [ ] Windows masaüstü mü, Pardus tahta mı, ikisi de mi?
+
+> 🔗 Madde 1 ile bağlantılı: "gördüm" işaretleri tam olarak `props` JSON
+> sütununun tarif ettiği veri — şekli zamanla değişecek, tek tek sorgulanmayacak
+> ve her ipucu için ayrı sütun açmak anlamsız. Tablo standardı bu iş
+> başlamadan önce oturursa buraya hazır zemin olur.
