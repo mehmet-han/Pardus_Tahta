@@ -107,22 +107,40 @@ sorgulardan düşsün diye tüm okuma sorgularına `deleted_at = 0` koşulu ekle
 
 ---
 
-## 2. Masaüstü Etkinlikler sistemi
+## 2. Masaüstü Etkinlikler — okulun etkinlik takvimi
 
-**İstek:** "Masaüstü etkinlikler diye bir sistem yapacağız."
+**İstek:** Masaüstünde okulun **etkinlik takvimi** gösterilecek.
+*(9 Ağu 2026'da netleşti: kullanım/telemetri kaydı değil, okulun kendi
+etkinlikleri — tören, gezi, veli toplantısı, sınav günü gibi.)*
 
-**Durum:** Kapsam henüz konuşulmadı. Tasarıma başlamadan önce netleşmesi
-gerekenler:
+### Sıfırdan başlamıyoruz — dokunacağı üç mevcut sistem
 
-- [ ] **"Etkinlik" hangi anlamda?** İki okuma mümkün ve tamamen farklı işler:
-      (a) okulun etkinlik/duyuru takvimi — tahtada ve masaüstünde gösterilen
-      etkinlikler, (b) masaüstü uygulamasının kullanım/olay kaydı (telemetri).
-- [ ] Hangi istemci: Windows masaüstü (`Fatih_Client_CSharp`), Pardus tahta, yoksa ikisi de?
-- [ ] Kim oluşturur — okul yöneticisi mi, öğretmen mi, merkez mi?
-- [ ] Nerede görünür: kilit ekranı mı, uygulama içi mi, MebreCep'e de düşecek mi?
-- [ ] Mevcut `okul_duyurular` ve tahta duyuru sistemiyle ilişkisi ne?
-      Yeni bir sistem mi, onun genişletilmiş hâli mi?
+| Sistem | Nerede | Ne yapıyor |
+|---|---|---|
+| **Masaüstü duyuru** | `v5/src/repositories/client/desktop_duyuru/` | `okul_duyurular` tablosundan okuyup masaüstüne düşürüyor |
+| **Tahta duyuru** | `v5/…/tahta_duyuru/`, `Pardus_Tahta_v6/…/client.py` | Tahtada duyuru gösteriyor (V6.00.45'te fotoğraf, V6.00.46'da ders saati bitince düşme eklendi) |
+| **MEB Takvimi** | `v5/src/apps/tatil/` (`Tatil`, `AkademikYil`) | Resmî tatil ve akademik yıl takvimi |
+
+Yani masaüstünde zaten bir duyuru kanalı **var**. İlk karar bu yüzden şu:
+
+- [ ] **Yeni sistem mi, `okul_duyurular`'ın genişletilmiş hâli mi?**
+      "Duyuru" ile "etkinlik" farkı: duyurunun tek bir yayın anı var, etkinliğin
+      **başlangıç–bitiş tarihi** ve takvim üzerinde bir yeri var. Bu fark tek
+      başına ayrı tablo gerektirebilir; ama iki ayrı sistem olursa okul aynı
+      şeyi iki yere girmek zorunda kalır.
+
+### Netleşmesi gerekenler
+
+- [ ] Hangi istemci: Windows masaüstü (`Fatih_Client_CSharp`), Pardus tahta, ikisi de?
+- [ ] Kim oluşturur — okul yöneticisi, öğretmen, yoksa merkez de gönderebilir mi?
+- [ ] Nerede görünür: kilit ekranı, uygulama içi, MebreCep'e de düşecek mi?
+- [ ] Tekrar eden etkinlik (her salı) olacak mı? Olacaksa tasarım baştan ona göre kurulmalı.
+- [ ] `Tatil` / `AkademikYil` takvimiyle aynı ekranda mı gösterilecek?
+      Kullanıcı için "okulun takvimi" tek bir şeydir; resmî tatiller ve okul
+      etkinlikleri ayrı ekranlarda durursa parçalı görünür.
 
 > ⚠️ Duyuru tarafında geçmiş var: duyuru özelliği öğrencilere toplu mesaj
-> atmak için suistimal edildiği için v5'ten kaldırılmıştı. Yeni sistem
-> tasarlanırken kimin kime ne gönderebileceği baştan sınırlanmalı.
+> atmak için suistimal edildiği için v5'ten kaldırılmıştı
+> (bkz. hafıza: *Duyuru suistimal & yeniden tasarım*). Etkinlik takvimi de bir
+> yayın kanalıdır — kimin kime ne gönderebileceği baştan sınırlanmalı, sonradan
+> eklenen kısıt tutmuyor.
