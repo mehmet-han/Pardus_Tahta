@@ -17,11 +17,24 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLi
                            QListWidget, QListWidgetItem, QScrollArea, QStackedWidget)
 from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor, QFontMetrics
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
-from evdev import InputDevice, ecodes, list_devices
-from pyudev import Context, Monitor
 from datetime import datetime, timedelta
 import subprocess as _subprocess
 import hashlib
+import platform
+
+# --- Platform tespiti ---
+# client.py Pardus (Linux) ve Windows'ta ortak calisir. Linux'a OZEL girdi/USB kutuphaneleri
+# (evdev, pyudev) Windows'ta yuklenemez -> import'u korumali yap. Zorlama katmani (klavye kilidi,
+# USB izleme) platforma gore ayrilir; Windows implementasyonu ayri eklenir (Faz W).
+IS_WINDOWS = platform.system() == 'Windows'
+try:
+    from evdev import InputDevice, ecodes, list_devices
+    from pyudev import Context, Monitor
+    _HAS_LINUX_INPUT = True
+except Exception:
+    _HAS_LINUX_INPUT = False
+    InputDevice = ecodes = list_devices = None
+    Context = Monitor = None
 
 # --- Global flag: development mode (--no-lock) ---
 NO_LOCK_MODE = '--no-lock' in sys.argv
@@ -2300,6 +2313,10 @@ class KeyboardLocker(threading.Thread):
         self._find_input_devices()
 
     def _find_input_devices(self):
+        # Windows'ta evdev yok -> cihaz bulunmaz, run() erken doner (klavye kilidi Faz W'de Win32 hook ile).
+        if not _HAS_LINUX_INPUT:
+            logging.info("evdev yok (Windows) -> KeyboardLocker devre disi (platform katmani gelecek).")
+            return
         paths = list_devices()
         for path in paths:
             try:
@@ -2355,14 +2372,23 @@ class UdevMonitor(QObject):
     
     def __init__(self):
         super().__init__()
+        self.last_usb_state = False  # Track if USB was present in last check
+        self.unlocked_by_usb = False  # NEW: Track if system was unlocked by USB
+        # Windows'ta pyudev yok -> USB izleme devre disi (Faz W'de WM_DEVICECHANGE ile eklenecek).
+        if not _HAS_LINUX_INPUT:
+            self.monitor_thread = None
+            self.context = None
+            self.monitor = None
+            return
         self.monitor_thread = threading.Thread(target=self._run, daemon=True)
         self.context = Context()
         self.monitor = Monitor.from_netlink(self.context)
         self.monitor.filter_by('block', 'partition')
-        self.last_usb_state = False  # Track if USB was present in last check
-        self.unlocked_by_usb = False  # NEW: Track if system was unlocked by USB
-        
-    def start(self): 
+
+    def start(self):
+        if not _HAS_LINUX_INPUT or self.monitor_thread is None:
+            logging.info("pyudev yok (Windows) -> UdevMonitor devre disi (platform katmani gelecek).")
+            return
         self.monitor_thread.start()
         
     def _run(self):
