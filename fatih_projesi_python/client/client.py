@@ -40,6 +40,13 @@ except Exception:
 # Linux/Windows farkı arayüz arkasında; buradaki yöneticiler ona DELEGE eder.
 from platform_layer import get_platform
 
+# W6-3: Windows'ta GERÇEK kiosk SADECE `--win-kiosk` ile açılır (opt-in). (`--kiosk`
+# Linux'ta ayrı bir moda ait, çakışmasın diye ayrı bayrak.) Bayrak YOKSA Windows GÜVENLİ
+# ÖNİZLEME'de kalır: normal pencere, klavye/taskbar/tarayıcı ELE GEÇİRİLMEZ (mobilden
+# "kilitle" gelse bile tuzak olmaz). Linux'ta bu bayrağın etkisi yoktur.
+# Not: gerçek kiosk'ta bile klavye kilidinin panik-çıkışı (Ctrl+Alt+Shift+Q) HEP aktiftir.
+WINDOWS_KIOSK = IS_WINDOWS and ('--win-kiosk' in sys.argv)
+
 # --- Global flag: development mode (--no-lock) ---
 NO_LOCK_MODE = '--no-lock' in sys.argv
 if NO_LOCK_MODE:
@@ -2971,11 +2978,19 @@ class FatihClientApp(QWidget):
         # YAPMA — normal, kapatılabilir (X butonlu), hep-üstte OLMAYAN pencere. Kullanıcı
         # asla "takılmaz". Kiosk zorlaması Windows'ta zaten yok (evdev guard). Faz W'de
         # gerçek Windows kiosk yazılınca bu geçici koruma kaldırılır.
-        if IS_WINDOWS:
+        if IS_WINDOWS and not WINDOWS_KIOSK:
+            # GÜVENLİ ÖNİZLEME: normal, X butonlu, hep-üstte OLMAYAN pencere.
             self.setWindowFlags(Qt.Window)
             self.resize(1280, 800)
+        elif IS_WINDOWS and WINDOWS_KIOSK:
+            # GERÇEK WINDOWS KİOSK: tam ekran, çerçevesiz, hep-üstte. (X11Bypass Windows'ta
+            # zararsız/etkisiz; topmost'u ayrıca force_window_on_top pekiştirir.)
+            self.setWindowFlags(
+                Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+            )
+            self.setGeometry(QApplication.primaryScreen().geometry())
         else:
-            # Qt.Tool kaldırıldı: Taskbar'ın üstüne geçemiyordu.
+            # Linux (Pardus). Qt.Tool kaldırıldı: Taskbar'ın üstüne geçemiyordu.
             # Qt.Window + WindowStaysOnTopHint + BypassWindowManagerHint kombinasyonu
             # Cinnamon WM'i atlayarak doğrudan X11 compositing katmanına yerleşir.
             self.setWindowFlags(
@@ -5508,10 +5523,16 @@ class FatihClientApp(QWidget):
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
             # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
-            PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
-            VolumeControl.mute()         # Ses kapat (C# VD)
-            ShortcutManager.disable()    # Kısayolları devre dışı bırak
-            kill_all_browsers()          # Tarayıcıları kapat (C# KillAllItem)
+            # Windows önizlemede (--win-kiosk YOK) klavye/taskbar/ses/tarayıcı ELE GEÇİRİLMEZ
+            # (tuzak/istenmeyen kapanma olmasın). Linux'ta ve Windows-kiosk'ta tam zorlama.
+            _enforce = (not IS_WINDOWS) or WINDOWS_KIOSK
+            if _enforce:
+                PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
+                VolumeControl.mute()         # Ses kapat (C# VD)
+                ShortcutManager.disable()    # Kısayolları/klavye kilidi (panik-çıkışlı)
+                kill_all_browsers()          # Tarayıcıları kapat (C# KillAllItem)
+            else:
+                logging.info("Windows önizleme: kilit görsel (zorlama YOK — --win-kiosk ile aç).")
 
             # Ensure UI elements are visible
             self.login_button.setVisible(True)
@@ -5535,18 +5556,22 @@ class FatihClientApp(QWidget):
             # panelleri tazeler; ekran bu sirada bos kalmaz (yukarida zaten cizildi).
             self.refresh_display()
 
-            # Cinnamon panel'i altımıza göm: xdotool ile kilit ekranını en üste al
-            QTimer.singleShot(500, self._force_on_top)
-            QTimer.singleShot(1500, self._force_on_top)  # 1.5 saniye sonra tekrar
+            # Kilit ekranını en üste al (Linux: xdotool/wmctrl; Windows-kiosk: SetWindowPos TOPMOST).
+            # Windows önizlemede topmost YOK (normal pencere).
+            if _enforce:
+                QTimer.singleShot(500, self._force_on_top)
+                QTimer.singleShot(1500, self._force_on_top)
 
-            try:
-                if not getattr(self, 'keyboard_locker', None) or not self.keyboard_locker.is_alive():
-                    self.keyboard_locker = KeyboardLocker()
-                    self.keyboard_locker.start()
-                    logging.info("KeyboardLocker thread started successfully")
-            except Exception as e:
-                logging.error(f"Failed to start KeyboardLocker: {e}")
-                self.keyboard_locker = None
+            # KeyboardLocker (evdev) — Linux klavye grab'i; Windows'ta no-op (guard'lı).
+            if _enforce:
+                try:
+                    if not getattr(self, 'keyboard_locker', None) or not self.keyboard_locker.is_alive():
+                        self.keyboard_locker = KeyboardLocker()
+                        self.keyboard_locker.start()
+                        logging.info("KeyboardLocker thread started successfully")
+                except Exception as e:
+                    logging.error(f"Failed to start KeyboardLocker: {e}")
+                    self.keyboard_locker = None
 
 
     def _force_on_top(self):
@@ -5558,6 +5583,15 @@ class FatihClientApp(QWidget):
             if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
                 logging.debug("_force_on_top atlandı: overlay aktif")
                 return
+        # Windows: pencereyi HWND_TOPMOST yap (platform_layer). Linux: xdotool/wmctrl (aşağıda).
+        if IS_WINDOWS:
+            try:
+                self.raise_()
+                self.activateWindow()
+                get_platform().force_window_on_top(int(self.winId()))
+            except Exception as e:
+                logging.debug(f"_force_on_top (Windows) error: {e}")
+            return
         try:
             self.raise_()
             self.activateWindow()
@@ -6403,13 +6437,16 @@ def main():
         window = FatihClientApp()
         logging.info("FatihClientApp created successfully")
 
-        if IS_WINDOWS:
+        if IS_WINDOWS and not WINDOWS_KIOSK:
             # GÜVENLİ ÖNİZLEME: Windows'ta kiosk zorlamasını (lock_system: tarayıcı kapatma,
             # taskbar gizleme, ses/kısayol kilidi) HİÇ çağırma. Sadece UI'yi normal pencerede
-            # göster. Kullanıcı Alt+F4 / X ile kapatır. Faz W'de gerçek Windows kiosk gelince değişir.
-            logging.info("Windows: güvenli önizleme modu (kiosk zorlaması atlandı)")
+            # göster. Kullanıcı Alt+F4 / X ile kapatır. Gerçek kiosk için `--win-kiosk`.
+            logging.info("Windows: güvenli önizleme modu (kiosk zorlaması atlandı). Gerçek kiosk için --win-kiosk.")
             window.show()
         else:
+            # Linux her zaman; Windows YALNIZCA --win-kiosk verilirse gerçek kilitle açılır.
+            if IS_WINDOWS:
+                logging.warning("Windows GERÇEK KİOSK modu (--win-kiosk): tam kilit. Panik çıkış: Ctrl+Alt+Shift+Q")
             window.lock_system("Sistem başlatıldı")
             logging.info("System locked on startup")
 
@@ -7212,6 +7249,42 @@ if __name__ == '__main__':
             print("Running in KIOSK mode (pre-login lock screen)")
             main_kiosk()
             sys.exit(0)
+        elif sys.argv[1] == '--set-enroll-secret':
+            # Windows'ta setup.sh yok; enroll sırrını buradan config.ini'ye ENC:<base64> yazar.
+            # Tahta tanıtılır tanıtılmaz istemci bu değeri SİLER (Linux'taki davranışın aynısı).
+            # Kullanım: python client.py --set-enroll-secret <SIR>   (sır argüman verilmezse sorar)
+            secret = sys.argv[2] if len(sys.argv) > 2 else None
+            if not secret:
+                try:
+                    secret = input("Enroll sırrı (Readme.txt içeriği): ").strip()
+                except Exception:
+                    secret = None
+            if not secret:
+                print("❌ Sır boş; işlem yapılmadı.")
+                sys.exit(1)
+            try:
+                enc = 'ENC:' + _b64.b64encode(secret.encode('utf-8')).decode('ascii')
+                config.read(CONFIG_PATH)
+                if not config.has_section('settings'):
+                    config.add_section('settings')
+                config.set('settings', 'enroll_secret', enc)
+                with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+                    config.write(_cf)
+                print(f"✅ enroll_secret yazıldı: {CONFIG_PATH}")
+                print("   Tahtayı tanıt (mobil/panel) — istemci tanıtımdan sonra sırrı otomatik siler.")
+            except Exception as e:
+                print(f"❌ enroll_secret yazılamadı: {e}")
+                sys.exit(1)
+            sys.exit(0)
+        elif sys.argv[1] in ('--win-kiosk', '--help', '-h'):
+            if sys.argv[1] != '--win-kiosk':
+                print("Kullanım: python client.py [--test | --kiosk | --win-kiosk | --set-enroll-secret <SIR>]")
+                print("  (bayraksız)          Linux: kilitli kiosk | Windows: GÜVENLİ önizleme (normal pencere)")
+                print("  --win-kiosk          Windows GERÇEK kiosk (tam kilit; panik çıkış Ctrl+Alt+Shift+Q)")
+                print("  --test               Config doğrula, pencere açma")
+                print("  --set-enroll-secret  Enroll sırrını config'e yaz (Windows kurulumu)")
+                sys.exit(0)
+            # --win-kiosk: normal main()'e düş (WINDOWS_KIOSK zaten sys.argv'den True)
 
     # Normal mode
     main()

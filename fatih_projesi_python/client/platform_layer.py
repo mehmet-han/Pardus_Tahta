@@ -99,6 +99,11 @@ class PlatformBackend:
         """Tarayıcılar + görev yöneticisi gibi kilidi atlayabilecek uygulamaları kapat."""
         pass
 
+    def force_window_on_top(self, hwnd):
+        """Verilen pencereyi en üste zorla (kilit ekranı masaüstünü örtsün). Linux'ta
+        çağıran taraf (client._force_on_top) xdotool kullanır; bu metot Windows içindir."""
+        pass
+
 
 class LinuxBackend(PlatformBackend):
     """Pardus/Linux zorlama — mevcut client.py mantığı (davranış birebir korunur)."""
@@ -470,8 +475,14 @@ class WindowsBackend(PlatformBackend):
 
     def __init__(self):
         import ctypes
+        self._ctypes = ctypes
         self._user32 = ctypes.windll.user32
         self._kernel32 = ctypes.windll.kernel32
+        # SetWindowPos: pencereyi HWND_TOPMOST yap (x64 prototip şart).
+        self._user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                              ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                              wintypes.UINT]
+        self._user32.SetWindowPos.restype = wintypes.BOOL
         self._keylock = _WindowsKeyboardLock()
         # Ses: pycaw varsa kullan, yoksa ses no-op (kurulum bagimliligini zorlamayalim).
         self._audio = None
@@ -566,6 +577,16 @@ class WindowsBackend(PlatformBackend):
             except Exception:
                 pass
         logging.info("Foreground apps killed (Windows)")
+
+    def force_window_on_top(self, hwnd):
+        try:
+            c = self._ctypes
+            HWND_TOPMOST = c.c_void_p(-1)
+            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x0002, 0x0001, 0x0040
+            self._user32.SetWindowPos(c.c_void_p(int(hwnd)), HWND_TOPMOST, 0, 0, 0, 0,
+                                      SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        except Exception as e:
+            logging.error(f"force_window_on_top (Windows) error: {e}")
 
     def disable_shortcuts(self, auto_release_sec=None):
         """Kilit-atlatma tuşlarını engelle (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4).
