@@ -3269,16 +3269,24 @@ class FatihClientApp(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Fatih Client v1.5 - Scheduling Enabled")
-        # Qt.Tool kaldırıldı: Taskbar'ın üstüne geçemiyordu.
-        # Qt.Window + WindowStaysOnTopHint + BypassWindowManagerHint kombinasyonu
-        # Cinnamon WM'i atlayarak doğrudan X11 compositing katmanına yerleşir.
-        self.setWindowFlags(
-            Qt.Window
-            | Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-            | Qt.X11BypassWindowManagerHint
-        )
-        self.setGeometry(QApplication.primaryScreen().geometry())
+        # GÜVENLİ ÖNİZLEME (Windows fizibilite): Windows'ta tam ekran/çerçevesiz/hep-üstte
+        # YAPMA — normal, kapatılabilir (X butonlu), hep-üstte OLMAYAN pencere. Kullanıcı
+        # asla "takılmaz". Kiosk zorlaması Windows'ta zaten yok (evdev guard). Faz W'de
+        # gerçek Windows kiosk yazılınca bu geçici koruma kaldırılır.
+        if IS_WINDOWS:
+            self.setWindowFlags(Qt.Window)
+            self.resize(1280, 800)
+        else:
+            # Qt.Tool kaldırıldı: Taskbar'ın üstüne geçemiyordu.
+            # Qt.Window + WindowStaysOnTopHint + BypassWindowManagerHint kombinasyonu
+            # Cinnamon WM'i atlayarak doğrudan X11 compositing katmanına yerleşir.
+            self.setWindowFlags(
+                Qt.Window
+                | Qt.FramelessWindowHint
+                | Qt.WindowStaysOnTopHint
+                | Qt.X11BypassWindowManagerHint
+            )
+            self.setGeometry(QApplication.primaryScreen().geometry())
 
         # Ensure the window accepts mouse events
         self.setMouseTracking(True)
@@ -6697,8 +6705,15 @@ def main():
         window = FatihClientApp()
         logging.info("FatihClientApp created successfully")
 
-        window.lock_system("Sistem başlatıldı")
-        logging.info("System locked on startup")
+        if IS_WINDOWS:
+            # GÜVENLİ ÖNİZLEME: Windows'ta kiosk zorlamasını (lock_system: tarayıcı kapatma,
+            # taskbar gizleme, ses/kısayol kilidi) HİÇ çağırma. Sadece UI'yi normal pencerede
+            # göster. Kullanıcı Alt+F4 / X ile kapatır. Faz W'de gerçek Windows kiosk gelince değişir.
+            logging.info("Windows: güvenli önizleme modu (kiosk zorlaması atlandı)")
+            window.show()
+        else:
+            window.lock_system("Sistem başlatıldı")
+            logging.info("System locked on startup")
 
         print("Application started successfully - login button should be visible")
         sys.exit(app.exec())
