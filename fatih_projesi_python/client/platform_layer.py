@@ -310,22 +310,127 @@ class LinuxBackend(PlatformBackend):
 
 
 class WindowsBackend(PlatformBackend):
-    """Windows zorlama — W6-2'de Win32 ile doldurulacak. Şimdilik NO-OP (güvenli).
+    """Windows zorlama (W6-2). Güvenli primitifler ctypes/pycaw ile.
 
-    Yol haritası (W6-2):
-      hide/show_taskbar  -> Shell_TrayWnd'i SetWindowPos ile gizle/göster
-      mute/unmute        -> Core Audio (pycaw) veya nircmd
-      disable_sleep      -> SetThreadExecutionState(ES_CONTINUOUS|ES_DISPLAY_REQUIRED)
-      disable_shortcuts  -> low-level keyboard hook (Task Manager/Alt+Tab/Win engel)
-      kill_foreground    -> taskkill /IM chrome.exe ... (dikkatli hedef listesi)
+    UYGULANDI (geri alınabilir, kilitlemez):
+      hide/show_taskbar -> Shell_TrayWnd + Start düğmesi ShowWindow(HIDE/SHOW)
+      disable_sleep     -> SetThreadExecutionState(ES_CONTINUOUS|SYSTEM|DISPLAY)
+      mute/unmute       -> Core Audio (pycaw); yoksa NO-OP
+      kill_foreground   -> taskkill /F /IM (tarayıcılar + görev yöneticisi)
+
+    ⚠ HENÜZ NO-OP — TEHLİKELİ, ayrı+dikkatli adım (Faz W6-2B):
+      disable/restore_shortcuts -> low-level keyboard hook (Ctrl+Alt+Del/Alt+Tab/Win/
+      Task Manager engeli). Yanlış yaparsak makineyi kilitler; panik-çıkış + gerçek
+      kiosk modu şartıyla yazılacak. Şimdilik BİLEREK boş.
     """
 
     name = 'windows'
 
-    def __init__(self):
-        logging.info("WindowsBackend: kiosk zorlaması henüz NO-OP (W6-2'de gelecek).")
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    ES_DISPLAY_REQUIRED = 0x00000002
+    SW_HIDE = 0
+    SW_SHOW = 5
 
-    # Tüm metotlar PlatformBackend'deki no-op'ları miras alır (pass).
+    def __init__(self):
+        import ctypes
+        self._user32 = ctypes.windll.user32
+        self._kernel32 = ctypes.windll.kernel32
+        # Ses: pycaw varsa kullan, yoksa ses no-op (kurulum bagimliligini zorlamayalim).
+        self._audio = None
+        try:
+            from ctypes import cast, POINTER
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            self._pycaw = (cast, POINTER, CLSCTX_ALL, AudioUtilities, IAudioEndpointVolume)
+            logging.info("WindowsBackend: pycaw bulundu (ses kontrolu aktif).")
+        except Exception:
+            self._pycaw = None
+            logging.info("WindowsBackend: pycaw yok -> ses kontrolu NO-OP (pip install pycaw).")
+
+    # --- Taskbar ---
+    def _taskbar_windows(self):
+        wins = []
+        tray = self._user32.FindWindowW("Shell_TrayWnd", None)
+        if tray:
+            wins.append(tray)
+        # Cok monitorlu: ikincil gorev cubuklari
+        sec = self._user32.FindWindowW("Shell_SecondaryTrayWnd", None)
+        if sec:
+            wins.append(sec)
+        # Eski Windows'ta ayri Baslat dugmesi
+        start = self._user32.FindWindowW("Button", None)
+        if start:
+            wins.append(start)
+        return wins
+
+    def hide_taskbar(self):
+        if NO_LOCK_MODE:
+            logging.info("[NO-LOCK] hide_taskbar() skipped")
+            return
+        try:
+            for w in self._taskbar_windows():
+                self._user32.ShowWindow(w, self.SW_HIDE)
+            logging.info("Taskbar hidden (Windows)")
+        except Exception as e:
+            logging.error(f"Error hiding taskbar (Windows): {e}")
+
+    def show_taskbar(self):
+        try:
+            for w in self._taskbar_windows():
+                self._user32.ShowWindow(w, self.SW_SHOW)
+            logging.info("Taskbar shown (Windows)")
+        except Exception as e:
+            logging.error(f"Error showing taskbar (Windows): {e}")
+
+    # --- Uyku ---
+    def disable_sleep(self):
+        try:
+            self._kernel32.SetThreadExecutionState(
+                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED | self.ES_DISPLAY_REQUIRED)
+            logging.info("Sleep/display disabled (Windows)")
+        except Exception as e:
+            logging.error(f"Error disabling sleep (Windows): {e}")
+
+    def _volume_iface(self):
+        cast, POINTER, CLSCTX_ALL, AudioUtilities, IAudioEndpointVolume = self._pycaw
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        return cast(interface, POINTER(IAudioEndpointVolume))
+
+    def mute(self):
+        if not self._pycaw:
+            return
+        try:
+            self._volume_iface().SetMute(1, None)
+            logging.info("Audio muted (Windows/pycaw)")
+        except Exception as e:
+            logging.error(f"Error muting audio (Windows): {e}")
+
+    def unmute(self):
+        if not self._pycaw:
+            return
+        try:
+            vol = self._volume_iface()
+            vol.SetMute(0, None)
+            vol.SetMasterVolumeLevelScalar(1.0, None)
+            logging.info("Audio unmuted + max (Windows/pycaw)")
+        except Exception as e:
+            logging.error(f"Error unmuting audio (Windows): {e}")
+
+    # --- On uygulamalar ---
+    def kill_foreground_apps(self):
+        import subprocess as sp
+        targets = ['chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe',
+                   'iexplore.exe', 'brave.exe', 'taskmgr.exe']
+        for t in targets:
+            try:
+                sp.run(['taskkill', '/F', '/IM', t], capture_output=True, timeout=5)
+            except Exception:
+                pass
+        logging.info("Foreground apps killed (Windows)")
+
+    # disable_shortcuts / restore_shortcuts: BILEREK NO-OP (Faz W6-2B, klavye hook).
 
 
 _INSTANCE = None
@@ -338,3 +443,24 @@ def get_platform() -> PlatformBackend:
         _INSTANCE = WindowsBackend() if IS_WINDOWS else LinuxBackend()
         logging.info(f"Platform backend: {_INSTANCE.name} (DESKTOP_ENV={DESKTOP_ENV})")
     return _INSTANCE
+
+
+if __name__ == '__main__':
+    # GÜVENLİ öz-test: her primitifi dener ve HEMEN geri alır. Klavye kilidi YOK
+    # (o Faz W6-2B), yani makineni kilitlemez. `python platform_layer.py` ile çalıştır.
+    import time
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    p = get_platform()
+    print(f"\n=== Platform öz-test: {p.name} ===\n")
+
+    print("1) Uyku engeli açılıyor...")
+    p.disable_sleep()
+
+    print("2) Ses: kapat (2sn) -> aç...")
+    p.mute(); time.sleep(2); p.unmute()
+
+    print("3) Taskbar: gizle (3sn) -> göster...")
+    p.hide_taskbar(); time.sleep(3); p.show_taskbar()
+
+    print("\n(kill_foreground_apps TEST EDİLMEDİ — tarayıcılarını kapatmasın diye.)")
+    print("=== Bitti. Taskbar geri geldiyse Windows primitifleri çalışıyor. ===\n")
