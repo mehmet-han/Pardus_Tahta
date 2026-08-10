@@ -19,6 +19,7 @@ import sys
 import os
 import platform as _platform
 import logging
+import threading
 import subprocess as _subprocess
 
 IS_WINDOWS = _platform.system() == 'Windows'
@@ -85,8 +86,9 @@ class PlatformBackend:
         """Uyku/ekran kapanması/ekran koruyucuyu devre dışı bırak."""
         pass
 
-    def disable_shortcuts(self):
-        """Tehlikeli klavye kısayollarını devre dışı bırak (kilitlenince)."""
+    def disable_shortcuts(self, auto_release_sec=None):
+        """Tehlikeli klavye kısayollarını devre dışı bırak (kilitlenince).
+        auto_release_sec: test için N sn sonra otomatik bırak (platform destekliyorsa)."""
         pass
 
     def restore_shortcuts(self):
@@ -241,7 +243,7 @@ class LinuxBackend(PlatformBackend):
         except Exception as e:
             logging.error(f"Error disabling sleep: {e}")
 
-    def disable_shortcuts(self):
+    def disable_shortcuts(self, auto_release_sec=None):
         if NO_LOCK_MODE:
             logging.info("[NO-LOCK] disable_shortcuts() skipped")
             return
@@ -309,6 +311,119 @@ class LinuxBackend(PlatformBackend):
         logging.info("All browsers and monitors killed")
 
 
+if IS_WINDOWS:
+    import ctypes
+    from ctypes import wintypes
+
+    class _WindowsKeyboardLock:
+        """Windows low-level klavye hook'u ile kilit-atlatma tuşlarını engeller.
+
+        Engellenen: Win tuşu, Alt+Tab, Alt+Esc, Ctrl+Esc, Alt+F4, Ctrl+Shift+Esc (Görev Yön.).
+        Engellenemez (kernel/güvenlik): Ctrl+Alt+Del (Secure Attention Sequence) — bu KASITLI
+        nihai kaçış: makine asla kalıcı kilitlenmez.
+
+        GÜVENLİK:
+          - PANİK: Ctrl+Alt+Shift+Q → hook anında bırakılır.
+          - Opsiyonel auto_release_sec → N sn sonra kendini bırakır (test için şart).
+        Hook, kendi mesaj döngülü ayrı thread'de kurulur (GUI'yi bloklamaz).
+        """
+
+        WH_KEYBOARD_LL = 13
+        WM_QUIT = 0x0012
+        HC_ACTION = 0
+        VK_TAB, VK_ESCAPE, VK_F4 = 0x09, 0x1B, 0x73
+        VK_LWIN, VK_RWIN = 0x5B, 0x5C
+        VK_CONTROL, VK_MENU, VK_SHIFT = 0x11, 0x12, 0x10
+        PANIC_VK = 0x51  # 'Q'
+
+        class _KBD(ctypes.Structure):
+            _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
+                        ("dwExtraInfo", ctypes.c_void_p)]
+
+        def __init__(self):
+            self._user32 = ctypes.windll.user32
+            self._kernel32 = ctypes.windll.kernel32
+            # LRESULT = LONG_PTR (x64'te 64-bit) -> c_ssize_t
+            self._user32.CallNextHookEx.restype = ctypes.c_ssize_t
+            self._user32.SetWindowsHookExW.restype = ctypes.c_void_p
+            self._PROC = ctypes.CFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int,
+                                          wintypes.WPARAM, wintypes.LPARAM)
+            self._callback_ref = self._PROC(self._callback)  # GC'lenmesin diye tut
+            self._hook = None
+            self._thread = None
+            self._thread_id = None
+            self._auto_timer = None
+
+        def _down(self, vk):
+            return bool(self._user32.GetAsyncKeyState(vk) & 0x8000)
+
+        def _callback(self, nCode, wParam, lParam):
+            try:
+                if nCode == self.HC_ACTION:
+                    kbd = ctypes.cast(lParam, ctypes.POINTER(self._KBD)).contents
+                    vk = kbd.vkCode
+                    ctrl = self._down(self.VK_CONTROL)
+                    alt = self._down(self.VK_MENU)
+                    shift = self._down(self.VK_SHIFT)
+
+                    # PANİK: Ctrl+Alt+Shift+Q -> bırak
+                    if vk == self.PANIC_VK and ctrl and alt and shift:
+                        logging.info("PANİK: klavye kilidi bırakılıyor (Ctrl+Alt+Shift+Q)")
+                        self.stop()
+                        return 1
+
+                    block = (
+                        vk in (self.VK_LWIN, self.VK_RWIN)          # Win tuşu
+                        or (vk == self.VK_TAB and alt)              # Alt+Tab
+                        or (vk == self.VK_ESCAPE and (alt or ctrl)) # Alt+Esc / Ctrl+Esc (+Ctrl+Shift+Esc)
+                        or (vk == self.VK_F4 and alt)               # Alt+F4
+                    )
+                    if block:
+                        return 1  # yut
+            except Exception:
+                pass
+            return self._user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+        def _thread_proc(self):
+            self._thread_id = self._kernel32.GetCurrentThreadId()
+            hmod = self._kernel32.GetModuleHandleW(None)
+            self._hook = self._user32.SetWindowsHookExW(
+                self.WH_KEYBOARD_LL, self._callback_ref, hmod, 0)
+            if not self._hook:
+                logging.error("SetWindowsHookExW başarısız — klavye kilidi kurulamadı.")
+                return
+            logging.info("Klavye kilidi AKTİF (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4 engelli). "
+                         "Panik: Ctrl+Alt+Shift+Q. Ctrl+Alt+Del her zaman çalışır.")
+            msg = wintypes.MSG()
+            while self._user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                self._user32.TranslateMessage(ctypes.byref(msg))
+                self._user32.DispatchMessageW(ctypes.byref(msg))
+            if self._hook:
+                self._user32.UnhookWindowsHookEx(self._hook)
+                self._hook = None
+            logging.info("Klavye kilidi bırakıldı.")
+
+        def start(self, auto_release_sec=None):
+            if self._thread and self._thread.is_alive():
+                return
+            self._thread = threading.Thread(target=self._thread_proc, daemon=True)
+            self._thread.start()
+            if auto_release_sec:
+                self._auto_timer = threading.Timer(auto_release_sec, self.stop)
+                self._auto_timer.daemon = True
+                self._auto_timer.start()
+
+        def stop(self):
+            if self._auto_timer:
+                try: self._auto_timer.cancel()
+                except Exception: pass
+                self._auto_timer = None
+            if self._thread_id:
+                self._user32.PostThreadMessageW(self._thread_id, self.WM_QUIT, 0, 0)
+                self._thread_id = None
+
+
 class WindowsBackend(PlatformBackend):
     """Windows zorlama (W6-2). Güvenli primitifler ctypes/pycaw ile.
 
@@ -336,6 +451,7 @@ class WindowsBackend(PlatformBackend):
         import ctypes
         self._user32 = ctypes.windll.user32
         self._kernel32 = ctypes.windll.kernel32
+        self._keylock = _WindowsKeyboardLock()
         # Ses: pycaw varsa kullan, yoksa ses no-op (kurulum bagimliligini zorlamayalim).
         self._audio = None
         try:
@@ -430,7 +546,17 @@ class WindowsBackend(PlatformBackend):
                 pass
         logging.info("Foreground apps killed (Windows)")
 
-    # disable_shortcuts / restore_shortcuts: BILEREK NO-OP (Faz W6-2B, klavye hook).
+    def disable_shortcuts(self, auto_release_sec=None):
+        """Kilit-atlatma tuşlarını engelle (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4).
+        Panik: Ctrl+Alt+Shift+Q. auto_release_sec verilirse N sn sonra kendini bırakır (test)."""
+        if NO_LOCK_MODE:
+            logging.info("[NO-LOCK] disable_shortcuts() skipped")
+            return
+        self._keylock.start(auto_release_sec=auto_release_sec)
+
+    def restore_shortcuts(self):
+        """Klavye kilidini bırak."""
+        self._keylock.stop()
 
 
 _INSTANCE = None
@@ -446,21 +572,39 @@ def get_platform() -> PlatformBackend:
 
 
 if __name__ == '__main__':
-    # GÜVENLİ öz-test: her primitifi dener ve HEMEN geri alır. Klavye kilidi YOK
-    # (o Faz W6-2B), yani makineni kilitlemez. `python platform_layer.py` ile çalıştır.
     import time
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     p = get_platform()
-    print(f"\n=== Platform öz-test: {p.name} ===\n")
 
+    if '--test-keylock' in sys.argv:
+        # ⚠ KLAVYE KİLİDİ TESTİ — GÜVENLİ: 15sn sonra OTOMATİK bırakır + panik + Ctrl+Alt+Del.
+        if p.name != 'windows':
+            print("Bu test yalnız Windows'ta çalışır."); sys.exit(0)
+        LOCK_SEC = 15
+        print("\n=== KLAVYE KİLİDİ TESTİ (GÜVENLİ) ===")
+        print(f" Kilit {LOCK_SEC} saniye AKTİF olacak. Denemek için:")
+        print("   • Alt+Tab, Win tuşu, Alt+F4  -> ENGELLİ olmalı")
+        print("   • PANİK çıkış: Ctrl+Alt+Shift+Q  -> anında bırakır")
+        print(f"   • {LOCK_SEC}sn sonra OTOMATİK bırakılır (kalıcı kilit YOK)")
+        print("   • Ctrl+Alt+Del HER ZAMAN çalışır (nihai kaçış)\n")
+        # Bağımsız SERT güvenlik: döngü takılsa bile 20sn'de zorla bırak.
+        hard = threading.Timer(LOCK_SEC + 5, p.restore_shortcuts); hard.daemon = True; hard.start()
+        p.disable_shortcuts(auto_release_sec=LOCK_SEC)
+        for i in range(LOCK_SEC, 0, -1):
+            print(f"  kilit... {i}   ", end='\r', flush=True); time.sleep(1)
+        p.restore_shortcuts(); hard.cancel()
+        time.sleep(0.5)
+        print("\n\nBırakıldı. Şimdi Alt+Tab / Win tuşu ÇALIŞMALI. Test bitti.\n")
+        sys.exit(0)
+
+    # Varsayılan: GÜVENLİ öz-test (klavye kilidi HARİÇ) — her primitifi dener + HEMEN geri alır.
+    print(f"\n=== Platform öz-test: {p.name} ===\n")
     print("1) Uyku engeli açılıyor...")
     p.disable_sleep()
-
     print("2) Ses: kapat (2sn) -> aç...")
     p.mute(); time.sleep(2); p.unmute()
-
     print("3) Taskbar: gizle (3sn) -> göster...")
     p.hide_taskbar(); time.sleep(3); p.show_taskbar()
-
-    print("\n(kill_foreground_apps TEST EDİLMEDİ — tarayıcılarını kapatmasın diye.)")
-    print("=== Bitti. Taskbar geri geldiyse Windows primitifleri çalışıyor. ===\n")
+    print("\n(kill_foreground_apps ve klavye kilidi bu testte YOK.)")
+    print("Klavye kilidini denemek için: python platform_layer.py --test-keylock")
+    print("=== Bitti. ===\n")
