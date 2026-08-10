@@ -113,6 +113,25 @@ Bırakılınca Alt+Tab/Win **tekrar çalışmalı.**
 **DURUM: ✅ geçti (hepsi engellendi, otomatik bırakıldı).**
 > Sorun çıkarsa: "SetWindowsHookExW başarısız (GetLastError=...)" log'unu paylaş.
 
+### T5 — GERÇEK Windows kiosk (`--win-kiosk`) — makine gelince
+> ⚠️ Bu adım gerçekten kilitler (tam ekran + taskbar gizli + klavye kilidi + ses kapalı).
+> **Güvenlik ağları:** (1) panik **Ctrl+Alt+Shift+Q**, (2) **Ctrl+Alt+Del** her zaman → Görev
+> Yöneticisi → python.exe sonlandır, (3) **reboot serbest bırakır** (autostart Registry'ye HENÜZ
+> yazılmıyor — W6-3 adım 4). Yani makine kalıcı kilitlenemez.
+```
+python client.py --win-kiosk
+```
+**Beklenen:** tam ekran kilit ekranı, taskbar yok, Win/Alt+Tab/Alt+F4 engelli, ses kapalı, pencere
+hep üstte. **Enroll + mobilden aç/kapat testi** — önce sırrı yaz, sonra kiosk'u aç:
+```
+python client.py --set-enroll-secret <SIR>     # Readme.txt içeriği; config'e ENC: yazar
+python client.py --win-kiosk                    # tahtayı panelden/mobilden tanıt → aç/kapat dene
+```
+**DURUM: ⏳ makine bekliyor (kod hazır, commit e2457c1).**
+
+> Not: `python client.py` (bayraksız) Windows'ta HÂLÂ güvenli önizleme — kilitleme YOK.
+> Gerçek kilit **sadece `--win-kiosk`** ile. `python client.py --help` tüm bayrakları listeler.
+
 ---
 
 ## 4. Durum tablosu (W6)
@@ -123,17 +142,20 @@ Bırakılınca Alt+Tab/Win **tekrar çalışmalı.**
 | **W6-1** | Platform katmanı (`platform_layer.py`: arayüz + Linux + Windows) | ✅ |
 | **W6-2** | Zorlama primitifleri: taskbar/uyku/ses/kill | ✅ kanıtlandı |
 | **W6-2B** | Klavye kilidi (low-level hook, panik+auto-release) | ✅ kanıtlandı |
-| **W6-3** | Entegrasyon + paketleme + kurulum (aşağıda) | ⏳ sıradaki |
+| **W6-3.1** | Gerçek Windows kilit akışı (`--win-kiosk`) + `force_on_top` + enroll helper | ✅ kod (makine testi ⏳) |
+| **W6-3.2+** | Autostart + uninstall + Task Mgr + token + paketleme (aşağıda) | ⏳ sıradaki |
 
 ---
 
 ## 5. W6-3 — kalan işler (sıradaki, entegrasyon ağırlıklı)
 
-1. **Gerçek Windows kilit akışı:** Şu an `main()` Windows'ta `lock_system`'i ATLIYOR (güvenli önizleme).
-   Windows'a özel bir kilit path'i: primitifleri (`platform_layer`) bağla — tam ekran topmost kilit ekranı +
-   `hide_taskbar` + `disable_shortcuts` (klavye kilidi) + `disable_sleep` + `mute`. Açılışta kilitli gelsin.
-2. **`force_on_top`:** Pencereyi üstte tutma → Windows `SetWindowPos(HWND_TOPMOST)` (Linux'ta xdotool).
-   Platform arayüzüne ekle.
+1. **✅ Gerçek Windows kilit akışı — BİTTİ (kod, commit e2457c1).** `--win-kiosk` bayrağı: `init_ui`
+   tam ekran/çerçevesiz/topmost, `main()` `lock_system` çağırır → `hide_taskbar` + `disable_shortcuts`
+   (klavye kilidi) + `disable_sleep` + `mute` + `kill_all_browsers`. Bayraksız = güvenli önizleme (değişmedi).
+   Enroll helper: `--set-enroll-secret <SIR>` (Windows'ta setup.sh yerine config'e ENC: yazar).
+   **Makine testi bekliyor (T5).**
+2. **✅ `force_on_top` — BİTTİ.** `platform_layer.force_window_on_top(hwnd)` → Windows `SetWindowPos(HWND_TOPMOST)`
+   (x64 prototipli), Linux no-op (client._force_on_top xdotool kullanmaya devam). `_force_on_top` Windows dalı bunu çağırır.
 3. **Task Manager sertleştirme:** `DisableTaskMgr` policy (Registry) + gerekiyorsa kill. (Ctrl+Alt+Del
    engellenemez ama Görev Yöneticisi'ni zorlaştır.)
 4. **Autostart:** Registry `Run` anahtarı veya Task Scheduler (Linux'ta systemd/.desktop yerine).
