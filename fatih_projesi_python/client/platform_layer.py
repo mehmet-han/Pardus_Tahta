@@ -344,11 +344,31 @@ if IS_WINDOWS:
         def __init__(self):
             self._user32 = ctypes.windll.user32
             self._kernel32 = ctypes.windll.kernel32
-            # LRESULT = LONG_PTR (x64'te 64-bit) -> c_ssize_t
-            self._user32.CallNextHookEx.restype = ctypes.c_ssize_t
-            self._user32.SetWindowsHookExW.restype = ctypes.c_void_p
+
+            # KRİTİK (x64): argtype/restype tanımla, yoksa ctypes 64-bit pointer'ları
+            # (modül handle, callback, hook handle, LRESULT) 32-bit'e KIRPAR ve hook kurulmaz.
             self._PROC = ctypes.CFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int,
                                           wintypes.WPARAM, wintypes.LPARAM)
+            u = self._user32
+            k = self._kernel32
+            u.SetWindowsHookExW.argtypes = [ctypes.c_int, self._PROC, ctypes.c_void_p, wintypes.DWORD]
+            u.SetWindowsHookExW.restype = ctypes.c_void_p
+            u.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+            u.CallNextHookEx.restype = ctypes.c_ssize_t
+            u.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+            u.UnhookWindowsHookEx.restype = wintypes.BOOL
+            u.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), ctypes.c_void_p, wintypes.UINT, wintypes.UINT]
+            u.GetMessageW.restype = ctypes.c_int
+            u.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
+            u.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
+            u.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            u.PostThreadMessageW.restype = wintypes.BOOL
+            u.GetAsyncKeyState.argtypes = [ctypes.c_int]
+            u.GetAsyncKeyState.restype = wintypes.SHORT
+            k.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+            k.GetModuleHandleW.restype = ctypes.c_void_p
+            k.GetCurrentThreadId.restype = wintypes.DWORD
+
             self._callback_ref = self._PROC(self._callback)  # GC'lenmesin diye tut
             self._hook = None
             self._thread = None
@@ -391,7 +411,8 @@ if IS_WINDOWS:
             self._hook = self._user32.SetWindowsHookExW(
                 self.WH_KEYBOARD_LL, self._callback_ref, hmod, 0)
             if not self._hook:
-                logging.error("SetWindowsHookExW başarısız — klavye kilidi kurulamadı.")
+                err = ctypes.get_last_error() if hasattr(ctypes, 'get_last_error') else self._kernel32.GetLastError()
+                logging.error(f"SetWindowsHookExW başarısız (GetLastError={err}) — klavye kilidi kurulamadı.")
                 return
             logging.info("Klavye kilidi AKTİF (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4 engelli). "
                          "Panik: Ctrl+Alt+Shift+Q. Ctrl+Alt+Del her zaman çalışır.")
