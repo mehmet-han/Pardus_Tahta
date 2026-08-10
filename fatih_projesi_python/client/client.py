@@ -36,6 +36,10 @@ except Exception:
     InputDevice = ecodes = list_devices = None
     Context = Monitor = None
 
+# W6-1: Zorlama katmanı (kiosk/kilit uygulaması) platform_layer'a taşındı.
+# Linux/Windows farkı arayüz arkasında; buradaki yöneticiler ona DELEGE eder.
+from platform_layer import get_platform
+
 # --- Global flag: development mode (--no-lock) ---
 NO_LOCK_MODE = '--no-lock' in sys.argv
 if NO_LOCK_MODE:
@@ -860,345 +864,39 @@ DESKTOP_ENV = detect_desktop_environment()
 logging.info(f"Detected desktop environment: {DESKTOP_ENV}")
 
 
-# --- Panel/Taskbar Manager (C# TastbarWindows.cs karşılığı) ---
+# --- Zorlama yöneticileri: platform_layer'a DELEGE (W6-1) ---
+# Eski adlar (PanelManager/VolumeControl/PowerManager/ShortcutManager/kill_all_browsers)
+# KORUNDU ki mevcut çağrı yerleri değişmesin. Gövdeler artık get_platform() backend'ine
+# yönleniyor: Linux'ta gerçek zorlama, Windows'ta NO-OP (W6-2'de doldurulacak).
 class PanelManager:
-    """
-    Taskbar/panel gizleme/gösterme. Windows'taki TastbarWindows.cs karşılığı.
-    GNOME ve XFCE için farklı komutlar kullanılır.
-    """
-    
     @staticmethod
-    def hide():
-        """Panel/taskbar'ı gizle - Cinnamon'da agresif xdotool + gsettings yöntemi"""
-        if NO_LOCK_MODE:
-            logging.info("[NO-LOCK] PanelManager.hide() skipped")
-            return
-        try:
-            de = DESKTOP_ENV
-            if de == 'GNOME':
-                # GNOME Shell: Dock/Panel gizle
-                cmds = [
-                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'dock-fixed', 'false'],
-                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'autohide', 'true'],
-                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'intellihide', 'false'],
-                ]
-                for cmd in cmds:
-                    try:
-                        _subprocess.run(cmd, capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-                try:
-                    _subprocess.run(['gdbus', 'call', '--session',
-                                     '--dest', 'org.gnome.Shell',
-                                     '--object-path', '/org/gnome/Shell',
-                                     '--method', 'org.gnome.Shell.Eval',
-                                     'Main.panel.hide();'],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            elif de == 'XFCE':
-                try:
-                    _subprocess.run(['xfconf-query', '-c', 'xfce4-panel',
-                                     '-p', '/panels/panel-1/autohide-behavior', '-s', '2'],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            elif de == 'CINNAMON':
-                # Yöntem 1: gsettings ile panel'i gizle
-                try:
-                    _subprocess.run(['gsettings', 'set', 'org.cinnamon',
-                                     'panels-autohide', "['1:true']"],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-                # Yöntem 2: xdotool ile cinnamon-panel penceresini ikonlaştır/gizle
-                try:
-                    result = _subprocess.run(
-                        ['xdotool', 'search', '--name', 'Cinnamon'],
-                        capture_output=True, text=True, timeout=3
-                    )
-                    for wid in result.stdout.strip().split():
-                        _subprocess.run(['xdotool', 'windowminimize', wid],
-                                       capture_output=True, timeout=2)
-                except Exception:
-                    pass
-                # Yöntem 3: wmctrl ile cinnamon-panel'i en alta göm
-                try:
-                    _subprocess.run(
-                        ['wmctrl', '-r', ':ACTIVE:', '-b', 'add,below'],
-                        capture_output=True, timeout=2
-                    )
-                except Exception:
-                    pass
-            logging.info(f"Panel hidden ({de})")
-        except Exception as e:
-            logging.error(f"Error hiding panel: {e}")
-    
+    def hide(): get_platform().hide_taskbar()
     @staticmethod
-    def show():
-        """Panel/taskbar'ı göster"""
-        try:
-            de = DESKTOP_ENV
-            if de == 'GNOME':
-                cmds = [
-                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'dock-fixed', 'true'],
-                    ['gsettings', 'set', 'org.gnome.shell.extensions.dash-to-dock', 'autohide', 'false'],
-                ]
-                for cmd in cmds:
-                    try:
-                        _subprocess.run(cmd, capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-                try:
-                    _subprocess.run(['gdbus', 'call', '--session',
-                                     '--dest', 'org.gnome.Shell',
-                                     '--object-path', '/org/gnome/Shell',
-                                     '--method', 'org.gnome.Shell.Eval',
-                                     'Main.panel.show();'],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            elif de == 'XFCE':
-                try:
-                    _subprocess.run(['xfconf-query', '-c', 'xfce4-panel',
-                                     '-p', '/panels/panel-1/autohide-behavior', '-s', '0'],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            elif de == 'CINNAMON':
-                try:
-                    _subprocess.run(['gsettings', 'set', 'org.cinnamon',
-                                     'panels-autohide', "['1:false']"],
-                                    capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            logging.info(f"Panel shown ({de})")
-        except Exception as e:
-            logging.error(f"Error showing panel: {e}")
+    def show(): get_platform().show_taskbar()
 
 
-# --- Volume Control (C# VD/VU/VM karşılığı) ---
 class VolumeControl:
-    """
-    Ses kontrolü. Windows'taki SendMessageW VOLUME_MUTE/UP/DOWN karşılığı.
-    PulseAudio (pactl) veya ALSA (amixer) kullanır.
-    """
-    
     @staticmethod
-    def mute():
-        """Sesi kapat (kilitlenme anında)"""
-        try:
-            cmds = [
-                ['pactl', 'set-sink-mute', '@DEFAULT_SINK@', '1'],
-                ['amixer', 'set', 'Master', 'mute'],
-            ]
-            for cmd in cmds:
-                try:
-                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
-                    if result.returncode == 0:
-                        logging.info(f"Audio muted using {cmd[0]}")
-                        return
-                except FileNotFoundError:
-                    continue
-                except Exception:
-                    continue
-        except Exception as e:
-            logging.error(f"Error muting audio: {e}")
-    
+    def mute(): get_platform().mute()
     @staticmethod
-    def unmute():
-        """Sesi aç ve max yap (kilit açılınca)"""
-        try:
-            cmds_unmute = [
-                ['pactl', 'set-sink-mute', '@DEFAULT_SINK@', '0'],
-                ['amixer', 'set', 'Master', 'unmute'],
-            ]
-            cmds_volume = [
-                ['pactl', 'set-sink-volume', '@DEFAULT_SINK@', '100%'],
-                ['amixer', 'set', 'Master', '100%'],
-            ]
-            for cmd in cmds_unmute:
-                try:
-                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
-                    if result.returncode == 0:
-                        logging.info(f"Audio unmuted using {cmd[0]}")
-                        break
-                except (FileNotFoundError, Exception):
-                    continue
-            for cmd in cmds_volume:
-                try:
-                    result = _subprocess.run(cmd, capture_output=True, timeout=3)
-                    if result.returncode == 0:
-                        logging.info(f"Volume set to max using {cmd[0]}")
-                        break
-                except (FileNotFoundError, Exception):
-                    continue
-        except Exception as e:
-            logging.error(f"Error unmuting audio: {e}")
+    def unmute(): get_platform().unmute()
 
 
-# --- Power Manager (C# powercfg karşılığı) ---
 class PowerManager:
-    """
-    Güç yönetimi. Uyku modu / ekran kapanması devre dışı bırakma.
-    """
-    
     @staticmethod
-    def disable_sleep():
-        """Uyku modu ve ekran kapanmasını devre dışı bırak"""
-        try:
-            de = DESKTOP_ENV
-            if de == 'GNOME':
-                cmds = [
-                    ['gsettings', 'set', 'org.gnome.settings-daemon.plugins.power',
-                     'sleep-inactive-ac-type', 'nothing'],
-                    ['gsettings', 'set', 'org.gnome.settings-daemon.plugins.power',
-                     'sleep-inactive-battery-type', 'nothing'],
-                    ['gsettings', 'set', 'org.gnome.desktop.session', 'idle-delay', '0'],
-                    ['gsettings', 'set', 'org.gnome.desktop.screensaver', 'lock-enabled', 'false'],
-                ]
-                for cmd in cmds:
-                    try:
-                        _subprocess.run(cmd, capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-            elif de == 'XFCE':
-                cmds = [
-                    ['xfconf-query', '-c', 'xfce4-power-manager',
-                     '-p', '/xfce4-power-manager/inactivity-on-ac', '-s', '0'],
-                    ['xfconf-query', '-c', 'xfce4-power-manager',
-                     '-p', '/xfce4-power-manager/dpms-enabled', '-s', 'false'],
-                ]
-                for cmd in cmds:
-                    try:
-                        _subprocess.run(cmd, capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-            
-            # Genel: systemd-inhibit benzeri (tüm ortamlar)
-            try:
-                _subprocess.run(['xset', 's', 'off'], capture_output=True, timeout=3)
-                _subprocess.run(['xset', '-dpms'], capture_output=True, timeout=3)
-                _subprocess.run(['xset', 's', 'noblank'], capture_output=True, timeout=3)
-            except Exception:
-                pass
-            
-            logging.info(f"Sleep mode disabled ({de})")
-        except Exception as e:
-            logging.error(f"Error disabling sleep: {e}")
+    def disable_sleep(): get_platform().disable_sleep()
 
 
-# --- Shortcut Manager (C# CtrlAltDel karşılığı) ---
 class ShortcutManager:
-    """
-    Klavye kısayollarını devre dışı bırakma/geri yükleme.
-    GNOME ve XFCE için farklı komutlar.
-    """
-    _saved_shortcuts = {}
-    
-    @classmethod
-    def disable(cls):
-        """Tehlikeli kısayolları devre dışı bırak (kilitlenme anında)"""
-        if NO_LOCK_MODE:
-            logging.info("[NO-LOCK] ShortcutManager.disable() skipped")
-            return
-        try:
-            de = DESKTOP_ENV
-            if de == 'GNOME':
-                # Orijinal değerleri kaydet
-                shortcuts_to_disable = {
-                    'org.gnome.mutter overlay-key': "''",
-                    'org.gnome.settings-daemon.plugins.media-keys logout': "''",
-                    'org.gnome.desktop.wm.keybindings switch-to-workspace-up': "'[]'",
-                    'org.gnome.desktop.wm.keybindings switch-to-workspace-down': "'[]'",
-                    'org.gnome.desktop.wm.keybindings panel-main-menu': "'[]'",
-                }
-                for key, disable_val in shortcuts_to_disable.items():
-                    parts = key.rsplit(' ', 1)
-                    schema, prop = parts[0], parts[1]
-                    try:
-                        # Orijinal değeri kaydet
-                        result = _subprocess.run(
-                            ['gsettings', 'get', schema, prop],
-                            capture_output=True, text=True, timeout=3)
-                        if result.returncode == 0:
-                            cls._saved_shortcuts[key] = result.stdout.strip()
-                        
-                        # Devre dışı bırak
-                        _subprocess.run(
-                            ['gsettings', 'set', schema, prop, disable_val],
-                            capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-            
-            elif de == 'XFCE':
-                # XFCE kısayolları devre dışı bırakma
-                try:
-                    _subprocess.run(
-                        ['xfconf-query', '-c', 'xfce4-keyboard-shortcuts',
-                         '-p', '/commands/custom/super', '-s', ''],
-                        capture_output=True, timeout=3)
-                except Exception:
-                    pass
-            
-            # Ortak: Ctrl+Alt+Del engelleme (systemd mask)
-            try:
-                _subprocess.run(
-                    ['sudo', 'systemctl', 'mask', 'ctrl-alt-del.target'],
-                    capture_output=True, timeout=3)
-            except Exception:
-                pass
-            
-            logging.info(f"Keyboard shortcuts disabled ({de})")
-        except Exception as e:
-            logging.error(f"Error disabling shortcuts: {e}")
-    
-    @classmethod
-    def restore(cls):
-        """Kısayolları geri yükle (kilit açılınca)"""
-        try:
-            de = DESKTOP_ENV
-            if de == 'GNOME':
-                for key, original_val in cls._saved_shortcuts.items():
-                    parts = key.rsplit(' ', 1)
-                    schema, prop = parts[0], parts[1]
-                    try:
-                        _subprocess.run(
-                            ['gsettings', 'set', schema, prop, original_val],
-                            capture_output=True, timeout=3)
-                    except Exception:
-                        pass
-                cls._saved_shortcuts.clear()
-            
-            # Ctrl+Alt+Del geri yükle
-            try:
-                _subprocess.run(
-                    ['sudo', 'systemctl', 'unmask', 'ctrl-alt-del.target'],
-                    capture_output=True, timeout=3)
-            except Exception:
-                pass
-            
-            logging.info(f"Keyboard shortcuts restored ({de})")
-        except Exception as e:
-            logging.error(f"Error restoring shortcuts: {e}")
+    @staticmethod
+    def disable(): get_platform().disable_shortcuts()
+    @staticmethod
+    def restore(): get_platform().restore_shortcuts()
 
 
-# --- Browser/App Killer (C# KillAllItem karşılığı) ---
 def kill_all_browsers():
-    """Tüm tarayıcıları ve system monitor uygulamalarını kapat."""
-    targets = [
-        'chromium', 'chromium-browser', 'firefox', 'firefox-esr',
-        'google-chrome', 'opera', 'midori', 'epiphany',
-        'gnome-system-monitor', 'xfce4-taskmanager',
-        # NOT: Terminal emulatörleri listeden çıkarıldı.
-        # Uygulama terminalden başlatıldığında terminali öldürmek uygulamayı da öldürür.
-    ]
-    for target in targets:
-        try:
-            _subprocess.run(['pkill', '-f', target], capture_output=True, timeout=3)
-        except Exception:
-            pass
-    logging.info("All browsers and monitors killed")
+    """Tarayıcılar + görev yöneticisini kapat (platform_layer'a delege)."""
+    get_platform().kill_foreground_apps()
 
 
 # --- Embedded Numpad Widget ---
