@@ -7331,13 +7331,44 @@ if __name__ == '__main__':
                 print(f"❌ enroll_secret yazılamadı: {e}")
                 sys.exit(1)
             sys.exit(0)
+        elif sys.argv[1] == '--reset':
+            # Tahtayı "tanıtılmamış" hale getirir: device_token + enroll_secret siler,
+            # corporate_code/board_id/board_name sıfırlar. Aynı makineyi BAŞKA bir tahtaya
+            # taşırken kullanılır. Sonrasında Readme.txt koyup `python client.py` ile yeniden tanıt.
+            # Güvenlik için onay ister (--yes ile atlanır: `python client.py --reset --yes`).
+            _onayli = ('--yes' in sys.argv) or ('-y' in sys.argv)
+            if not _onayli:
+                try:
+                    _c = input("Tahta kimliği (token) SİLİNECEK, tahta yeniden tanıtılmalı. Emin misiniz? (e/H): ").strip().lower()
+                except Exception:
+                    _c = ''
+                if _c not in ('e', 'evet', 'y', 'yes'):
+                    print("İptal edildi.")
+                    sys.exit(0)
+            try:
+                config.read(CONFIG_PATH)
+                if not config.has_section('settings'):
+                    config.add_section('settings')
+                for _opt in ('device_token', 'enroll_secret', 'board_name'):
+                    config.remove_option('settings', _opt)
+                config.set('settings', 'corporate_code', '0')
+                config.set('settings', 'board_id', '0')
+                with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+                    config.write(_cf)
+                print(f"✅ Sıfırlandı: {CONFIG_PATH}")
+                print("   Tahta artık tanıtılmamış. Readme.txt koyup `python client.py` ile yeniden tanıtın.")
+            except Exception as e:
+                print(f"❌ Sıfırlama başarısız: {e}")
+                sys.exit(1)
+            sys.exit(0)
         elif sys.argv[1] in ('--win-kiosk', '--help', '-h'):
             if sys.argv[1] != '--win-kiosk':
-                print("Kullanım: python client.py [--test | --kiosk | --win-kiosk | --set-enroll-secret <SIR>]")
+                print("Kullanım: python client.py [--test | --kiosk | --win-kiosk | --set-enroll-secret <SIR> | --reset]")
                 print("  (bayraksız)          Linux: kilitli kiosk | Windows: GÜVENLİ önizleme (normal pencere)")
                 print("  --win-kiosk          Windows GERÇEK kiosk (tam kilit; panik çıkış Ctrl+Alt+Shift+Q)")
                 print("  --test               Config doğrula, pencere açma")
                 print("  --set-enroll-secret  Enroll sırrını config'e yaz (Windows kurulumu)")
+                print("  --reset [--yes]      Tahta kimliğini sil (başka tahtaya taşırken); --yes onay sormaz")
                 sys.exit(0)
             # --win-kiosk: normal main()'e düş (WINDOWS_KIOSK zaten sys.argv'den True)
 
