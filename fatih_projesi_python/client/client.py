@@ -185,12 +185,15 @@ def _auto_import_enroll_secret():
     sadece Readme.txt'i client.py yanına koyup programı açar — tahta tanıtıma hazır gelir
     (Pardus akışının birebir aynısı; --set-enroll-secret komutuna gerek kalmaz).
 
-    GÜVENLİK: SADECE enroll_secret ve device_token'ın İKİSİ de yoksa çalışır. Tahta bir kez
-    tanıtılınca (device_token gelince) bu fonksiyon erken döner — Readme.txt klasörde kalsa
-    bile kimliği bozmaz / silinen sırrı geri getirmez."""
+    GÜVENLİK / YENİDEN KURULUM: Tahta bir kez tanıtılınca (device_token gelince) bu fonksiyon
+    ERKEN DÖNER — Readme.txt klasörde kalsa bile çalışan tahtanın kimliğini bozmaz / silinen
+    sırrı geri getirmez. Token YOKSA (hiç tanıtılmamış ya da eski kurulum üzerine yeniden
+    kurulum): klasördeki TAZE Readme.txt OTORİTEDİR; config'te bayat bir enroll_secret kalmış
+    olsa bile üzerine yazılır. Böylece "eski kurulumun üstüne kur" daima temiz gelir
+    (Windows'ta aktif config kullanıcı klasöründe kaldığı ve elle silmek gerekmesin diye)."""
     try:
-        if get_setting('enroll_secret', '') or get_setting('device_token', ''):
-            return  # zaten sır ya da token var — dokunma
+        if get_setting('device_token', ''):
+            return  # tahta zaten tanıtılmış — kimliğe dokunma
         import re as _re
         _base = os.path.dirname(os.path.abspath(__file__))
         _adaylar = []
@@ -211,6 +214,8 @@ def _auto_import_enroll_secret():
                 continue
             _kod = _m.group(0)
             _enc = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
+            if get_setting('enroll_secret', '') == _kod:
+                return  # config'te zaten aynı sır var — tekrar yazma (idempotent)
             try:
                 if not config.has_section('settings'):
                     config.add_section('settings')
