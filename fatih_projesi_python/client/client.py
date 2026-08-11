@@ -179,6 +179,56 @@ def get_setting(key, fallback=''):
     """Get a config value, auto-decoding obfuscated ones"""
     return _deo(SETTINGS.get(key, fallback))
 
+def _auto_import_enroll_secret():
+    """Pardus'taki setup.sh gibi: kurulum klasörüne konan Readme.txt'ten 64 haneli kurulum
+    kodunu OTOMATİK okuyup config'e ENC:<base64> yazar. Windows'ta setup.sh yok; operatör
+    sadece Readme.txt'i client.py yanına koyup programı açar — tahta tanıtıma hazır gelir
+    (Pardus akışının birebir aynısı; --set-enroll-secret komutuna gerek kalmaz).
+
+    GÜVENLİK: SADECE enroll_secret ve device_token'ın İKİSİ de yoksa çalışır. Tahta bir kez
+    tanıtılınca (device_token gelince) bu fonksiyon erken döner — Readme.txt klasörde kalsa
+    bile kimliği bozmaz / silinen sırrı geri getirmez."""
+    try:
+        if get_setting('enroll_secret', '') or get_setting('device_token', ''):
+            return  # zaten sır ya da token var — dokunma
+        import re as _re
+        _base = os.path.dirname(os.path.abspath(__file__))
+        _adaylar = []
+        for _ad in ('Readme.txt', 'readme.txt', 'secret.txt'):
+            _adaylar.append(os.path.join(_base, _ad))
+            _adaylar.append(os.path.join(os.getcwd(), _ad))
+        for _yol in _adaylar:
+            if not os.path.isfile(_yol):
+                continue
+            try:
+                with open(_yol, 'r', encoding='utf-8', errors='ignore') as _f:
+                    _icerik = _f.read()
+            except Exception:
+                continue
+            # setup.sh ile aynı desen: metnin içine gömülü ilk 64 haneli hex kod.
+            _m = _re.search(r'[0-9a-fA-F]{64}', _icerik)
+            if not _m:
+                continue
+            _kod = _m.group(0)
+            _enc = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
+            try:
+                if not config.has_section('settings'):
+                    config.add_section('settings')
+                config.set('settings', 'enroll_secret', _enc)
+                with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+                    config.write(_cf)
+                logging.info(f"Kurulum kodu '{os.path.basename(_yol)}' dosyasından otomatik okundu.")
+            except Exception as _e:
+                # Config'e yazamasak bile en azından bu oturumda bellekte dursun.
+                SETTINGS['enroll_secret'] = _enc
+                logging.warning(f"enroll_secret config'e yazılamadı (bellekte var): {_e}")
+            return
+    except Exception as _e:
+        logging.debug(f"_auto_import_enroll_secret hata: {_e}")
+
+# Pardus setup.sh eşdeğeri: import anında (GUI/kilit ekranı açılmadan) sırrı hazırla.
+_auto_import_enroll_secret()
+
 # --- Configuration Validation ---
 def validate_config():
     """Validate that all required configuration variables are present"""
