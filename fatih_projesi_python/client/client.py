@@ -2559,20 +2559,32 @@ class NetworkClient:
         return current_version
 
     def report_error(self, tur, seviye, mesaj, detay=None):
-        """Hata/saglik kaydi (v5 POST /hata, deviceAuth). Best-effort; token yoksa (henuz
-        tanitilmamis tahta) sessizce atlar. platform + surum otomatik eklenir. _hata_bildir
-        bunu arka plan thread'inde ve throttle'li cagirir; dogrudan cagirilmamali."""
-        govde = {
-            "tur": str(tur)[:24],
-            "seviye": str(seviye)[:16],
-            "mesaj": str(mesaj or "")[:300],
-            "platform": "windows" if IS_WINDOWS else "pardus",
-            "surum": str(self.settings.get('version') or ''),
-        }
-        if detay:
-            govde["detay"] = str(detay)[:2000]
-        result = self._result(self._make_request("hata", govde, timeout=20))
-        return result is not None
+        """Hata bildirimi — mevcut MERKEZI hata gunlugune yazar (v5 POST /client/hata_gunlugu/bildir).
+        KIMLIK GEREKTIRMEZ (ates-et-unut; sunucu imza bazli dedup + 'adet' sayaci tutar): boylece
+        tanitim ONCESI ya da oturum/token dustugunde cikan hatalar da gorulur. platform+surum,
+        tip/ozet/detay ile gider; ayni imza tekrar INSERT olmaz, adet artar. Eski C# masaustu de
+        ayni uca yaziyor (kaynak ile ayrilir). _hata_bildir bunu arka planda/throttle'li cagirir."""
+        try:
+            # Cihaz taban URL'inden ayni host'taki hata_gunlugu/bildir adresini turet.
+            url = self._base_url().replace('/akilli_tahta_cihaz', '/hata_gunlugu/bildir')
+            plat = "windows" if IS_WINDOWS else "pardus"
+            govde = {
+                "kurum_kodu": str(self.settings.get('corporate_code') or ''),
+                "surum": str(self.settings.get('version') or ''),
+                "kaynak": "tahta",   # 'sunucu'/'masaustu'/'tahta' — YNT5 hata gunlugu filtresi
+                "tip": f"{plat}:{tur}:{seviye}"[:200],
+                "ozet": str(mesaj or "")[:500],
+                "detay": str(detay or mesaj or "")[:20000],
+            }
+            _k = "pardus2026!"
+            _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
+            _agt = _dx("1106170a012c615d534455320e131611")
+            requests.post(url, headers={"User-Agent": _agt}, json=govde, timeout=15, verify=True)
+            _k = _dx = _agt = url = None
+            return True
+        except Exception as e:
+            logging.debug(f"report_error gonderilemedi: {e}")
+            return False
 
     def get_display(self):
         """Kilit ekrani gosterim verisi (v5 /display). Kimlik token'dan; govde bos.
