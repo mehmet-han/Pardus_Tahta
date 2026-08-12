@@ -91,9 +91,58 @@ logging.info("--- Fatih Client Starting Up ---")
 #
 # OZEL excepthook kurulunca PyQt5 abort ETMEZ; istisna loglanir ve dongu devam eder.
 # Bir panel cizilemezse yalnizca o panel eksik kalir, tahta ayakta durur.
+# ---- Uzaktan hata/saglik denetimi (Pardus + Windows AYNI kod) ----
+# Tahtalar sahada; bir cokme ya da operasyonel hata (panel cizilememe, /display hatasi)
+# yerelde log'a yaziliyordu ama YNT5'ten GORULEMIYORDU. Asagidaki mekanizma, tahta bir kez
+# TANITILDIKTAN sonra (token varsa) hatalari sunucuya best-effort, THROTTLE'li, ARKA PLANDA
+# gonderir. Ag yoksa sessizce duser — zaten heartbeat (son_gorulme) eksikligi offline'i gosterir.
+# platform bilgisi ('pardus'/'windows') her kayda ve poll heartbeat'ine eklenir.
+_GLOBAL_NET = None                 # NetworkClient ornegi (NetworkClient.__init__ atar)
+_HATA_KILIT = threading.Lock()
+_HATA_SON = {}                     # imza -> son gonderim zamani (ayni hatayi spam etme)
+_HATA_MIN_ARALIK = 300            # ayni imzali hata en fazla 5 dk'da bir gonderilir
+_HATA_SAATLIK_TAVAN = 20         # saatte en fazla 20 hata (spam/agirlik koruma)
+_HATA_SAAT = [0, 0]               # [saat penceresi baslangici, o pencerede gonderilen sayisi]
+
+def _hata_bildir(tur, seviye, mesaj, detay=None):
+    """Hatayi (cokme/operasyon) sunucuya best-effort, throttle'li, arka planda gonderir.
+    ASLA istisna firlatmaz (hata bildirimi tahtayi cokertemez)."""
+    try:
+        net = _GLOBAL_NET
+        if net is None:
+            return
+        imza = f"{tur}:{(mesaj or '')[:80]}"
+        now = int(time.time())
+        with _HATA_KILIT:
+            if now - _HATA_SAAT[0] > 3600:   # saatlik pencereyi sifirla
+                _HATA_SAAT[0] = now
+                _HATA_SAAT[1] = 0
+            if _HATA_SAAT[1] >= _HATA_SAATLIK_TAVAN:
+                return
+            if now - _HATA_SON.get(imza, 0) < _HATA_MIN_ARALIK:
+                return
+            _HATA_SON[imza] = now
+            _HATA_SAAT[1] += 1
+        def _gonder():
+            try:
+                net.report_error(tur, seviye, mesaj, detay)
+            except Exception:
+                pass
+        threading.Thread(target=_gonder, daemon=True).start()
+    except Exception:
+        pass
+
 def _kuresel_istisna(tur, deger, iz):
     try:
         logging.critical("YAKALANMAMIS ISTISNA — surec ayakta tutuluyor", exc_info=(tur, deger, iz))
+    except Exception:
+        pass
+    # Cokmeyi (yakalanmamis istisna) sunucuya da bildir — YNT5 hata/saglik sayfasindan gorulsun.
+    try:
+        import traceback as _tb
+        _ozet = f"{getattr(tur, '__name__', tur)}: {deger}"
+        _detay = "".join(_tb.format_exception(tur, deger, iz))[-2000:]
+        _hata_bildir("cokme", "kritik", _ozet, _detay)
     except Exception:
         pass
 
@@ -2235,6 +2284,9 @@ class NetworkClient:
     """
     def __init__(self, settings):
         self.settings = settings
+        # Kuresel hata bildiricinin (_hata_bildir/excepthook) ulasabilmesi icin referans.
+        global _GLOBAL_NET
+        _GLOBAL_NET = self
 
     def _base_url(self):
         """v5 cihaz taban URL'i (XOR gizli, project_rules §1). Endpoint basina yol eklenir."""
@@ -2440,6 +2492,7 @@ class NetworkClient:
         olacagi icin bu bilgi gerekli. Sunucu throttle'li yazar; her yoklamada DB'ye gitmez."""
         result = self._result(self._make_request("poll", {
             "version": str(self.settings.get('version') or ''),
+            "platform": "windows" if IS_WINDOWS else "pardus",
         }))
         if result is None:
             return None
@@ -2504,6 +2557,22 @@ class NetworkClient:
             if nw and len(nw) < 6:
                 return nw
         return current_version
+
+    def report_error(self, tur, seviye, mesaj, detay=None):
+        """Hata/saglik kaydi (v5 POST /hata, deviceAuth). Best-effort; token yoksa (henuz
+        tanitilmamis tahta) sessizce atlar. platform + surum otomatik eklenir. _hata_bildir
+        bunu arka plan thread'inde ve throttle'li cagirir; dogrudan cagirilmamali."""
+        govde = {
+            "tur": str(tur)[:24],
+            "seviye": str(seviye)[:16],
+            "mesaj": str(mesaj or "")[:300],
+            "platform": "windows" if IS_WINDOWS else "pardus",
+            "surum": str(self.settings.get('version') or ''),
+        }
+        if detay:
+            govde["detay"] = str(detay)[:2000]
+        result = self._result(self._make_request("hata", govde, timeout=20))
+        return result is not None
 
     def get_display(self):
         """Kilit ekrani gosterim verisi (v5 /display). Kimlik token'dan; govde bos.
@@ -3930,11 +3999,18 @@ class FatihClientApp(QWidget):
         d = self._last_display_data or {}
         # Sira onemli: birthday, aferin+yoklama panellerinin ARASINA ortalanir; o yuzden
         # once yan paneller cizilir (genislik/gorunurluk hazir olsun), en son birthday.
-        self._render_aferin_panel(d.get("aferinTop5"))
-        self._render_yoklama_panel(d.get("yoklamaYok"))
-        self._render_birthday_panel(d.get("dogumGunleri"))
-        # Duyuru: aktif ders saati + doğum günü kapısına göre slider'ı yönet (birthday'den SONRA).
-        self._update_duyuru_state()
+        # Panel cizimi bir istisna atarsa: eskiden tum kilit ekrani cokuyordu (excepthook).
+        # Simdi operasyonel hata olarak YNT5'e bildirilir; ekran ayakta kalir, sadece o panel eksik.
+        try:
+            self._render_aferin_panel(d.get("aferinTop5"))
+            self._render_yoklama_panel(d.get("yoklamaYok"))
+            self._render_birthday_panel(d.get("dogumGunleri"))
+            # Duyuru: aktif ders saati + doğum günü kapısına göre slider'ı yönet (birthday'den SONRA).
+            self._update_duyuru_state()
+        except Exception as e:
+            import traceback as _tb
+            logging.error(f"Panel cizimi basarisiz: {e}")
+            _hata_bildir("operasyon", "uyari", f"Panel cizimi: {e}", _tb.format_exc()[-1500:])
 
     def _hide_info_panels(self):
         """Aferin + dogum gunu + yoklama panellerini gizler (sifre girisi, dialog vb. sirasinda)."""
