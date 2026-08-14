@@ -151,12 +151,15 @@ sys.excepthook = _kuresel_istisna
 
 
 def _pk():
-    """XOR/gizleme anahtari — DUZ LITERAL DEGIL (§9.4, 14 Ağu 2026). Deger ESKISIYLE AYNEN AYNI;
-    yalniz saklama bicimi degisti: kaynakta duz string yerine karakter kodlarindan uretiliyor,
-    boylece derlenmis ikilide `strings` ile anahtar GORUNMEZ (docstring'e de yazilmadi). Nuitka
-    ile derlenince bu uretim makine kodu olur -> geri cozmek zorlasir. Kriz kodu ureticileri
-    (ynt5 + masaustu) EL DEGMEZ; URL/UA/kriz cozumleri birebir ayni sonucu verir."""
-    return bytes([112, 97, 114, 100, 117, 115, 50, 48, 50, 54, 33]).decode('ascii')
+    """XOR/gizleme anahtari — DUZ LITERAL DEGIL + DERLEME ANINDA SABIT-KATLANAMAZ (§9.4, 14 Ağu).
+    Not: karakter-kodu yaklasimini (bytes([...]).decode) Nuitka derlemede EVALUE EDIP duz string'e
+    cevirdi (strings yine buldu). Cozum: sha256-turevli pad ile XOR cozulur; Nuitka sha256'yi
+    DERLEMEDE CALISTIRMAZ -> sonuc onceden hesaplanamaz -> ikilide `strings` ile anahtar GORUNMEZ.
+    Sifreli baytlar (_enc) basilamaz karakterler; docstring'e de anahtar yazilmadi. Deger ESKISIYLE
+    AYNEN AYNI -> URL/UA/kriz cozumleri birebir; kriz kodu ureticileri (ynt5+masaustu) EL DEGMEZ."""
+    _enc = bytes([226, 209, 216, 43, 215, 106, 208, 66, 119, 80, 85])
+    _pad = hashlib.sha256(b"mebre-xk").digest()
+    return bytes(_enc[i] ^ _pad[i] for i in range(len(_enc))).decode('ascii')
 
 # --- Configuration ---
 # Define paths for user-specific and default configurations
