@@ -434,6 +434,23 @@ chmod -R go-w "$APP_DIR"                 # grup/digerleri YAZAMAZ (kurcalamayi e
 chmod 755 "$APP_DIR"/*.sh 2>/dev/null || true   # betikler calistirilabilir kalsin
 echo -e "  ${GREEN}✓${NC} İzinler ayarlandı (root'a ait, kurcalanamaz)"
 
+# 2.9 tty/konsol kilidi (14 Ağu 2026 sertlestirme, §9.5)
+# Ctrl+Alt+F2..F6 ile metin konsoluna (tty) gecip kilit ekranini ATLAMAK engellenir
+# (DontVTSwitch). Ctrl+Alt+Backspace ile X'i oldurmek de engellenir (DontZap).
+# NOT: Xorg icindir (Pardus/Cinnamon varsayilani). Kurtarma icin SSH ya da donanim reset.
+echo ""
+echo -e "${CYAN}[2.9] tty/konsol geçişi kilitleniyor (Ctrl+Alt+F2)...${NC}"
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/10-fatih-lockdown.conf << 'XORG_EOF'
+# Fatih Client kilit sertlestirme — tty gecisi + zap kapali.
+Section "ServerFlags"
+    Option "DontVTSwitch" "on"
+    Option "DontZap"      "on"
+EndSection
+XORG_EOF
+chmod 644 /etc/X11/xorg.conf.d/10-fatih-lockdown.conf
+echo -e "  ${GREEN}✓${NC} tty geçişi (Ctrl+Alt+F2) ve Ctrl+Alt+Backspace kapatıldı (yeniden başlatınca aktif)"
+
 # ============================================================
 # ÖZET
 # ============================================================

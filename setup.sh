@@ -356,6 +356,20 @@ fi
 chown -R root:etapadmin "$INSTALL_DIR"
 chmod -R 750 "$INSTALL_DIR"
 
+# tty/konsol geçişi kilidi (14 Ağu 2026 sertlestirme, §9.5):
+# Ctrl+Alt+F2..F6 ile metin konsoluna gecip kilit ekranini ATLAMAK (DontVTSwitch) ve
+# Ctrl+Alt+Backspace ile X'i oldurmek (DontZap) engellenir. Xorg (Pardus/Cinnamon) icin.
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/10-fatih-lockdown.conf << 'XORG_EOF'
+# Fatih Client kilit sertlestirme — tty gecisi + zap kapali.
+Section "ServerFlags"
+    Option "DontVTSwitch" "on"
+    Option "DontZap"      "on"
+EndSection
+XORG_EOF
+chmod 644 /etc/X11/xorg.conf.d/10-fatih-lockdown.conf
+echo "  ✅ tty geçişi (Ctrl+Alt+F2) kapatıldı (yeniden başlatınca aktif)"
+
 echo "[4/7] Kurum Kodu (Corporate Code) ayarlanıyor..."
 # Kurum kodu ON KONTROLDE alindi (agir isten once) — burada tekrar sorulmaz.
 echo "  → Kurum kodu: $CORPORATE_CODE"

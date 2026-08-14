@@ -1976,61 +1976,71 @@ class ScheduleWidget(QWidget):
 
 # --- Keyboard Locker Thread (More Aggressive) ---
 class KeyboardLocker(threading.Thread):
+    """Kilitliyken klavyeyi evdev ile grab eder (fare serbest). HOT-PLUG (§9.5): kilit
+    boyunca periyodik tarama ile SONRADAN takilan USB klavyeleri de grab eder — eskiden
+    yalniz baslangictaki cihazlar grab ediliyor, kilit aktifken takilan klavye bosta
+    kaliyordu (ogrenci bypass yolu). Windows'ta no-op (klavye kilidi platform_layer/Win32 hook)."""
     def __init__(self):
         super().__init__()
         self.daemon = True
-        self.devices = []
         self.stop_event = threading.Event()
-        self._find_input_devices()
+        self._grabbed = {}   # path -> (device, grab_context) — grab edilmis cihazlar
 
-    def _find_input_devices(self):
-        # Windows'ta evdev yok -> cihaz bulunmaz, run() erken doner (klavye kilidi Faz W'de Win32 hook ile).
+    def _keyboard_paths(self):
+        """Su an bagli, klavye-benzeri (fare degil) cihaz yollari. Windows'ta bos."""
         if not _HAS_LINUX_INPUT:
-            logging.info("evdev yok (Windows) -> KeyboardLocker devre disi (platform katmani gelecek).")
-            return
-        paths = list_devices()
-        for path in paths:
+            return []
+        out = []
+        for path in list_devices():
             try:
-                device = InputDevice(path)
-                caps = device.capabilities()
-
-                # Changed logic: Lock anything that might be used to type or bypass the lock screen.
-                # Since MEB school boards use various touch layers and generic HID devices, 
-                # we'll be more inclusive and lock general EV_KEY devices that look like keyboards.
-                if ecodes.EV_KEY in caps:
-                    # Check if device has keyboard-specific keys
-                    has_keyboard_keys = any(key in caps.get(ecodes.EV_KEY, [])
-                                          for key in [ecodes.KEY_A, ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_ESC])
-                    
-                    has_mouse_buttons = any(key in caps.get(ecodes.EV_KEY, [])
-                                          for key in [getattr(ecodes, 'BTN_LEFT', 272), getattr(ecodes, 'BTN_RIGHT', 273), getattr(ecodes, 'BTN_MOUSE', 272)])
-                    
-                    if has_keyboard_keys:
-                        logging.info(f"Found keyboard device to lock: {device.name} at {device.path}")
-                        self.devices.append(device)
-                    elif has_mouse_buttons:
-                        logging.info(f"Skipping mouse device: {device.name} at {device.path}")
-                    else:
-                        logging.info(f"Skipping unknown input device: {device.name} at {device.path}")
-
-            except Exception as e:
-                logging.warning(f"Could not access device {path}: {e}")
+                dev = InputDevice(path)
+                caps = dev.capabilities()
+                if ecodes.EV_KEY not in caps:
+                    continue
+                keys = caps.get(ecodes.EV_KEY, [])
+                has_kb = any(k in keys for k in [ecodes.KEY_A, ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_ESC])
+                has_mouse = any(k in keys for k in [getattr(ecodes, 'BTN_LEFT', 272), getattr(ecodes, 'BTN_RIGHT', 273)])
+                if has_kb and not has_mouse:
+                    out.append(path)
+            except Exception:
                 continue
-        if not self.devices:
-            logging.warning("No keyboard devices found by evdev.")
+        return out
+
+    def _grab_new(self):
+        """Henuz grab edilmemis (yeni takilan dahil) klavyeleri grab et."""
+        for path in self._keyboard_paths():
+            if path in self._grabbed:
+                continue
+            try:
+                dev = InputDevice(path)
+                ctx = dev.grab_context()
+                ctx.__enter__()
+                self._grabbed[path] = (dev, ctx)
+                logging.info(f"Klavye grab edildi (hot-plug dahil): {dev.name} at {path}")
+            except Exception as e:
+                logging.warning(f"Klavye grab edilemedi {path}: {e}")
 
     def run(self):
-        if not self.devices: return
+        if not _HAS_LINUX_INPUT:
+            logging.info("evdev yok (Windows) -> KeyboardLocker devre disi (Win32 hook ayri).")
+            return
         try:
-            self.contexts = [dev.grab_context() for dev in self.devices]
-            for context in self.contexts: context.__enter__()
-            logging.info("Keyboard lock acquired on keyboard devices only (mice remain free).")
-            self.stop_event.wait()
+            self._grab_new()
+            if not self._grabbed:
+                logging.warning("evdev: grab edilecek klavye bulunamadi.")
+            # HOT-PLUG: kilit boyunca her 3 sn yeni takilan klavyeleri de grab et.
+            while not self.stop_event.wait(3):
+                self._grab_new()
         except Exception as e:
-            logging.error(f"Error grabbing devices: {e}.")
+            logging.error(f"KeyboardLocker run hatasi: {e}")
         finally:
-            for context in getattr(self, 'contexts', []): context.__exit__(None, None, None)
-            logging.info("Keyboard/mouse lock released.")
+            for _p, (_dev, ctx) in list(self._grabbed.items()):
+                try:
+                    ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            self._grabbed.clear()
+            logging.info("Klavye kilidi birakildi.")
 
     def stop(self):
         self.stop_event.set()
