@@ -228,13 +228,118 @@ for _vf in ("/opt/fatih-client/version.txt",
 
 # --- Credential Deobfuscation (compiled into .so binary) ---
 def _deo(v):
-    """Decode obfuscated config values (ENC: prefix = base64)"""
+    """Decode obfuscated config values.
+    'ENC2:' = makineye bagli GERCEK sifreleme (§9.3 Acik 2, asagida).
+    'ENC:'  = base64 (SIFRELEME DEGIL — eski kayitlar icin okunur, artik yazilmaz;
+              ilk acilista _config_sifre_guclendir ENC2'ye terfi ettirir)."""
+    if v and v.startswith('ENC2:'):
+        return _enc2_coz(v)
     if v and v.startswith('ENC:'):
         try:
             return _b64.b64decode(v[4:]).decode('utf-8')
         except Exception:
             return v
     return v
+
+# --- §9.3 ACIK 2: config sirlarina GERCEK sifreleme (ENC2) ---
+# SORUN: device_token config.ini'de yalniz base64 duruyordu ve dosya herkes okunabilirdi;
+# dosyayi kopyalayan token'i cozer -> tahta gibi davranip ogrenci verisine erisirdi.
+# COZUM: makineye BAGLI sifreleme. config.ini tek basina kopyalanirsa (USB/ag payi)
+# BASKA makinede cozulmez; dosya izni de 600'e indirilir (_config_sifre_guclendir).
+#   Windows: DPAPI (CryptProtectData, LOCAL_MACHINE) — isletim sisteminin kendi kasasi.
+#   Pardus : /etc/machine-id turevli anahtar + HMAC-SHA256 akis sifresi + butunluk etiketi
+#            (stdlib disinda bagimlilik yok; pycryptodome kurulu degil).
+# DURUST SINIR: diskin KOMPLE klonu (machine-id dahil) software-only hicbir semayla
+# korunamaz (TPM yok). Tehdit modeli tek-dosya sizintisi; tam-disk klonu degil.
+
+def _mk_anahtar():
+    """Linux: makineye ozel simetrik anahtar (machine-id turevli)."""
+    mid = ''
+    for _p in ('/etc/machine-id', '/var/lib/dbus/machine-id'):
+        try:
+            with open(_p, 'r') as _f:
+                mid = _f.read().strip()
+            if mid:
+                break
+        except Exception:
+            pass
+    if not mid:
+        # machine-id yoksa (cok istisnai) hostname'e dus — hostname degisirse cozulmez,
+        # tahta yeniden tanitilir (enroll akisi zaten var).
+        mid = platform.node() or 'mebre-yedek'
+    return hashlib.sha256(('mebre-cfg-v1:' + mid).encode('utf-8')).digest()
+
+def _dpapi(veri: bytes, sifrele: bool):
+    """Windows DPAPI (ctypes, ek bagimliliksiz). None = basarisiz."""
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class _BLOB(ctypes.Structure):
+        _fields_ = [('cbData', wt.DWORD), ('pbData', ctypes.POINTER(ctypes.c_char))]
+
+    _buf = ctypes.create_string_buffer(veri, len(veri))
+    _in = _BLOB(len(veri), ctypes.cast(_buf, ctypes.POINTER(ctypes.c_char)))
+    _out = _BLOB()
+    # LOCAL_MACHINE(0x4): kilit hem ogretmen oturumunda hem otomatik baslangicta ayni
+    # makinede calisir; UI_FORBIDDEN(0x1): hicbir kosulda pencere acma (kiosk!).
+    _fn = ctypes.windll.crypt32.CryptProtectData if sifrele else ctypes.windll.crypt32.CryptUnprotectData
+    if not _fn(ctypes.byref(_in), None, None, None, None, 0x4 | 0x1, ctypes.byref(_out)):
+        return None
+    try:
+        return ctypes.string_at(_out.pbData, _out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(_out.pbData)
+
+def _lnx_sifrele(plain: bytes) -> bytes:
+    """HMAC-SHA256 akis sifresi (CTR benzeri) + 16B butunluk etiketi. nonce+tag+ct doner."""
+    key = _mk_anahtar()
+    nonce = os.urandom(16)
+    ks = b''
+    ctr = 0
+    while len(ks) < len(plain):
+        ks += hmac.new(key, nonce + ctr.to_bytes(4, 'big'), hashlib.sha256).digest()
+        ctr += 1
+    ct = bytes(a ^ b for a, b in zip(plain, ks))
+    tag = hmac.new(key, b'tag' + nonce + ct, hashlib.sha256).digest()[:16]
+    return nonce + tag + ct
+
+def _lnx_coz(blob: bytes):
+    """_lnx_sifrele tersi; etiket tutmazsa (baska makine / kurcalanmis) None."""
+    if len(blob) < 32:
+        return None
+    key = _mk_anahtar()
+    nonce, tag, ct = blob[:16], blob[16:32], blob[32:]
+    dogru = hmac.new(key, b'tag' + nonce + ct, hashlib.sha256).digest()[:16]
+    if not hmac.compare_digest(tag, dogru):
+        return None
+    ks = b''
+    ctr = 0
+    while len(ks) < len(ct):
+        ks += hmac.new(key, nonce + ctr.to_bytes(4, 'big'), hashlib.sha256).digest()
+        ctr += 1
+    return bytes(a ^ b for a, b in zip(ct, ks))
+
+def _enc2_yaz(deger: str) -> str:
+    """Sirri ENC2 paketle — config'e SIR YAZARKEN DAIMA BU KULLANILIR.
+    Sifreleme kurulamazsa (cok istisnai) ENC'e duser: kilit calismaya DEVAM ETMELI
+    (fail-open, uyari loglanir) — okulda acilamayan tahta guvenlik kazanci degildir."""
+    try:
+        raw = (deger or '').encode('utf-8')
+        blob = _dpapi(raw, True) if IS_WINDOWS else _lnx_sifrele(raw)
+        if blob:
+            return 'ENC2:' + _b64.b64encode(blob).decode('ascii')
+    except Exception as _e:
+        logging.warning(f"ENC2 sifrelenemedi, ENC'e dusuluyor: {_e}")
+    return 'ENC:' + _b64.b64encode((deger or '').encode('utf-8')).decode('ascii')
+
+def _enc2_coz(v: str) -> str:
+    """ENC2 coz. Baska makinede / bozuksa BOS doner (= sir yok gibi davran, enroll akisi devralir)."""
+    try:
+        blob = _b64.b64decode(v[5:])
+        raw = _dpapi(blob, False) if IS_WINDOWS else _lnx_coz(blob)
+        return raw.decode('utf-8') if raw is not None else ''
+    except Exception:
+        return ''
 
 def get_setting(key, fallback=''):
     """Get a config value, auto-decoding obfuscated ones"""
@@ -281,7 +386,7 @@ def _auto_import_enroll_secret():
                 if not _m:
                     continue
                 _anahtar, _kod = 'enroll_secret', _m.group(0)
-            _enc = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
+            _enc = _enc2_yaz(_kod)
             if get_setting(_anahtar, '') == _kod:
                 return  # config'te zaten aynı sır var — tekrar yazma (idempotent)
             try:
@@ -301,6 +406,38 @@ def _auto_import_enroll_secret():
 
 # Pardus setup.sh eşdeğeri: import anında (GUI/kilit ekranı açılmadan) sırrı hazırla.
 _auto_import_enroll_secret()
+
+def _config_sifre_guclendir():
+    """§9.3 Acik 2 — TEK SEFERLIK TERFI: config'teki eski 'ENC:' (base64) sirlari
+    makineye bagli 'ENC2:'ye cevirir + config dosya iznini 600'e indirir.
+    Sahadaki calisan tahtalar boyle KIRILMADAN guclenir: deger okunur, ENC2 yazilir;
+    zaten ENC2 olan / bos olan degerlere dokunulmaz (idempotent).
+    NOT: /opt ve kiosk kopyalarina dokunulmaz — onlar enroll'da zaten ENC2 yazilir ve
+    kullanicilar-arasi devir icin izinleri farkli yonetilir (600 orada okuma kirardi)."""
+    try:
+        degisti = False
+        for _k in ('device_token', 'enroll_secret', 'kurulum_kodu'):
+            _v = SETTINGS.get(_k, '')
+            if _v.startswith('ENC:'):
+                _p = _deo(_v)
+                if _p and _p != _v:
+                    _e2 = _enc2_yaz(_p)
+                    if _e2.startswith('ENC2:'):
+                        config.set('settings', _k, _e2)
+                        degisti = True
+        if degisti:
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+                config.write(_cf)
+            logging.info("Config sirlari ENC2'ye terfi ettirildi (§9.3).")
+        if not IS_WINDOWS:
+            try:
+                os.chmod(CONFIG_PATH, 0o600)
+            except Exception:
+                pass
+    except Exception as _e:
+        logging.debug(f"_config_sifre_guclendir: {_e}")
+
+_config_sifre_guclendir()
 
 # --- Configuration Validation ---
 def validate_config():
@@ -1291,7 +1428,7 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Kurulum kodu 12 rakam olmalı!")
             return
         if _kod:
-            SETTINGS['kurulum_kodu'] = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
+            SETTINGS['kurulum_kodu'] = _enc2_yaz(_kod)
         _kod_ham = _kod = None
 
         # İlk kurulumda şifre değiştirilmemiş ise uyarı ver
@@ -1396,7 +1533,7 @@ class BoardConfigWidget(QWidget):
             self.status_label.setText("Hata: Tahta tanıtılamadı! Ayarlar kaydedilmedi.")
             return
 
-        token_enc = 'ENC:' + _b64.b64encode(device_token.encode('utf-8')).decode('ascii')
+        token_enc = _enc2_yaz(device_token)  # §9.3 Acik 2: makineye bagli sifreleme
         device_token = None  # zero-footprint: token'i RAM'de tutma, config'ten okunacak
 
         # Update configuration
@@ -7353,7 +7490,7 @@ if __name__ == '__main__':
                 print("❌ Sır boş; işlem yapılmadı.")
                 sys.exit(1)
             try:
-                enc = 'ENC:' + _b64.b64encode(secret.encode('utf-8')).decode('ascii')
+                enc = _enc2_yaz(secret)  # §9.3 Acik 2: makineye bagli sifreleme
                 config.read(CONFIG_PATH)
                 if not config.has_section('settings'):
                     config.add_section('settings')
