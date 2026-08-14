@@ -389,36 +389,50 @@ echo ""
 echo -e "${CYAN}[2.7] Sudo izinleri yapılandırılıyor...${NC}"
 
 cat > /etc/sudoers.d/fatih-client << 'SUDOERS_EOF'
-# Fatih Client - Sistem komutları için sudo izinleri
-# Display manager restart
-fatih-kiosk ALL=(ALL) NOPASSWD: /bin/systemctl restart lightdm
-fatih-kiosk ALL=(ALL) NOPASSWD: /bin/systemctl restart gdm3
-fatih-kiosk ALL=(ALL) NOPASSWD: /bin/systemctl restart gdm
+# Fatih Client - SINIRLI sudo izinleri (14 Ağu 2026 sertlestirme, §9.5)
+# Display manager restart (kiosk<->ogretmen gecisi icin) — yalniz fatih-kiosk.
+fatih-kiosk ALL=(root) NOPASSWD: /bin/systemctl restart lightdm
+fatih-kiosk ALL=(root) NOPASSWD: /bin/systemctl restart gdm3
+fatih-kiosk ALL=(root) NOPASSWD: /bin/systemctl restart gdm
 
-# Auto-login switch (kiosk -> ogretmen ve geri)
-fatih-kiosk ALL=(ALL) NOPASSWD: /opt/fatih-client/autologin-switch.sh
+# Auto-login switch — SADECE bilinen/guvenli argumanlar. "user root" gibi bir arguman
+# YASAK (root autologin ile yukseltmeyi kapatir). Ayrica betik ROOT'a ait (bkz. chown
+# root:root asagida) -> fatih-kiosk betigi DEGISTIREMEZ.
+fatih-kiosk ALL=(root) NOPASSWD: /opt/fatih-client/autologin-switch.sh kiosk
+fatih-kiosk ALL=(root) NOPASSWD: /opt/fatih-client/autologin-switch.sh user ogretmen
+fatih-kiosk ALL=(root) NOPASSWD: /opt/fatih-client/autologin-switch.sh disable
 
-# Shutdown ve reboot komutları (tüm kullanıcılar için)
-ALL ALL=(ALL) NOPASSWD: /sbin/poweroff
-ALL ALL=(ALL) NOPASSWD: /sbin/reboot
-ALL ALL=(ALL) NOPASSWD: /sbin/shutdown
-ALL ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
-ALL ALL=(ALL) NOPASSWD: /usr/sbin/reboot
-ALL ALL=(ALL) NOPASSWD: /usr/sbin/shutdown
+# Shutdown/reboot: ESKIDEN "ALL ALL NOPASSWD" idi = HER kullanici (ogrenci dahil, ayri
+# bir login hesabi varsa) sifresiz kapatabiliyordu. Artik YALNIZ fatih-kiosk (tahtanin
+# kilit oturumu) — istemci bu oturumda calisip "kapat" komutunu uygulayabilsin diye.
+# Istemci zaten ilk `systemctl poweroff`'u (polkit, aktif oturum) dener; bu kural yedek.
+# (Kilit oturumundaki bir ogrencinin kapatmasini engelleyen asil sey terminal/tty kilidi
+#  = §9.5 madde 3, ayri.)
+fatih-kiosk ALL=(root) NOPASSWD: /sbin/poweroff, /sbin/reboot, /sbin/shutdown, /usr/sbin/poweroff, /usr/sbin/reboot, /usr/sbin/shutdown
 SUDOERS_EOF
 
 chmod 0440 /etc/sudoers.d/fatih-client
+# Bozuk sudoers TUM sudo'yu kilitler -> dogrula, gecersizse geri al.
+if ! visudo -cf /etc/sudoers.d/fatih-client >/dev/null 2>&1; then
+    rm -f /etc/sudoers.d/fatih-client
+    echo -e "  ${YELLOW}⚠${NC} sudoers gecersiz, kaldirildi."
+fi
 
 # Eski dosyayı sil (varsa)
 rm -f /etc/sudoers.d/fatih-kiosk 2>/dev/null || true
 
 echo -e "  ${GREEN}✓${NC} Sudo izinleri yapılandırıldı"
 
-# 2.8 Dosya sahipliği
+# 2.8 Dosya sahipliği — ROOT'a ait (14 Ağu 2026 sertlestirme, §9.5).
+# ESKIDEN fatih-kiosk:fatih-kiosk idi -> fatih-kiosk, sudo ile root calistirdigi
+# autologin-switch.sh'i DEGISTIREBILIYORDU = root yukseltme. Artik root'a ait:
+# fatih-kiosk betikleri yalniz CALISTIRABILIR (755), DEGISTIREMEZ.
 echo ""
 echo -e "${CYAN}[2.8] Dosya izinleri ayarlanıyor...${NC}"
-chown -R fatih-kiosk:fatih-kiosk "$APP_DIR"
-echo -e "  ${GREEN}✓${NC} İzinler ayarlandı"
+chown -R root:root "$APP_DIR"
+chmod -R go-w "$APP_DIR"                 # grup/digerleri YAZAMAZ (kurcalamayi engelle)
+chmod 755 "$APP_DIR"/*.sh 2>/dev/null || true   # betikler calistirilabilir kalsin
+echo -e "  ${GREEN}✓${NC} İzinler ayarlandı (root'a ait, kurcalanamaz)"
 
 # ============================================================
 # ÖZET
