@@ -211,12 +211,19 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
 > obfuscate. Aşağıdaki "AÇIK" maddeleri **iki bağımsız denetimden** (güncelleme + güvenlik) çıktı.
 > **HİÇBİRİ HENÜZ UYGULANMADI — kullanıcı "başla" deyince sıraya girer.**
 
-### 9.1 Kurulum paketi (her iki OS, şifreli zip)
+### 9.1 Kurulum paketi (her iki OS, şifreli zip) + KOD İMZALAMA (Sectigo)
 - **Mevcut:** `paket_olustur.py` "KORUMALI" paket = yalnız **sabit-şifreli AES ZIP** (şifre kaynakta:
   `ZIP_SIFRE = env("FATIH_ZIP_SIFRE","803417")`). İçindeki `client.py` DÜZ kaynak. Enroll sırrı pakette
-  `Readme.txt`'te dolaşıyor.
+  `Readme.txt`'te dolaşıyor. Eski C# masaüstü **Sectigo kod-imzalama sertifikasıyla imzalanıp** siteye konuyor.
 - **Hedef:** İki OS için tek kurulum mantığı; zip şifresi kaynağa gömülü DEĞİL, indirene telefonla verilir.
   İçerik gerçek obfuscate (9.4). Enroll sırrı okul-özel+süreli (9.3).
+- **KOD İMZALAMA (kullanıcı isteği — masaüstündeki akışın aynısı):**
+  - **Windows:** PyInstaller `.exe` üretilir → **Sectigo sertifikasıyla `signtool` (Authenticode)** imzalanır
+    (SmartScreen/AV uyarısını kaldırır, "doğrulanmış yayıncı" gösterir) → siteye/kuruluma konur. Masaüstünde
+    yapılan işlemin birebir aynısı. Zaman damgası (RFC 3161) ile imzala (sertifika bitse de imza geçerli kalır).
+  - **Pardus/Linux:** Authenticode YOK. Karşılığı: paketi **GPG ile imzala** (ya da imzalı apt deposu) veya en
+    azından şifreli zip + yayınlanan SHA-256 sağlaması. `.exe` imzası Linux'ta işe yaramaz.
+  - Her dağıtımdan önceki sıra: **derle/obfuscate (9.4) → imzala → (şifreli) paketle → yayınla.**
 
 ### 9.2 Zamanlı / okul-bazlı güncelleme (YENİ sistem — asıl acı nokta)
 - **Mevcut:** Uzaktan güncelleme kanalı YOK. Güncelleme %100 elle (`git pull` + `setup.sh`/dosya kopyala,
@@ -224,16 +231,28 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
   sürüm global, okul bazlı değil). Poll komutları yalnız `openClose/message/shutdown/system_Remove/log_istek`.
   Windows'ta hiçbir güncelleme yolu yok.
 - **İskelet (hazır model):** `system_Remove` akışı = komut→ACK→çalıştır→denetim kaydı (`tahta_kaldirma_kayit`).
-  Client-side `/schedule` = zaman-penceresi örneği.
+  Client-side `/schedule` = zaman-penceresi örneği. Başarısızlık raporu = **yeni hata denetimi kanalı** (9.6).
+- **MODEL (kullanıcı kararı 13 Ağu): OTOMATİK + KADEMELİ (insan başında ŞART DEĞİL).**
+  - ynt5'ten bir okul (ya da tek tahta) "**açılır açılmaz güncelle**" diye işaretlenir.
+  - O okulun tahtaları bir sonraki açılışta/poll'da güncellemeyi **kimse başında olmadan otomatik alır**.
+  - Güncelleme **takılır/başarısız olursa tahta bize RAPOR eder** (hata denetimi, `tip='guncelleme'`) →
+    düzeltiriz. Başarılıysa yeni sürümü bildirir (client_surum zaten poll'da gidiyor → panelde görülür).
+  - Okullar **sırayla, elle tetiklenir** (A okulu tamam → B okulu işaretle...). Toplu "hepsi birden" YOK;
+    kademeli yayılım = bir hata çıkarsa tek okulda kalır.
+  - **Opsiyonel zaman penceresi:** istenirse "şu saat aralığında" da işaretlenebilir (ör. mesai dışı);
+    varsayılan "açılışta". Ders ortasında kesmemek için tahta, güncellemeyi kilitliyken/açılışta uygular.
 - **Gereken parçalar:**
-  1. **Sunucu kaydı:** güncelleme bayrağı + hedef sürüm + zaman penceresi (başlangıç/bitiş) — okul/tahta bazlı.
-  2. **Poll'da alan:** `guncelle=1, hedefSurum, pencereBaslangic/Bitis`.
-  3. **Panel komutu/uç (ynt5):** "şu okula/tahtaya şu saat aralığında güncelle".
-  4. **Tahtada `apply_update` uygulayıcısı:** komutla tetiklenir, paketi indirir/kurar + restart; **pencere
-     dışında ÇALIŞMAZ**. (Windows'ta ayrı: exe/registry.)
-  5. **"Tahta başında biri var" güvencesi:** güncelleme yalnız pencere içinde + (tercihen) tahtada onayla
-     başlar; öğretmen ders yapıyorsa/pencere dışında ERTELE. Ders ortasında asla kesme.
-  6. **Denetim kaydı:** kim tetikledi, hangi tahta, sonuç (istendi/uygulandı/başarısız).
+  1. **Sunucu kaydı (okul/tahta bazlı):** `guncelle` bayrağı + `hedef_surum` + tetik tipi (`acilista` |
+     `pencere`) + (varsa) pencere başlangıç/bitiş + son durum (`beklemede/indiriliyor/uygulandi/basarisiz`).
+  2. **Poll'da alan:** `guncelle=1, hedefSurum, tetik/pencere`. ACK whitelist'e güncelleme kolonu.
+  3. **Panel (ynt5):** okul/tahta seç → "açılışta güncelle" işaretle/kaldır + durum sütunu (kaç tahta aldı,
+     kaç başarısız). Kademeli: okul okul.
+  4. **Tahtada `apply_update` uygulayıcısı:** komutla tetiklenir → imzalı/şifreli paketi indir → doğrula
+     (imza/sağlama) → kur → restart. **Windows'ta ayrı** (exe değişimi + Registry). Başarısızlıkta rollback +
+     rapor. `remove_system()` bunun yakın modeli.
+  5. **Başarısızlık/durdu raporu:** her adım hata denetimine yazılır (`kaynak='tahta', tip='guncelleme:...'`)
+     → HataGunlugu'nda görülür, düzeltilir. Bu geri-bildirim döngüsü kullanıcının açık isteği.
+  6. **Denetim kaydı:** kim işaretledi (ynt5 kullanıcı), hangi okul/tahta, sonuç.
 
 ### 9.3 Sunucuya sızma önleme (güvenlik denetimi)
 - **İYİ (korunacak):** token→tek okul kapsamı + çapraz-okul reddi (`deviceAuth`, `controller.js:68`);
