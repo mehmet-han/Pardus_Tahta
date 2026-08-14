@@ -200,3 +200,81 @@ tek-tık yedek: `C:\Github\mebre-tahta-v6\` (`yedekle-hepsi.bat`).
 - `ShortcutManager` ↔ C# `CtrlAltDel` engelleme
 - Kilit/kiosk ↔ C# `Form1.cs` `LockSystm`
 Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
+
+---
+
+## 9. SÜRÜM DAĞITIMI & SERTLEŞTİRME — Pardus + Windows üretim çıkışı (13 Ağu 2026 planı)
+
+> **Amaç (kullanıcı):** Hem Pardus hem Windows'u sahaya çıkarmak. Tek şifreli zip kurulum (şifre
+> telefonla). Zamanlı/okul-bazlı güncelleme. Sunucuya sızma yolu SIFIR. Öğrenci tahtayı kural dışı
+> açamasın, programı kaldıramasın, dosyalar gizli + her dağıtımdan önce tersine-mühendisliğe karşı
+> obfuscate. Aşağıdaki "AÇIK" maddeleri **iki bağımsız denetimden** (güncelleme + güvenlik) çıktı.
+> **HİÇBİRİ HENÜZ UYGULANMADI — kullanıcı "başla" deyince sıraya girer.**
+
+### 9.1 Kurulum paketi (her iki OS, şifreli zip)
+- **Mevcut:** `paket_olustur.py` "KORUMALI" paket = yalnız **sabit-şifreli AES ZIP** (şifre kaynakta:
+  `ZIP_SIFRE = env("FATIH_ZIP_SIFRE","803417")`). İçindeki `client.py` DÜZ kaynak. Enroll sırrı pakette
+  `Readme.txt`'te dolaşıyor.
+- **Hedef:** İki OS için tek kurulum mantığı; zip şifresi kaynağa gömülü DEĞİL, indirene telefonla verilir.
+  İçerik gerçek obfuscate (9.4). Enroll sırrı okul-özel+süreli (9.3).
+
+### 9.2 Zamanlı / okul-bazlı güncelleme (YENİ sistem — asıl acı nokta)
+- **Mevcut:** Uzaktan güncelleme kanalı YOK. Güncelleme %100 elle (`git pull` + `setup.sh`/dosya kopyala,
+  SSH/menü). `/version`+`check_version` sadece "⬆ Güncelleme mevcut" ETİKETİ (indirme/uygulama yok;
+  sürüm global, okul bazlı değil). Poll komutları yalnız `openClose/message/shutdown/system_Remove/log_istek`.
+  Windows'ta hiçbir güncelleme yolu yok.
+- **İskelet (hazır model):** `system_Remove` akışı = komut→ACK→çalıştır→denetim kaydı (`tahta_kaldirma_kayit`).
+  Client-side `/schedule` = zaman-penceresi örneği.
+- **Gereken parçalar:**
+  1. **Sunucu kaydı:** güncelleme bayrağı + hedef sürüm + zaman penceresi (başlangıç/bitiş) — okul/tahta bazlı.
+  2. **Poll'da alan:** `guncelle=1, hedefSurum, pencereBaslangic/Bitis`.
+  3. **Panel komutu/uç (ynt5):** "şu okula/tahtaya şu saat aralığında güncelle".
+  4. **Tahtada `apply_update` uygulayıcısı:** komutla tetiklenir, paketi indirir/kurar + restart; **pencere
+     dışında ÇALIŞMAZ**. (Windows'ta ayrı: exe/registry.)
+  5. **"Tahta başında biri var" güvencesi:** güncelleme yalnız pencere içinde + (tercihen) tahtada onayla
+     başlar; öğretmen ders yapıyorsa/pencere dışında ERTELE. Ders ortasında asla kesme.
+  6. **Denetim kaydı:** kim tetikledi, hangi tahta, sonuç (istendi/uygulandı/başarısız).
+
+### 9.3 Sunucuya sızma önleme (güvenlik denetimi)
+- **İYİ (korunacak):** token→tek okul kapsamı + çapraz-okul reddi (`deviceAuth`, `controller.js:68`);
+  ACK kolon whitelist (SQLi kapalı); token sunucuda yalnız sha256 hash; enroll sonrası sır silme.
+- **AÇIK 1 — tek paylaşılan enroll sırrı:** `DEVICE_ENROLL_SECRET` tüm okullar için TEK sabit; `/boards`+
+  `/enroll` ile ele geçiren biri **çapraz-okul token basar + gerçek tahtayı ezer**. Pakette dolaşıyor.
+  → **Hedef:** okul-özel + süreli provisioning token (ynt5'ten üret — [[provisioning-token-ynt5]]).
+- **AÇIK 2 — config'te zayıf sır saklama:** `device_token`/`enroll_secret` config.ini'de yalnız `ENC:`
+  = base64 (şifreleme değil); dosya dünya-okunur → token hırsızlığı → öğrenci PII (`/display`,`/sinav_oturma`).
+  → **Hedef:** gerçek şifreleme (Linux keyring / Windows DPAPI) + izin 600 + gizleme.
+
+### 9.4 Obfuscation / tersine mühendislik (EN KRİTİK — şu an TAMAMEN YOK)
+- **Mevcut:** `client.py` sahaya DÜZ Python (7465 satır) gidiyor. "compiled into .so" yorumları GERÇEK DEĞİL;
+  pyarmor lisanssız başarısız; Cython/PyInstaller uygulanmıyor. Kaynaktan çıkan filo-geneli sabit sırlar:
+  XOR anahtarı `pardus2026!`, USB açma/kaldırma şifreleri, **KRİZ ana anahtarı**, URL/UA.
+- **Hedef (HER dağıtımdan ÖNCE):**
+  1. Gerçek derleme/obfuscation: Windows → PyInstaller `.exe` + pyarmor(lisans) ya da **Nuitka**; Pardus →
+     Nuitka/Cython `.so`. Düz `client.py` sahaya çıkmaz.
+  2. **Filo-geneli sabit sırları KALDIR → tahta-özel türet** (TOTP zaten tahta-özel; USB/kriz de olmalı).
+  3. XOR "gizleme" yerine derlenmiş binary + tahta-özel anahtar.
+
+### 9.5 Öğrenci sertleştirme (güvenlik denetimi)
+- **AÇIK — sudoers fazla açık:** `ALL ALL NOPASSWD: reboot/shutdown` (HERKES → öğrenci tahtayı kapatır, DoS);
+  `autologin-switch.sh` argümansız + `/opt/fatih-client` sahibi fatih-kiosk → **root yükseltme yolu**.
+  → **Hedef:** sudoers'ı daralt (gerekli komut+argüman kısıtı; /opt sahibi root, 700).
+- **AÇIK — kırık offline formül:** eski `Year*Day*Minute*85` şifresi tanıtılmamış tahtalarda HÂLÂ aktif
+  (öğrenciler çözmüş). → **Hedef:** tamamen kaldır, yalnız tahta-özel TOTP.
+- **AÇIK — kilit atlatma yolları:** `Ctrl+Alt+F2` tty geçişi engellenmiyor (Xorg `DontVTSwitch` yok);
+  kilit aktifken sonradan takılan USB klavye grab dışı; **Windows'ta klavye kilidi kiosk akışına bağlı
+  değil**; `Ctrl+Alt+Shift+Q` panik çıkışı kiosk'ta bile açık. → **Hedef:** Xorg `DontVTSwitch`+VT lock;
+  klavye hot-plug izleme (pyudev var); Windows low-level hook'u (W6-2B yazıldı) kiosk akışına bağla;
+  **panik çıkışı sahada kapat/gizle** (sadece test build'inde).
+- **AÇIK — dosya gizli değil:** `/opt/fatih-client` 755 dünya-okunur; config `~/.config` umask 644.
+  → **Hedef:** 700/root + gizleme + config 600.
+
+### 9.6 Hata denetimi — DOĞRULANDI ✅ (iki OS)
+Tek kod tabanı, **platform-kapısı YOK**: `_hata_bildir`/excepthook/`report_error`/poll-platform hepsi
+Pardus+Windows'ta birebir. Yalnız **güncel client.py** çalışan tahtalarda devreye girer → 9.2 (güncelleme
+dağıtımı) çözülmeden sahadaki eski tahtalardan geri dönüş gelmez.
+
+### 9.7 Sıra önerisi (başla denince)
+1. **Obfuscation + sabit-sır temizliği (9.4)** — diğer her şeyin ön koşulu; sırlar açıkken diğer sertleştirme
+   yarım kalır. 2. **Zamanlı güncelleme (9.2)** — asıl acı nokta + hata denetimini sahaya taşır.
+3. **Öğrenci sertleştirme (9.5)** + **config/enroll sır (9.3)**. 4. **Şifreli zip + telefon şifresi (9.1)**.
