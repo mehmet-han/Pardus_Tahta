@@ -1,0 +1,37 @@
+# ============================================================================
+# PARDUS DAGITIM PAKETI — client.bin (Nuitka standalone) DERLEME (§9.1)
+# ============================================================================
+# Fark: Dockerfile.pardus-build TEST icindir (minimal, resources yok, --test hizli).
+# BU imaj DAGITIM icindir: evdev+pyudev (klavye kilidi + USB izleme) GOMULU,
+# resources + version.txt dahil. Cikti host'a `docker cp` ile alinir (mount sorunsuz).
+#
+# Pardus = Debian tabanli. evdev/pyudev DERLEME ANINDA kurulu OLMALI ki Nuitka
+# standalone'a gomsun; aksi halde sahada _HAS_LINUX_INPUT=False -> kilit calismaz.
+# ----------------------------------------------------------------------------
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev python3-pyqt5 \
+        python3-evdev python3-pyudev \
+        gcc patchelf ccache ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# requests/urllib3 DERLEME ANINDA kurulu olmali ki Nuitka standalone'a gomsun.
+RUN pip3 install --break-system-packages --no-cache-dir nuitka ordered-set requests urllib3
+
+WORKDIR /app
+COPY client.py platform_layer.py version.txt ./
+COPY resources ./resources
+
+# Derle (standalone + PyQt5). evdev/pyudev try/except icinde import edilir; kurulu
+# olduklari icin Nuitka statik analizde gorup gomer. resources+version veri olarak eklenir.
+RUN python3 -m nuitka --standalone --enable-plugin=pyqt5 \
+        --assume-yes-for-downloads \
+        --include-module=evdev --include-module=pyudev \
+        --include-data-dir=resources=resources \
+        --include-data-files=version.txt=version.txt \
+        --output-dir=nuitka_build --remove-output client.py
+
+# Dogrulama: --test + evdev/pyudev GERCEKTEN gomuldu mu (sahada kilit icin sart).
+CMD ["sh", "-c", "./nuitka_build/client.dist/client.bin --test; echo '--- gomulu mu:'; ls nuitka_build/client.dist/ | grep -iE 'evdev|pyudev' | head; echo '--- strings kanit (0 olmali):'; strings nuitka_build/client.dist/client.bin | grep -c pardus2026 || true"]
