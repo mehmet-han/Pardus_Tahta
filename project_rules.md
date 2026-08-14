@@ -224,6 +224,14 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
   - **Pardus/Linux:** Authenticode YOK. Karşılığı: paketi **GPG ile imzala** (ya da imzalı apt deposu) veya en
     azından şifreli zip + yayınlanan SHA-256 sağlaması. `.exe` imzası Linux'ta işe yaramaz.
   - Her dağıtımdan önceki sıra: **derle/obfuscate (9.4) → imzala → (şifreli) paketle → yayınla.**
+- **DAĞITIM / indirme sayfası (mebre.com.tr — kullanıcı düzenliyor):** Paketler `https://mebre.com.tr/exe/`
+  altında **sürümlü adlarla** yayınlanır (ör. Windows `Fatih_Client_Kurulum_V1_00_93.zip`, Pardus
+  `MebreAkilliTahta.zip`). İndirme alanında **3 program** gösterilecek (bilgisayar+telefon görselinin
+  üzerinde): **(1) MebreOkul · (2) Windows için Akıllı Tahta Kilit · (3) Pardus için Akıllı Tahta Kilit.**
+  Website'i kullanıcı düzenler; biz paketleri bu yola koyarız (her şey bitince).
+- **apply_update BAĞLANTISI:** Otomatik güncelleme (9.2) tam bu `/exe/` URL'lerinden indirir → imza/SHA-256
+  doğrular → uygular. `guncelle_hedef` (hedef sürüm) → indirilecek paket adı türetilir (ör.
+  `Fatih_Client_Kurulum_V1_00_XX.zip`). URL şeması client'ta config alanı olur.
 
 ### 9.2 Zamanlı / okul-bazlı güncelleme (YENİ sistem — asıl acı nokta)
 - **Mevcut:** Uzaktan güncelleme kanalı YOK. Güncelleme %100 elle (`git pull` + `setup.sh`/dosya kopyala,
@@ -292,6 +300,22 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
 Tek kod tabanı, **platform-kapısı YOK**: `_hata_bildir`/excepthook/`report_error`/poll-platform hepsi
 Pardus+Windows'ta birebir. Yalnız **güncel client.py** çalışan tahtalarda devreye girer → 9.2 (güncelleme
 dağıtımı) çözülmeden sahadaki eski tahtalardan geri dönüş gelmez.
+
+### 9.8 SÜRELİ UYUTMA (tarih aralığı — sınav/tatil) [YENİ istek 14 Ağu]
+- **İhtiyaç:** Okulda sınav (ör. 2 gün) ya da uzun tatil (**8 aya kadar**) olunca kilit programı DEVRE DIŞI
+  kalmalı; tahta normal açılıp kapanmalı. Elle "aç" yetmez (kalıcı + unutulur); tarih bitince OTOMATİK
+  normale dönmeli.
+- **Model:** ynt5'ten okul/tahta için **uyku başlangıç + bitiş tarihi** girilir. Poll tahtaya iletir.
+  Tahta: `uyku_bas ≤ now ≤ uyku_bit` ise **uykuda** = kilit YOK, tam normal masaüstü. Aralık dışında
+  normal kilit davranışı KENDİLİĞİNDEN döner (elle müdahale yok).
+- **Çevrimdışı dayanıklılık:** uyku aralığı config'e yazılır → sunucuya ulaşılamasa bile pencere içinde
+  uykuda kalır (sınav günü internet kesilse bile tahta kilitlenmez).
+- **Gereken parçalar:** (1) sunucu kaydı `uyku_bas/uyku_bit` (smart_board_post ya da akilli_tahtalar),
+  (2) poll'da bu alanlar, (3) panelde tarih aralığı seç (okul/tahta) + net "şu tarihe kadar AÇIK" uyarısı,
+  (4) client: uyku penceresinde `lock_system` atla + aralık bitince normale dön, (5) denetim (kim, hangi
+  aralık). **guncelle_hedef ile AYNI kanal (poll) — küçük ek**, güncelleme mekanizmasıyla birlikte gelir.
+- **Güvenlik notu:** Uyku sırasında tahta tamamen açık → öğrenci erişimi mümkün; bu KASITLI (sınav modu).
+  Aralık sınırlı olduğu için risk bounded; panelde "açık" durumu net gösterilir.
 
 ### 9.7 Sıra önerisi (başla denince)
 1. **Obfuscation + sabit-sır temizliği (9.4)** — diğer her şeyin ön koşulu; sırlar açıkken diğer sertleştirme
