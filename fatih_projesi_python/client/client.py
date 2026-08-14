@@ -2496,6 +2496,11 @@ class NetworkClient:
         }))
         if result is None:
             return None
+        # Guncelleme hedefi + uyku araligi: LISTE SOZLESMESINI bozmadan (process_commands
+        # yalniz index 0-4 okur) instance'ta sakla; poll_server bunlari ayrica isler.
+        self.son_guncelle_hedef = str(result.get("guncelleHedef", "") or "")
+        self.son_uyku_bas = str(result.get("uykuBas", "") or "")
+        self.son_uyku_bit = str(result.get("uykuBit", "") or "")
         msg = result.get("message", "")
         return [
             str(result.get("openClose", 1)),
@@ -3018,6 +3023,11 @@ class FatihClientApp(QWidget):
         self._exam_rendered_id = None # cizili sinav_id (titreme onleme)
 
         self.is_locked = False  # Start as unlocked, then lock_system() will show the screen
+        # SURELI UYUTMA (§9.8): ACILISTA config'teki uyku araligini onurla — sunucuya hic
+        # ulasilamasa bile (sinav gunu internet yok) uyku penceresindeysek tahta KILITLENMEZ.
+        # main()/lock_system bu bayragi kontrol eder.
+        self._uyku_aktif = self._uyku_penceresinde(
+            SETTINGS.get('uyku_bas', '') or '', SETTINGS.get('uyku_bit', '') or '')
         self._last_display_data = None  # /display son yaniti (panelleri aga gitmeden geri cizmek icin)
         self.keyboard_locker = None
         self.usb_check_timer = None
@@ -5476,6 +5486,13 @@ class FatihClientApp(QWidget):
                 # ctrl_post artik liste donuyor (v5 JSON'dan); split gerekmiyor.
                 # Safely emit to main thread instead of lambda QTimer which gets garbage collected
                 self.command_signal.emit(commands)
+
+                # Uyku araligi (§9.8) + guncelleme hedefi (§9.2) — liste disi alanlar, ayrica isle.
+                # (ctrl_post bunlari network_client uzerinde sakladi.)
+                try:
+                    self._uyku_ve_guncelleme_isle()
+                except Exception as e:
+                    logging.error(f"_uyku_ve_guncelleme_isle hata: {e}")
             else:
                 # İNTERNET VEYA SUNUCU KOPTU
                 self.server_has_spoken = False
@@ -5502,6 +5519,106 @@ class FatihClientApp(QWidget):
                     logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
 
         threading.Thread(target=_poll_task, daemon=True).start()
+
+    # ================= SURELI UYUTMA (§9.8) + OTOMATIK GUNCELLEME (§9.2) =================
+    def _uyku_penceresinde(self, bas, bit):
+        """bas/bit 'YYYY-MM-DDTHH:MM:SS' (yerel TR saati). Simdi araliktaysa True.
+        Sunucu DATE_FORMAT ile string gonderir (UTC kaymasi yok); tahta KENDI yerel saatiyle
+        karsilastirir (ikisi de TR). Bos/bozuk => False (uyku yok)."""
+        if not bas or not bit:
+            return False
+        try:
+            b = datetime.strptime(bas, "%Y-%m-%dT%H:%M:%S")
+            e = datetime.strptime(bit, "%Y-%m-%dT%H:%M:%S")
+            return b <= datetime.now() <= e
+        except Exception:
+            return False
+
+    def _config_yaz(self, key, value):
+        """Tek bir ayari SETTINGS + config.ini'ye yazar (best-effort). Uyku araligini
+        cevrimdisi de bilmek icin kullanilir."""
+        try:
+            SETTINGS[key] = value
+            config.read(CONFIG_PATH)
+            if not config.has_section('settings'):
+                config.add_section('settings')
+            config.set('settings', key, value if value is not None else '')
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+                config.write(_cf)
+        except Exception as e:
+            logging.debug(f"_config_yaz({key}) hata: {e}")
+
+    def _uyku_ve_guncelleme_isle(self):
+        """poll sonrasi cagirilir (arka plan thread). Uyku penceresini uygular
+        (kilit devre disi + config'e yaz = cevrimdisi dayaniklilik) ve uyku DISINDA guncelleme
+        hedefini kontrol eder (kilitliyken apply_update)."""
+        nc = self.network_client
+        bas = getattr(nc, 'son_uyku_bas', '') or ''
+        bit = getattr(nc, 'son_uyku_bit', '') or ''
+        # Sunucudan gelen uyku araligi degistiyse config'e yaz (sinav gunu internet kesilse bile bilinsin).
+        if bas != (SETTINGS.get('uyku_bas', '') or '') or bit != (SETTINGS.get('uyku_bit', '') or ''):
+            self._config_yaz('uyku_bas', bas)
+            self._config_yaz('uyku_bit', bit)
+
+        uyku = self._uyku_penceresinde(bas, bit)
+        onceki = getattr(self, '_uyku_aktif', False)
+        self._uyku_aktif = uyku
+
+        if uyku:
+            # UYKU: kilit tamamen devre disi (sinav/tatil). Kilitliyse ac; lock_system de artik atlar.
+            if self.is_locked:
+                logging.info(f"[UYKU] Uyku penceresi aktif ({bas} - {bit}) — kilit aciliyor.")
+                QTimer.singleShot(0, lambda: self.unlock_system("Uyku modu (sinav/tatil) — kilit devre disi"))
+            return  # uyku sirasinda guncelleme YAPMA (tahta aktif kullanimda olabilir)
+
+        if onceki and not uyku:
+            # Uyku bitti — normal kilit davranisina don (bir sonraki poll/komut kilitler).
+            logging.info("[UYKU] Uyku penceresi bitti — normal kilit davranisi geri geldi.")
+            if not self.is_locked:
+                QTimer.singleShot(0, lambda: self.lock_system("Uyku suresi bitti"))
+
+        # Guncelleme: uyku degil + hedef var + surumden farkli + tahta KILITLI (ders ortasini kesmez).
+        hedef = getattr(nc, 'son_guncelle_hedef', '') or ''
+        mevcut = SETTINGS.get('version', '') or ''
+        if hedef and hedef != mevcut and self.is_locked:
+            self.apply_update(hedef)
+
+    def apply_update(self, hedef):
+        """Hedef surume otomatik guncelle (§9.2). SADECE tahta KILITLIYKEN cagirilir (ders kesilmez).
+        Imzali paketi indir -> SHA-256/imza DOGRULA -> uygula -> yeniden baslat. Basarisizlikta
+        hata denetimine (§9.6) 'guncelleme' olarak rapor et; basaride tahta yeni surumle acilinca
+        poll'da bunu bildirir + guncelle_hedef ACK ile boslanir.
+
+        GUVENLIK: `guncelle_url` config'te TANIMLI DEGILSE hicbir sey yapma. Paket/imzalama boru
+        hatti (§9.1/§9.4) tamamlanana kadar bu yol DORMANT kalir — yarim bir self-swap tahtalari
+        bricklemesin. URL tanimlaninca: {guncelle_url}/Fatih_Client_Kurulum_{surum}.zip indirilir."""
+        if getattr(self, '_guncelleme_calisiyor', False):
+            return
+        self._guncelleme_calisiyor = True
+
+        def _worker():
+            try:
+                base_url = get_setting('guncelle_url', '') or ''
+                if not base_url:
+                    # Boru hatti henuz yok — sadece bir kez logla, tahtayi beklet.
+                    logging.info(f"[GUNCELLEME] hedef={hedef} ama guncelle_url tanimsiz — "
+                                 f"paket boru hatti (§9.1/§9.4) bekleniyor, atlandi.")
+                    return
+                logging.info(f"[GUNCELLEME] {SETTINGS.get('version')} -> {hedef} basliyor (url={base_url}).")
+                # 1) Paketi indir (imzali/sifreli). 2) SHA-256/imza dogrula. 3) Uygula (platform'a gore:
+                #    Pardus /opt/fatih-client swap + watchdog restart; Windows exe/installer). 4) ACK ile
+                #    guncelle_hedef'i bosla. — Bu adimlar §9.4 (paket format + imza) ile tamamlanacak;
+                #    su an cati hazir, gercek swap boru hatti kesinlesince eklenecek.
+                #    Basari sonrasi restart, watchdog/servise birakilir.
+                raise NotImplementedError("apply_update swap adimi §9.4 (paket/imza) ile tamamlanacak")
+            except Exception as e:
+                logging.error(f"[GUNCELLEME] basarisiz: {e}")
+                _hata_bildir("guncelleme", "kritik", f"apply_update {hedef}: {e}",
+                             f"mevcut={SETTINGS.get('version')} hedef={hedef}")
+            finally:
+                self._guncelleme_calisiyor = False
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def process_commands(self, commands):
         if len(commands) < 4:
@@ -5655,6 +5772,11 @@ class FatihClientApp(QWidget):
     def lock_system(self, reason=""):
         if NO_LOCK_MODE:
             logging.info(f"[NO-LOCK] lock_system() skipped: {reason}")
+            return
+        # SURELI UYUTMA (§9.8): uyku penceresi aktifken TAHTA KILITLENMEZ (sinav/tatil). Tum kilit
+        # cagrilari (internet kopmasi, mesaj, zamanlanmis, USB cikarma...) burada tek noktadan atlanir.
+        if getattr(self, '_uyku_aktif', False):
+            logging.info(f"[UYKU] lock_system atlandi (uyku modu aktif): {reason}")
             return
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
