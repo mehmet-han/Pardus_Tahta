@@ -223,7 +223,12 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
     yapılan işlemin birebir aynısı. Zaman damgası (RFC 3161) ile imzala (sertifika bitse de imza geçerli kalır).
   - **Pardus/Linux:** Authenticode YOK. Karşılığı: paketi **GPG ile imzala** (ya da imzalı apt deposu) veya en
     azından şifreli zip + yayınlanan SHA-256 sağlaması. `.exe` imzası Linux'ta işe yaramaz.
-  - Her dağıtımdan önceki sıra: **derle/obfuscate (9.4) → imzala → (şifreli) paketle → yayınla.**
+  - **KESİN SIRA (imza EN SON kod adımı — imzalı .exe'ye sonradan dokunulursa imza geçersiz olur):**
+    **1) KOD: obfuscation (9.4) + sabit-sır temizliği + öğrenci sertleştirme (9.5) → 2) PAKETLE: PyInstaller .exe
+    (Pardus: Nuitka/.so) → 3) İMZALA: Sectigo signtool (Authenticode) → 4) (opsiyonel şifreli zip) → 5) YÜKLE
+    (mebre.com.tr/exe/).** W6-3 paketleme + obfuscation + sertleştirme **imzadan ÖNCE** biter.
+  - İmza sadece elle kurulumu DEĞİL, **otomatik güncellemeyi (9.2) de** güvenceye alır: apply_update aynı imzalı
+    .exe'yi indirir → **imza/SHA-256 doğrular** → uygular. "Sahte güncelleme paketi" saldırısı böyle kapanır.
 - **DAĞITIM / indirme sayfası (mebre.com.tr — kullanıcı düzenliyor):** Paketler `https://mebre.com.tr/exe/`
   altında **sürümlü adlarla** yayınlanır (ör. Windows `Fatih_Client_Kurulum_V1_00_93.zip`, Pardus
   `MebreAkilliTahta.zip`). İndirme alanında **3 program** gösterilecek (bilgisayar+telefon görselinin
