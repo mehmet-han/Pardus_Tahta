@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc patchelf ccache ca-certificates ntpsec-ntpdate \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --break-system-packages --no-cache-dir nuitka ordered-set
+# requests/urllib3 DERLEME ANINDA kurulu olmali ki Nuitka standalone'a gomsun.
+RUN pip3 install --break-system-packages --no-cache-dir nuitka ordered-set requests urllib3
 
 WORKDIR /app
 COPY client.py platform_layer.py config.ini version.txt ./

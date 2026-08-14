@@ -20,7 +20,8 @@ if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -y
     sudo apt-get install -y python3 python3-pip python3-dev python3-pyqt5 gcc patchelf ccache
 fi
-python3 -m pip install --user --upgrade nuitka ordered-set
+# requests/urllib3 derleme aninda kurulu olmali ki Nuitka standalone'a gomsun.
+python3 -m pip install --user --upgrade nuitka ordered-set requests urllib3
 
 echo "== 2) Nuitka derleme (standalone + PyQt5 plugin) =="
 # --standalone : tum bagimliliklari yanina koyar (tahtada python kurulu olmasa da calisir)
