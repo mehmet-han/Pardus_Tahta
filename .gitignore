@@ -73,3 +73,8 @@ hazir/
 
 # Cihaza özel config (device token) — pakete/repoya girmez
 fatih_projesi_python/client/config.ini
+
+# Nuitka derleme ciktilari (§9.1/§9.4)
+fatih_projesi_python/client/nuitka_build/
+fatih_projesi_python/client/nuitka_build_win/
+*.zip
