@@ -311,13 +311,9 @@ except ValueError as e:
     print(f"Configuration Error: {e}")
     sys.exit(1)
 
-# --- USB Password Constants (obfuscated - decoded at runtime, compiled into .so) ---
-USB_PASSWORD = _b64.b64decode(''.join([
-    'MzI1NDFrZWjEsFVGYWxpX3ZlbGlf',
-    'aMO8c2V5aW4/xLAwNDRFSEVKU1RS',
-    'xLBIVEVNRVM1NDg4OTY1RThHxLBFxLA='
-])).decode('utf-8')
-
+# --- USB Kaldirma sifresi (USB KILIT ACMA KALDIRILDI 14 Ağu 2026: filo-geneli sabit sifre
+#     guvenlik riskiydi + yerine tahta-ozel kriz kodu var. Yalniz rmove.txt = uzaktan
+#     kaldirmanin offline yedegi kaldi). ---
 USB_REMOVE_PASSWORD = _b64.b64decode(''.join([
     'dWVnZTMyNTQxa2Voxa',
     'BVRmFsaV92ZWxpX2jDvHNleWluP8Sw',
@@ -829,68 +825,10 @@ def generate_user_key(corporate_code: str = None) -> str:
     part4 = ''.join(rng.choice(charset[3:len(charset)-1]) for _ in range(8))
     return f"{part1}_{part2}_{part3}!{part4}"
 
-# --- NEW: USB Check Function (equivalent to C# AcKapa) ---
-def check_usb_password() -> bool:
-    """
-    Check if USB drive with correct password is present.
-    Equivalent to C# AcKapa() function.
-    """
-    try:
-        # Get all mounted filesystems
-        with open('/proc/mounts', 'r') as f:
-            mounts = f.readlines()
-        
-        usb_mounts_found = []
-        for mount in mounts:
-            parts = mount.split()
-            if len(parts) >= 2:
-                device = parts[0]
-                mount_point = parts[1]
-                
-                # Skip system mount points
-                if mount_point in ('/', '/boot', '/home') or mount_point.startswith('/sys') or mount_point.startswith('/proc') or mount_point.startswith('/dev'):
-                    continue
-                
-                # Check if it's a block device (USB drives are /dev/sd*, /dev/usb*, etc.)
-                if device.startswith('/dev/sd') or device.startswith('/dev/usb'):
-                    # USB drives can be mounted in /media, /mnt, /run/media, or /tmp
-                    if mount_point.startswith('/media') or mount_point.startswith('/mnt') or mount_point.startswith('/run/media') or mount_point.startswith('/tmp'):
-                        usb_mounts_found.append(mount_point)
-                        pass_file = os.path.join(mount_point, "pass.txt")
-                        if os.path.exists(pass_file):
-                            try:
-                                # First try UTF-8 with BOM signature (handles standard notepad saves and Windows defaults properly)
-                                try:
-                                    with open(pass_file, 'r', encoding='utf-8-sig') as f:
-                                        content = f.read().strip()
-                                except UnicodeDecodeError:
-                                    # Fallback to Turkish Windows encoding
-                                    with open(pass_file, 'r', encoding='cp1254') as f:
-                                        content = f.read().strip()
-                                        
-                                logging.info(f"USB pass.txt found at {mount_point}, content length: {len(content)}")
-                                if content == USB_PASSWORD:
-                                    logging.info(f"USB password MATCHED at {mount_point}")
-                                    return True
-                                else:
-                                    logging.warning(f"USB pass.txt content does NOT match at {mount_point}. Expected len:{len(USB_PASSWORD)} Got len:{len(content)}")
-                                    logging.debug(f"Expected: '{USB_PASSWORD}'")
-                                    logging.debug(f"Got:      '{content}'")
-                            except Exception as e:
-                                logging.warning(f"Error reading pass.txt from {mount_point}: {e}")
-                                continue
-                        else:
-                            logging.debug(f"No pass.txt at USB mount: {mount_point}")
-        
-        if usb_mounts_found:
-            logging.info(f"USB mounts found but no valid password: {usb_mounts_found}")
-        else:
-            logging.debug("No USB drives detected in mount points")
-        return False
-        
-    except Exception as e:
-        logging.error(f"Error checking USB password: {e}")
-        return False
+# USB KILIT ACMA (check_usb_password / pass.txt) KALDIRILDI — 14 Ağu 2026.
+# Filo-geneli sabit USB sifresi bir tahtadan cikarilinca tum filoyu aciyordu; yerine
+# tahta-ozel kriz (acil) kodu geldi. Asagidaki check_usb_remove (rmove.txt) = uzaktan
+# kaldirmanin offline yedegi, korunuyor.
 
 # --- NEW: USB Remove Check Function (equivalent to C# Rsystm) ---
 def check_usb_remove() -> bool:
@@ -2175,14 +2113,13 @@ class KeyboardLocker(threading.Thread):
 
 # --- USB Monitor Thread (Enhanced for removal detection) ---
 class UdevMonitor(QObject):
-    usbUnlockSignal = pyqtSignal()
+    # USB KILIT ACMA KALDIRILDI (14 Ağu 2026): filo-geneli sabit USB sifresi guvenlik riskiydi
+    # ve yerine tahta-ozel kriz (acil) kodu geldi. Yalniz USB KALDIRMA (rmove.txt) kaldi —
+    # uzaktan kaldirmanin (ynt5) offline yedegi. pass.txt / unlock artik yok.
     usbRemoveSignal = pyqtSignal()
-    usbRemovedSignal = pyqtSignal()  # NEW: Signal for when USB is removed
-    
+
     def __init__(self):
         super().__init__()
-        self.last_usb_state = False  # Track if USB was present in last check
-        self.unlocked_by_usb = False  # NEW: Track if system was unlocked by USB
         # Windows'ta pyudev yok -> USB izleme devre disi (Faz W'de WM_DEVICECHANGE ile eklenecek).
         if not _HAS_LINUX_INPUT:
             self.monitor_thread = None
@@ -2206,11 +2143,7 @@ class UdevMonitor(QObject):
             if device.action == 'add':
                 time.sleep(2)  # Wait for mount
                 self.check_device(device)
-            elif device.action == 'remove':
-                # NEW: Handle USB removal
-                time.sleep(1)  # Wait for unmount
-                self.check_usb_removal()
-                
+
     def check_device(self, device):
         mount_point = self.get_mount_point(device)
         if not mount_point:
@@ -2221,17 +2154,8 @@ class UdevMonitor(QObject):
             except Exception:
                 pass
         if not mount_point: return
-        
-        unlock_file = os.path.join(mount_point, "pass.txt")
-        if os.path.exists(unlock_file):
-            with open(unlock_file, 'r') as f: 
-                content = f.read().strip()
-            if content == USB_PASSWORD:
-                logging.info("USB unlock key found!")
-                self.last_usb_state = True
-                self.unlocked_by_usb = True  # NEW: Mark that system was unlocked by USB
-                self.usbUnlockSignal.emit()
-                
+
+        # USB kilit acma (pass.txt) KALDIRILDI. Sadece USB kaldirma (rmove.txt) kaldi.
         remove_file = os.path.join(mount_point, "rmove.txt")
         if os.path.exists(remove_file):
             with open(remove_file, 'r') as f: 
@@ -2239,34 +2163,7 @@ class UdevMonitor(QObject):
             if content == USB_REMOVE_PASSWORD:
                 logging.info("USB remove key found!")
                 self.usbRemoveSignal.emit()
-                
-    def check_usb_removal(self):
-        """
-        NEW: Check if USB drive with password was removed
-        Only lock if system was originally unlocked by USB
-        """
-        current_usb_state = check_usb_password()
-        
-        # If USB was present before but not now, check if we should lock
-        if self.last_usb_state and not current_usb_state:
-            if self.unlocked_by_usb:
-                logging.info("USB drive that unlocked the system was removed - locking system")
-                self.last_usb_state = False
-                self.unlocked_by_usb = False  # Reset the flag
-                self.usbRemovedSignal.emit()
-            else:
-                logging.info("USB drive removed but system was not unlocked by USB - not locking")
-                self.last_usb_state = False
-        elif not current_usb_state:
-            self.last_usb_state = False
-            
-    def reset_usb_unlock_flag(self):
-        """
-        NEW: Reset the USB unlock flag when system is unlocked by other means
-        """
-        self.unlocked_by_usb = False
-        logging.info("USB unlock flag reset - system unlocked by other means")
-            
+
     def get_mount_point(self, device):
         try:
             with open('/proc/mounts', 'r') as f:
@@ -3086,8 +2983,7 @@ class FatihClientApp(QWidget):
 
         self.init_ui()
         self.init_network_timer()
-        self.init_usb_monitor()
-        self.init_usb_check_timer()
+        self.init_usb_monitor()   # yalniz USB KALDIRMA (rmove.txt); USB kilit acma kaldirildi
         self.init_maintenance_timer()
         self.init_time_timer()
         self.init_schedule_timer() # New timer for scheduling
@@ -3101,12 +2997,8 @@ class FatihClientApp(QWidget):
 
         # Show the lock screen at startup
         if not NO_LOCK_MODE:
-            # İlk başlangıçta USB kontrolü yap - USB takılıysa kilitleme
-            if check_usb_password():
-                logging.info("USB password found at startup - skipping initial lock")
-                self.usb_monitor.unlocked_by_usb = True
-                self.manual_override = True
-            elif kriz_penceresi_kalan() > 0:
+            # USB kilit acma kaldirildi; baslangicta yalniz kriz penceresi ve uyku istisnasi.
+            if kriz_penceresi_kalan() > 0:
                 # Kriz penceresi surerken tahta yeniden baslatildi -> kilitli acilmasin.
                 logging.warning(f"Kriz penceresi acik ({kriz_penceresi_kalan() // 60} dk) — baslangic kilidi atlandi.")
             else:
@@ -3928,29 +3820,15 @@ class FatihClientApp(QWidget):
         self.timer.start(polling_interval)
         logging.info(f"Server polling timer started with {polling_interval/1000} second interval")
 
-    def on_usb_unlock(self):
-        """Handles the event of a USB unlock by logging and unlocking."""
-        logging.info("USB unlock signal received.")
-        self.save_log("USB anahtar ile giriş yapıldı", "login")
-        self.unlock_system("USB ile açıldı")
-
     def init_usb_monitor(self):
+        # USB KILIT ACMA KALDIRILDI: yalniz USB KALDIRMA sinyali baglanir (rmove.txt ->
+        # remove_system, uzaktan kaldirmanin offline yedegi). pass.txt/unlock/relock yok.
         self.usb_monitor = UdevMonitor()
-        self.usb_monitor.usbUnlockSignal.connect(self.on_usb_unlock)
         self.usb_monitor.usbRemoveSignal.connect(self.remove_system)
-        self.usb_monitor.usbRemovedSignal.connect(lambda: self.lock_system("USB çıkarıldığı için kilitlendi"))  # NEW: Handle USB removal
         self.usb_monitor.start()
-        
-    def init_usb_check_timer(self):
-        """
-        NEW: Initialize timer for periodic USB checks (equivalent to C# CheckInternetWork)
-        """
-        self.usb_check_timer = QTimer(self)
-        self.usb_check_timer.timeout.connect(self.check_usb_status)
-        # This can be made configurable if needed
-        usb_check_interval = int(SETTINGS.get('usb_check_interval', 3)) * 1000  # Convert to milliseconds
-        self.usb_check_timer.start(usb_check_interval)
-        logging.info(f"USB check timer started with {usb_check_interval/1000} second interval")
+        # Program baslamadan ONCE takili bir rmove.txt USB'sini de yakala (udev 'add' olayi
+        # zaten-takili cihaz icin atesmez). Calisirken takilan USB'yi udev halleder.
+        QTimer.singleShot(4000, self.check_usb_status)
 
     def init_maintenance_timer(self):
         """
@@ -5414,51 +5292,22 @@ class FatihClientApp(QWidget):
                 if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
                     logging.info("Çıkış saati kilitleme ertelendi: overlay aktif")
                     return
-            if check_usb_password():
-                logging.info("Exit time says lock, but USB is present. Skipping lock.")
-            else:
-                self.manual_override = False
-                self.lock_system(exit_time_log)
-                self.save_log(exit_time_log, "schedule")
-                return  # Çıkış saati kilitledi, aşağıdaki mantığa geçme
+            # USB kilit acma kaldirildi -> cikis saatinde USB istisnasi yok, dogrudan kilitle.
+            self.manual_override = False
+            self.lock_system(exit_time_log)
+            self.save_log(exit_time_log, "schedule")
+            return  # Çıkış saati kilitledi, aşağıdaki mantığa geçme
 
         # NOT: Ders saati başladığında otomatik açılma YAPILMAZ.
         # Tahta sadece MebreCep, admin şifresi veya yönetim panelinden açılır.
-        
+
     def check_usb_status(self):
-        """
-        NEW: Periodic USB status check (equivalent to C# CheckInternetWork function)
-        Only locks system if it was originally unlocked by USB
-        """
+        """USB KALDIRMA poll yedegi (USB kilit acma kaldirildi). rmove.txt varsa kaldirir.
+        Ana yol udev olayidir (UdevMonitor); bu, program calisirken cok seyrek cagirilir."""
         try:
-            # Kilit aktifken USB otomatik mount edilmeyebilir, biz yapalım
             ensure_usb_mounted()
-            
-            # Check if USB with password is present
-            usb_present = check_usb_password()
-            
-            if usb_present:
-                # USB is present - unlock if locked, but only call unlock ONCE
-                if self.is_locked:
-                    logging.info("USB password detected - unlocking system")
-                    self.unlock_system("USB ile açıldı")
-                # Keep manual_override active while USB is present to prevent schedule from re-locking
-                elif self.usb_monitor.unlocked_by_usb:
-                    # USB still present, make sure manual_override stays active
-                    self.manual_override = True
-            else:
-                # USB with password not present
-                if not self.is_locked and self.usb_monitor.unlocked_by_usb:
-                    # Only lock if system was unlocked by USB
-                    logging.info("USB password not found and system was unlocked by USB - locking system")
-                    self.lock_system("USB çıkarıldığı için kilitlendi")
-                    # Reset the USB unlock flag since we're locking
-                    self.usb_monitor.unlocked_by_usb = False
-                    
-            # Check for remove command
             if check_usb_remove():
                 self.remove_system()
-                
         except Exception as e:
             logging.error(f"Error in USB status check: {e}")
         
@@ -5510,7 +5359,8 @@ class FatihClientApp(QWidget):
                     if _kriz > 0:
                         logging.warning(
                             f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
-                    elif not self.is_locked and not check_usb_password():
+                    elif not self.is_locked:
+                        # USB kilit acma kaldirildi -> internet kopunca dogrudan kilitle (uyku/kriz haric).
                         logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
                         QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
                         
@@ -5679,15 +5529,12 @@ class FatihClientApp(QWidget):
             # C# BİREBİR DAVRANIŞI: Server yeni komut gönderirse onu uygula
             if is_new_command:
                 if self.tahta_lock == 1 and not self.is_locked and message == "":
-                    # USB takılıysa sunucu komutunu (lock=1) yoksay (C# IsFlash mantığı)
-                    if check_usb_password():
-                        logging.info("Server says lock, but USB is present. Skipping lock.")
-                    else:
-                        # Sunucudan ACIK kilit komutu geldiyse bu bilincli bir mudahaledir:
-                        # kriz penceresini de kapatir (kullanicinin "mudahaleler onceliklidir" kurali).
-                        kriz_penceresi_kapat("sunucudan kilit komutu")
-                        self.manual_override = False
-                        self.lock_system("Sunucudan gelen komut ile kilitlendi")
+                    # USB kilit acma kaldirildi -> sunucudan gelen kilit komutu dogrudan uygulanir.
+                    # Sunucudan ACIK kilit komutu bilincli mudahaledir: kriz penceresini de kapatir
+                    # (kullanicinin "mudahaleler onceliklidir" kurali).
+                    kriz_penceresi_kapat("sunucudan kilit komutu")
+                    self.manual_override = False
+                    self.lock_system("Sunucudan gelen komut ile kilitlendi")
 
                 elif self.tahta_lock == 0 and self.is_locked and message == "":
                     logging.info("Sunucudan 'AÇ (0)' komutu geldi. Sistem açılıyor.")
@@ -5913,11 +5760,7 @@ class FatihClientApp(QWidget):
         VolumeControl.unmute()       # Ses aç (C# VU)
         ShortcutManager.restore()    # Kısayolları geri yükle
 
-        # Reset USB unlock flag if unlocked by other means (not USB)
-        if not reason.startswith("USB ile"):
-            if hasattr(self, 'usb_monitor') and self.usb_monitor:
-                self.usb_monitor.reset_usb_unlock_flag()
-            
+        # (USB kilit acma kaldirildi -> reset_usb_unlock_flag artik yok.)
         # Acilis sebebi sunucuya bildirilir (illegal acilis uyarisinin kaynagi budur).
         self.acknowledge_command("tahtaLock", "0", reason)
         self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
@@ -6373,7 +6216,6 @@ Sistem Durumu:
 Tahta Adı: {board_name}
 Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Sistem Kilidi: {'Aktif' if getattr(self, 'is_locked', False) else 'Pasif'}
-USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
@@ -6386,7 +6228,6 @@ Mevcut Ayarlar:
 
 API URL: {get_setting('api_url')}
 Polling Aralığı: {SETTINGS.get('polling_interval', 5)} saniye
-USB Kontrol Aralığı: {SETTINGS.get('usb_check_interval', 3)} saniye
 Bakım Aralığı: {SETTINGS.get('maintenance_interval', 25)} saniye
 
 Bu ayarlar config.ini dosyasından değiştirilebilir.
@@ -6905,10 +6746,7 @@ class FatihKioskMode(QMainWindow):
         self.keyboard_locker = KeyboardLocker()
         self.keyboard_locker.start()
 
-        # USB check timer (3 seconds)
-        self.usb_timer = QTimer(self)
-        self.usb_timer.timeout.connect(self.check_usb_for_unlock)
-        self.usb_timer.start(3000)
+        # USB kilit acma KALDIRILDI -> usb_timer yok (yerine tahta-ozel kriz/acil kod).
 
         # Server polling timer (5 seconds) - mobil uygulama ile kilit açma/kapatma
         self.server_timer = QTimer(self)
@@ -6973,13 +6811,6 @@ class FatihKioskMode(QMainWindow):
         self.aferin_panel.setText(html)
         self.aferin_panel.show()
         self.aferin_panel.raise_()
-
-    def check_usb_for_unlock(self):
-        """Check USB for unlock password"""
-        usb_password = check_usb_password()
-        if usb_password:
-            logging.info(f"Kiosk mode unlocked by USB: {usb_password}")
-            self.unlock_and_exit()
 
     def poll_server(self):
         """
@@ -7365,7 +7196,6 @@ Sistem Durumu:
 Tahta Adı: {board_name}
 Versiyon: {SETTINGS.get('version')}.{SETTINGS.get('sub_version')}
 Sistem Kilidi: Aktif (Kiosk Modu)
-USB Bağlı: {'Evet' if check_usb_password() else 'Hayır'}
 Ağ Bağlantısı: {'Var' if self.network_client.check_network() else 'Yok'}
 _________________________________________________________________________________________
 """
