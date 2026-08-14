@@ -269,25 +269,32 @@ def _auto_import_enroll_secret():
                     _icerik = _f.read()
             except Exception:
                 continue
-            # setup.sh ile aynı desen: metnin içine gömülü ilk 64 haneli hex kod.
-            _m = _re.search(r'[0-9a-fA-F]{64}', _icerik)
-            if not _m:
-                continue
-            _kod = _m.group(0)
+            # Iki desen taninir (oncelik yenide):
+            #  1. §9.3 OKUL-OZEL KURULUM KODU: 12 rakam (tire/bosluk gruplu olabilir: 7345-9012-4478)
+            #  2. eski ortak sir: 64 haneli hex (gecis donemi — paketler tukenince kalkar)
+            _anahtar = None
+            _m = _re.search(r'\b(\d{4})[- ]?(\d{4})[- ]?(\d{4})\b', _icerik)
+            if _m:
+                _anahtar, _kod = 'kurulum_kodu', ''.join(_m.groups())
+            else:
+                _m = _re.search(r'[0-9a-fA-F]{64}', _icerik)
+                if not _m:
+                    continue
+                _anahtar, _kod = 'enroll_secret', _m.group(0)
             _enc = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
-            if get_setting('enroll_secret', '') == _kod:
+            if get_setting(_anahtar, '') == _kod:
                 return  # config'te zaten aynı sır var — tekrar yazma (idempotent)
             try:
                 if not config.has_section('settings'):
                     config.add_section('settings')
-                config.set('settings', 'enroll_secret', _enc)
+                config.set('settings', _anahtar, _enc)
                 with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
                     config.write(_cf)
                 logging.info(f"Kurulum kodu '{os.path.basename(_yol)}' dosyasından otomatik okundu.")
             except Exception as _e:
                 # Config'e yazamasak bile en azından bu oturumda bellekte dursun.
-                SETTINGS['enroll_secret'] = _enc
-                logging.warning(f"enroll_secret config'e yazılamadı (bellekte var): {_e}")
+                SETTINGS[_anahtar] = _enc
+                logging.warning(f"{_anahtar} config'e yazılamadı (bellekte var): {_e}")
             return
     except Exception as _e:
         logging.debug(f"_auto_import_enroll_secret hata: {_e}")
@@ -1126,6 +1133,19 @@ class BoardConfigWidget(QWidget):
         self.corporate_code_field.setFont(QFont("Arial", 12))
         form_layout.addRow(corporate_label, self.corporate_code_field)
 
+        # §9.3: OKUL-ÖZEL KURULUM KODU (12 rakam) — ynt5'ten üretilir, 48 saat geçerli,
+        # yalnız o okulda çalışır. İlk kurulumda zorunlu; yeniden tanıtmada (token varken) boş kalır.
+        # Ekran klavyesi rakam olduğu için numpad ile girilir; tire/boşluk yazılmaz.
+        kurulum_label = QLabel("Kurulum Kodu:")
+        kurulum_label.setFont(QFont("Arial", 12))
+        self.kurulum_kodu_field = KeyboardLineEdit()
+        self.kurulum_kodu_field.set_on_enter_callback(self.fetch_boards)
+        self.kurulum_kodu_field.setPlaceholderText("12 haneli kod (ilk kurulumda)")
+        self.kurulum_kodu_field.setMinimumWidth(250)
+        self.kurulum_kodu_field.setMinimumHeight(35)
+        self.kurulum_kodu_field.setFont(QFont("Arial", 12))
+        form_layout.addRow(kurulum_label, self.kurulum_kodu_field)
+
         # Password input - admin şifresi zorunlu
         password_label = QLabel("Şifre:")
         password_label.setFont(QFont("Arial", 12))
@@ -1220,7 +1240,7 @@ class BoardConfigWidget(QWidget):
 
     def _connect_focus_tracking(self):
         """Input alanlarına focus geldiğinde numpad hedefini güncelle"""
-        for field in [self.corporate_code_field, self.password_field]:
+        for field in [self.corporate_code_field, self.kurulum_kodu_field, self.password_field]:
             field.installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -1261,6 +1281,18 @@ class BoardConfigWidget(QWidget):
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Şifre yanlış!")
             return
+
+        # §9.3: Kurulum Kodu alanı doluysa isle (12 rakam; tire/boşluk ayıklanır).
+        # Bellekte ENC'li durur; /boards + /enroll bu kodla kimlik doğrular, başarıda silinir.
+        _kod_ham = self.kurulum_kodu_field.text().strip()
+        _kod = ''.join(ch for ch in _kod_ham if ch.isdigit())
+        if _kod_ham and len(_kod) != 12:
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText("Hata: Kurulum kodu 12 rakam olmalı!")
+            return
+        if _kod:
+            SETTINGS['kurulum_kodu'] = 'ENC:' + _b64.b64encode(_kod.encode('utf-8')).decode('ascii')
+        _kod_ham = _kod = None
 
         # İlk kurulumda şifre değiştirilmemiş ise uyarı ver
         password_changed = SETTINGS.get('password_changed', 'false').lower() == 'true'
@@ -1305,10 +1337,10 @@ class BoardConfigWidget(QWidget):
                 # Teknisyen sahada ne yapacagini EKRANDAN gorsun: eskiden her sebep icin
                 # ayni cumle yaziliyordu ve hata ancak sunucu loglarindan bulunabiliyordu.
                 _h = getattr(self.network_client, 'son_enroll_hata', '')
-                if not get_setting('enroll_secret', '') and not get_setting('device_token', ''):
-                    _msg = "Hata: Kurulum dosyası eksik. Tahtanın yeniden kurulması gerekiyor."
+                if not get_setting('kurulum_kodu', '') and not get_setting('enroll_secret', '') and not get_setting('device_token', ''):
+                    _msg = "Hata: Kurulum Kodu gerekli. Mebre panelinden üretilen 12 haneli kodu girin."
                 elif _h == "401":
-                    _msg = "Hata: Kurulum kodu geçersiz (401). Kurulum medyası güncel değil."
+                    _msg = "Hata: Kurulum kodu geçersiz ya da süresi dolmuş (401). Panelden yeni kod üretin."
                 elif _h == "403":
                     _msg = "Hata: Bu tahta bu kuruma ait değil (403). Kurum kodunu kontrol edin."
                 elif _h == "500":
@@ -1375,6 +1407,7 @@ class BoardConfigWidget(QWidget):
         config.set('settings', 'board_name', board_name)
         config.set('settings', 'device_token', token_enc)
         config.remove_option('settings', 'enroll_secret')
+        config.remove_option('settings', 'kurulum_kodu')
 
         try:
             with open(CONFIG_PATH, 'w') as configfile:
@@ -1392,6 +1425,7 @@ class BoardConfigWidget(QWidget):
                 sys_config.set('settings', 'board_name', board_name)
                 sys_config.set('settings', 'device_token', token_enc)
                 sys_config.remove_option('settings', 'enroll_secret')
+                sys_config.remove_option('settings', 'kurulum_kodu')
                 with open(system_config_path, 'w') as f:
                     sys_config.write(f)
                 logging.info(f"System-wide config updated at {system_config_path}")
@@ -1411,6 +1445,7 @@ class BoardConfigWidget(QWidget):
                 kiosk_config.set('settings', 'board_name', board_name)
                 kiosk_config.set('settings', 'device_token', token_enc)
                 kiosk_config.remove_option('settings', 'enroll_secret')
+                kiosk_config.remove_option('settings', 'kurulum_kodu')
                 with open(kiosk_config_path, 'w') as f:
                     kiosk_config.write(f)
                 logging.info(f"Kiosk user config updated at {kiosk_config_path}")
@@ -1424,10 +1459,11 @@ class BoardConfigWidget(QWidget):
             # Token hemen devreye girsin (yeniden baslatma beklemeden poll calissin).
             SETTINGS['device_token'] = token_enc
             # Sir gorevini tamamladi: bellekten de dusur (artik cihaza ozel token var).
-            try:
-                del SETTINGS['enroll_secret']
-            except KeyError:
-                pass
+            for _sk in ('enroll_secret', 'kurulum_kodu'):
+                try:
+                    del SETTINGS[_sk]
+                except KeyError:
+                    pass
 
             # Update board ID display on main window
             if hasattr(self.parent, 'update_board_id_display'):
@@ -2191,14 +2227,17 @@ class NetworkClient:
         """Kurulum-ani istek: cihaz token'i HENUZ YOK, X-Enroll-Secret ile kimlik dogrulanir.
         Sir config'e setup.sh tarafindan ENC'li yazilir (kurulum medyasindaki secret.txt'ten) ve
         enroll basarili olur olmaz silinir (bkz. BoardConfig._strip_enroll_secret)."""
+        # §9.3: OKUL-OZEL KURULUM KODU (12 rakam, ynt5'ten uretilir, 48 saat) — YENI ANA YOL.
+        # Oncelik: kurulum kodu > eski ortak sir (gecis donemi) > cihaz token'i (yeniden tanitma).
+        kurulum_kodu = get_setting('kurulum_kodu', '')
         secret = get_setting('enroll_secret', '')
         # YENIDEN TANITMA: tanitim basarili olunca sir config'ten SILINIYOR. Tahta adini/sinifini
         # degistirmek ya da baska bir tahta kaydina gecmek isteyen teknisyen bu yuzden duvara
         # tosluyordu ("Kurulum sirri yok"). Sir yoksa mevcut cihaz token'i ile devam ediyoruz;
         # sunucu token'i kabul eder ama YALNIZCA kendi okulu icin (bkz. checkDeviceToken).
         token = get_setting('device_token', '') or None
-        if not secret and not token:
-            logging.error("Ne enroll_secret ne device_token var — kurulum medyasinda secret.txt eksik.")
+        if not kurulum_kodu and not secret and not token:
+            logging.error("Ne kurulum kodu ne enroll_secret ne device_token var — GUI'den 12 haneli Kurulum Kodu girin.")
             return None
 
         self.son_enroll_hata = ""
@@ -2214,7 +2253,9 @@ class NetworkClient:
             "User-Agent": _agt,
             "X-Timestamp": str(int(time.time())),
         }
-        if secret:
+        if kurulum_kodu:
+            headers["X-Kurulum-Kodu"] = kurulum_kodu
+        elif secret:
             headers["X-Enroll-Secret"] = secret
         else:
             headers["Authorization"] = f"Bearer {token}"
@@ -2236,7 +2277,7 @@ class NetworkClient:
             return None
         finally:
             # Sir/token'i RAM'den dusur (§5 zero-footprint).
-            secret = token = headers = _k = _dx = _agt = _url = None
+            kurulum_kodu = secret = token = headers = _k = _dx = _agt = _url = None
 
     def duyuru_resmi_indir(self, url: str):
         """Duyuru fotografini CIHAZ KIMLIGIYLE indirir; ham bayt doner, hata olursa None.
