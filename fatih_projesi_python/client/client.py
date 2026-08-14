@@ -7329,6 +7329,14 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             self.warning_label.setGeometry(self.width() // 2 - 200, self.height() // 2 - 25, 400, 50)
 
 if __name__ == '__main__':
+    # Konsol cikisini UTF-8'e sabitle: Turkce Windows (cp1254) konsolunda emoji (✅/❌)
+    # basimi UnicodeEncodeError ile cokuyordu (--test/--set-enroll-secret/--reset). errors=
+    # 'replace' -> hicbir zaman cokmez. Derlenmis (Nuitka) exe'de de gecerli.
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     # Check command line arguments
     if len(sys.argv) > 1:
         if sys.argv[1] == '--test':
