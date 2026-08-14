@@ -149,6 +149,15 @@ def _kuresel_istisna(tur, deger, iz):
 
 sys.excepthook = _kuresel_istisna
 
+
+def _pk():
+    """XOR/gizleme anahtari — DUZ LITERAL DEGIL (§9.4, 14 Ağu 2026). Deger ESKISIYLE AYNEN AYNI;
+    yalniz saklama bicimi degisti: kaynakta duz string yerine karakter kodlarindan uretiliyor,
+    boylece derlenmis ikilide `strings` ile anahtar GORUNMEZ (docstring'e de yazilmadi). Nuitka
+    ile derlenince bu uretim makine kodu olur -> geri cozmek zorlasir. Kriz kodu ureticileri
+    (ynt5 + masaustu) EL DEGMEZ; URL/UA/kriz cozumleri birebir ayni sonucu verir."""
+    return bytes([112, 97, 114, 100, 117, 115, 50, 48, 50, 54, 33]).decode('ascii')
+
 # --- Configuration ---
 # Define paths for user-specific and default configurations
 APP_NAME = "fatih-client"
@@ -572,7 +581,7 @@ def validate_totp_password(entered_password: str, unix_time: int = None) -> bool
 # ============================================================================
 def _kriz_anahtari():
     """Ana anahtari coz (kodda duz metin durmaz — USB sifresi/host ile ayni desen)."""
-    _k = "pardus2026!"
+    _k = _pk()
     _o = "4351140110125605040010420010064611510206001315574250174b000757071540564206464b0b540b52174159445114435154000540120716544d43565202"
     b = bytes.fromhex(_o)
     return ''.join(chr(b[i] ^ ord(_k[i % len(_k)])) for i in range(len(b)))
@@ -2121,7 +2130,7 @@ class NetworkClient:
 
     def _base_url(self):
         """v5 cihaz taban URL'i (XOR gizli, project_rules §1). Endpoint basina yol eklenir."""
-        _k = "pardus2026!"
+        _k = _pk()
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         u = _dx("1815061406491d1f53464806545c09101140551c554e1d4f06165a105e595758555f00190d191f5b6f46574904002d071c1b534a")
         _k = _dx = None
@@ -2130,7 +2139,7 @@ class NetworkClient:
     def _headers(self):
         """v6 cihaz auth: Bearer cihaz token'i (config'te ENC'li device_token) + X-Timestamp (replay).
         v4'teki Basic + User-Key + UserCore(fnc) semasi KALDIRILDI (pardusv6_project_rules §5)."""
-        _k = "pardus2026!"
+        _k = _pk()
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         _agt = _dx("1106170a012c615d534455320e131611")
         token = get_setting('device_token', '') or None
@@ -2195,7 +2204,7 @@ class NetworkClient:
             self.son_enroll_hata = "ag"
             return None
 
-        _k = "pardus2026!"
+        _k = _pk()
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         _agt = _dx("1106170a012c615d534455320e131611")
         headers = {
@@ -2293,7 +2302,7 @@ class NetworkClient:
 
     def check_network(self):
         """Ag var mi? v5 kok host'una (apiv5) bakar. Host XOR'lu; plaintext host YOK (§5.1)."""
-        _k = "pardus2026!"
+        _k = _pk()
         _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
         _url = _dx("1815061406491d1f53464806545c09101140551c554e1d4f0616")
 
@@ -2412,7 +2421,7 @@ class NetworkClient:
                 "ozet": str(mesaj or "")[:500],
                 "detay": str(detay or mesaj or "")[:20000],
             }
-            _k = "pardus2026!"
+            _k = _pk()
             _dx = lambda t: bytes([b ^ ord(_k[i % len(_k)]) for i, b in enumerate(bytes.fromhex(t))]).decode()
             _agt = _dx("1106170a012c615d534455320e131611")
             requests.post(url, headers={"User-Agent": _agt}, json=govde, timeout=15, verify=True)

@@ -41,7 +41,7 @@ if [ -x "$BIN" ]; then
     "$BIN" --test || true
     echo ""
     echo "OK: $BIN uretildi."
-    echo "Kanit (artik duz metin degil): 'strings $BIN | grep pardus2026' cok az/hic eslesme dondurur."
+    echo "Kanit: 'strings $BIN' ciktisinda sabit anahtar/sir DUZ METIN gorunmemeli (§9.4)."
 else
     echo "HATA: $BIN uretilemedi — yukaridaki Nuitka ciktisina bak."
     exit 1
