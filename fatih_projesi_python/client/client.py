@@ -497,87 +497,10 @@ def sync_network_time():
         logging.error(f"Saat senkronu basarisiz: {e}")
         return False
 
-def generate_dynamic_password(dt: datetime, minute_offset: int = 0) -> str:
-    """
-    Dinamik şifre üret (C# pctrl.ps() karşılığı)
-    Formül: (Year * Day * Minute * 85) ilk 6 karakteri
-    
-    Args:
-        dt: Tarih/saat
-        minute_offset: Dakika toleransı (0, 1, veya 2)
-    """
-    try:
-        year = dt.year
-        day = dt.day
-        minute = dt.minute
-        
-        # C# kodundaki gibi: minute 0 veya 1 ise 2 yap
-        if minute == 0 or minute == 1:
-            minute = 2
-        
-        minute += minute_offset
-        
-        # Hesaplama: Year * Day * Minute * 85
-        result = year * day * minute * 85
-        
-        # İlk 6 karakteri al
-        password = str(result)[:6]
-        logging.debug(f"Generated password for {dt} (offset={minute_offset}): {password}")
-        return password
-        
-    except Exception as e:
-        logging.error(f"Error generating dynamic password: {e}")
-        return "000000"
-
-def validate_dynamic_password(entered_password: str) -> bool:
-    """
-    Girilen şifreyi doğrula (C# pctrl.pc() karşılığı)
-    Anlık dakika, +1 ve +2 dakika toleransı ile kontrol eder
-    
-    Args:
-        entered_password: Kullanıcının girdiği şifre
-    
-    Returns:
-        True eğer şifre geçerli ise
-    """
-    try:
-        # Önce ağ zamanını dene, başarısızsa local time kullan
-        current_time = get_network_time()
-        
-        # 3 farklı dakika offset ile kontrol et (tolerans)
-        for offset in [0, 1, 2]:
-            expected_password = generate_dynamic_password(current_time, offset)
-            if entered_password == expected_password:
-                logging.info(f"Password validated with offset={offset}")
-                return True
-        
-        # Eğer ağ zamanı ile eşleşmediyse, local time ile de kontrol et
-        # (internet olmadığında cihaz saati ile çalışabilsin)
-        local_time = datetime.now()
-        if local_time != current_time:
-            logging.info("Trying local time for password validation...")
-            for offset in [0, 1, 2]:
-                expected_password = generate_dynamic_password(local_time, offset)
-                if entered_password == expected_password:
-                    logging.info(f"Password validated with local time, offset={offset}")
-                    return True
-        
-        logging.warning(f"Invalid password entered")
-        return False
-        
-    except Exception as e:
-        logging.error(f"Error validating password: {e}")
-        # Son çare: local time ile kontrol et
-        try:
-            local_time = datetime.now()
-            for offset in [0, 1, 2]:
-                expected_password = generate_dynamic_password(local_time, offset)
-                if entered_password == expected_password:
-                    logging.info(f"Password validated with local time (fallback), offset={offset}")
-                    return True
-        except:
-            pass
-        return False
+# ESKİ KIRIK ÇEVRİMDIŞI FORMÜL KALDIRILDI (14 Ağu 2026, §9.5):
+# generate_dynamic_password / validate_dynamic_password (C# pctrl.ps/pc karşılığı,
+# "Yıl·gün·dk·85"). Öğrenciler çözmüştü: girdiler (yıl/gün/dakika) herkesçe biliniyordu,
+# tahta-özel sır YOKtu. Yerine tahta-özel TOTP (aşağıda) var. Tek çevrimdışı yol artık TOTP.
 
 # ============================================================================
 # v6 Çevrimdışı (internetsiz) şifre — tahta-özel TOTP
@@ -757,10 +680,11 @@ def validate_kriz_password(entered_password: str) -> bool:
         return False
 
 def validate_offline_password(entered_password: str) -> bool:
-    """v6 tahta (device_token var) → TOTP; yoksa eski formül (C#/eski Pardus uyumu)."""
-    if get_setting('device_token', ''):
-        return validate_totp_password(entered_password)
-    return validate_dynamic_password(entered_password)
+    """Çevrimdışı şifre = YALNIZCA tahta-özel TOTP (device_token'dan türetilir).
+    ESKİ `Yıl·gün·dk·85` formülü KALDIRILDI (14 Ağu 2026, §9.5): öğrenciler çözmüştü
+    (tahta-özel sır yok, tek bilinmeyen dakika). Tanıtılmamış tahtada (token yok) TOTP
+    False döner → çevrimdışı şifre çalışmaz; o tahta admin şifresi ya da kriz koduyla açılır."""
+    return validate_totp_password(entered_password)
 
 # --- Kaba kuvvet kilidi (6 hane = 10^6; kilit olmadan taranabilir) ---
 # Durum config.ini'de tutulur → tahtayı kapat-aç ile sıfırlanamaz.
