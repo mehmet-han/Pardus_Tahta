@@ -290,14 +290,17 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
 ### 9.5 Öğrenci sertleştirme (güvenlik denetimi)
 - **AÇIK — sudoers fazla açık:** `ALL ALL NOPASSWD: reboot/shutdown` (HERKES → öğrenci tahtayı kapatır, DoS);
   `autologin-switch.sh` argümansız + `/opt/fatih-client` sahibi fatih-kiosk → **root yükseltme yolu**.
-  → **Hedef:** sudoers'ı daralt (gerekli komut+argüman kısıtı; /opt sahibi root, 700).
-- **AÇIK — kırık offline formül:** eski `Year*Day*Minute*85` şifresi tanıtılmamış tahtalarda HÂLÂ aktif
-  (öğrenciler çözmüş). → **Hedef:** tamamen kaldır, yalnız tahta-özel TOTP.
-- **AÇIK — kilit atlatma yolları:** `Ctrl+Alt+F2` tty geçişi engellenmiyor (Xorg `DontVTSwitch` yok);
-  kilit aktifken sonradan takılan USB klavye grab dışı; **Windows'ta klavye kilidi kiosk akışına bağlı
-  değil**; `Ctrl+Alt+Shift+Q` panik çıkışı kiosk'ta bile açık. → **Hedef:** Xorg `DontVTSwitch`+VT lock;
-  klavye hot-plug izleme (pyudev var); Windows low-level hook'u (W6-2B yazıldı) kiosk akışına bağla;
-  **panik çıkışı sahada kapat/gizle** (sadece test build'inde).
+  → **✅ YAPILDI (14 Ağu, `e704b34`):** install-unified.sh — /opt `chown root:root`+go-w (kurcalanamaz),
+  autologin-switch arg-kısıtlı (`kiosk`/`user ogretmen`/`disable`; `user root` yasak), shutdown `ALL`→
+  yalnız fatih-kiosk, `visudo -cf` doğrulama. setup.sh zaten sağlamdı. **BOARD-TEST: kapat + geçiş + reboot.**
+- **✅ YAPILDI (14 Ağu, `579c1b3`) — kırık offline formül:** eski `Year*Day*Minute*85` (generate/validate_
+  dynamic_password) SİLİNDİ; `validate_offline_password` artık YALNIZCA tahta-özel TOTP. Tanıtılmamış tahta
+  admin şifresi/kriz koduyla açılır.
+- **✅ YAPILDI (14 Ağu, `7979b6e`) — kilit atlatma yolları:** Xorg `DontVTSwitch`+`DontZap`
+  (`/etc/X11/xorg.conf.d/10-fatih-lockdown.conf`, iki installer) → `Ctrl+Alt+F2` tty + `Ctrl+Alt+Backspace`
+  kapalı; KeyboardLocker HOT-PLUG (kilit boyunca yeni USB klavye grab); Windows keylock zaten akışta
+  (ShortcutManager.disable→platform, --win-kiosk). **KALAN:** `Ctrl+Alt+Shift+Q` panik çıkışı sahada
+  kapat/gizle (sadece test build'inde). **BOARD-TEST: Ctrl+Alt+F2 geçmemeli, kilitliyken USB klavye yazamamalı.**
 - **AÇIK — dosya gizli değil:** `/opt/fatih-client` 755 dünya-okunur; config `~/.config` umask 644.
   → **Hedef:** 700/root + gizleme + config 600.
 
