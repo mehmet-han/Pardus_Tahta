@@ -5705,13 +5705,17 @@ class FatihClientApp(QWidget):
         ust = os.path.dirname(app_dir)
         bat = os.path.join(ust, 'guncelle.bat')
         log = os.path.join(ust, 'guncelle.log')
+        # /XF: bekci.bat + Readme.txt kurulum klasorune ozel (pakette app/ icinde YOK);
+        # /MIR bunlari silmesin (watchdog + kurulum kodu dosyasi korunsun). config zaten AppData'da.
         icerik = (
             "@echo off\r\n"
             "chcp 65001 >nul\r\n"
+            'schtasks /Change /TN "MebreTahtaBekci" /DISABLE >nul 2>&1\r\n'  # bekci araya girmesin
             ":wait\r\n"
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
-            'robocopy "%s" "%s" /MIR /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'robocopy "%s" "%s" /MIR /XF bekci.bat Readme.txt config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'schtasks /Change /TN "MebreTahtaBekci" /ENABLE >nul 2>&1\r\n'  # watchdog geri acik
             'start "" /D "%s" "%s\\client.exe" --win-kiosk\r\n'
         ) % (app_dir, kurulum, log, kurulum, kurulum)
         with open(bat, 'w', encoding='utf-8') as f:
@@ -6134,6 +6138,40 @@ class FatihClientApp(QWidget):
             logging.error(f"Kaldirma kaniti uretilemedi: {e}")
             return ''
 
+    def _remove_system_windows(self):
+        """Windows uzaktan kaldirma: watchdog gorevini + Run kaydini + dosyalari sil.
+        Calisan exe kendini silemedigi icin AYRI (detached) bir bat, client kapaninca
+        temizligi yapar. Kimlik (AppData config) da silinir -> yeniden kurulumda tekrar tanitilir."""
+        import tempfile, subprocess
+        try:
+            kurulum = os.path.dirname(os.path.abspath(sys.executable))   # C:\pf\Tahta
+        except Exception:
+            kurulum = r"C:\pf\Tahta"
+        kok = os.path.dirname(kurulum) or r"C:\pf"                        # C:\pf
+        appdata = os.path.join(os.path.expanduser('~'), '.config', 'fatih-client')
+        bat = os.path.join(tempfile.gettempdir(), 'mebre_kaldir.bat')
+        icerik = (
+            "@echo off\r\n"
+            "chcp 65001 >nul\r\n"
+            'schtasks /Delete /TN "MebreTahtaBekci" /F >nul 2>&1\r\n'
+            'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v MebreTahta /f >nul 2>&1\r\n'
+            ":wait\r\n"
+            'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
+            "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
+            'attrib -h -s "%s" >nul 2>&1\r\n'
+            'rmdir /S /Q "%s" >nul 2>&1\r\n'
+            'rmdir /S /Q "%s" >nul 2>&1\r\n'
+        ) % (kok, kurulum, appdata)
+        try:
+            with open(bat, 'w', encoding='utf-8') as f:
+                f.write(icerik)
+            DETACHED = 0x00000008
+            subprocess.Popen(['cmd', '/c', bat], creationflags=DETACHED, close_fds=True)
+            logging.info("Windows kaldirma betigi baslatildi (detached). Cikiliyor.")
+        except Exception as e:
+            logging.error(f"Windows kaldirma betigi baslatilamadi: {e}")
+        QApplication.quit()
+
     def remove_system(self):
         """Uzaktan kaldirma (ynt5 -> system_Remove=1).
 
@@ -6151,6 +6189,12 @@ class FatihClientApp(QWidget):
             self.network_client.set_value("system_Remove", "0")
         except Exception as ack_err:
             logging.error(f"Remove ACK hatası: {ack_err}")
+
+        # WINDOWS: kaldirma farkli (sudo/uninstall betigi yok). Watchdog gorevi + Run kaydi +
+        # dosyalar temizlenmeli; yoksa "kaldirdim" dense bile bekci tahtayi geri acar.
+        if IS_WINDOWS:
+            self._remove_system_windows()
+            return
 
         # Istemci etapadmin olarak calisir, kaldirma ise ROOT isi -> sudo sart.
         # setup.sh yalnizca bu betik icin NOPASSWD kurali tanimlar (/etc/sudoers.d/fatih-client).
@@ -6827,10 +6871,56 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             # Kılavuzun altına taşı ki çakışmasın
             self.version_update_label.setGeometry(self.width() - 350, 450, 320, 40)
 
+# --- Tek-ornek kilidi + uyku engeli (C# Mutex "FatihP" + powercfg karsiligi) ---
+_tek_ornek_soketi = None  # global: surec boyunca acik kalmali (kapanirsa kilit birakilir)
+
+def _tek_ornek_al():
+    """Ayni anda TEK client calissin (C# tek-ornek Mutex karsiligi). Watchdog/scheduled task
+    yanlislikla ikinci kez baslatirsa yeni surec sessizce cikar. Sabit localhost portuna
+    baglanir; port doluysa (baska ornek var) False doner. Cok-platform, ek bagimliliksiz."""
+    global _tek_ornek_soketi
+    try:
+        import socket as _sk
+        s = _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM)
+        s.setsockopt(_sk.SOL_SOCKET, _sk.SO_REUSEADDR, 0)
+        s.bind(('127.0.0.1', 47591))  # mebre-tahta tek-ornek portu
+        s.listen(1)
+        _tek_ornek_soketi = s  # referansi tut -> surec bitene kadar port dolu kalir
+        return True
+    except Exception:
+        return False  # port dolu = zaten calisan bir ornek var
+
+def _uyku_engelle():
+    """Tahta ders sirasinda UYUMASIN/ekran KAPANMASIN (C# powercfg karsiligi).
+    Windows: SetThreadExecutionState (kalici, admin gerekmez). Pardus: xset (X oturumunda)."""
+    try:
+        if IS_WINDOWS:
+            import ctypes
+            # ES_CONTINUOUS(0x80000000)|ES_SYSTEM_REQUIRED(0x1)|ES_DISPLAY_REQUIRED(0x2)
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
+            logging.info("Uyku/ekran-kapanma engellendi (Windows SetThreadExecutionState).")
+        else:
+            import subprocess
+            for _c in (['xset', 's', 'off'], ['xset', '-dpms'], ['xset', 's', 'noblank']):
+                try:
+                    subprocess.run(_c, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+            logging.info("Uyku/ekran-kapanma engellendi (Pardus xset s off / -dpms).")
+    except Exception as e:
+        logging.warning(f"Uyku engelleme basarisiz (kritik degil): {e}")
+
 def main():
     try:
         logging.info("Starting Fatih Client application...")
         print("Starting Fatih Client application...")
+
+        # Tek-ornek: baska bir client zaten calisiyorsa sessizce cik (watchdog dup engeli).
+        if not _tek_ornek_al():
+            logging.info("Zaten calisan bir client var — bu ornek cikiyor (tek-ornek).")
+            print("Already running — exiting (single instance).")
+            return
+        _uyku_engelle()
 
         app = QApplication(sys.argv)
         # Note: High DPI scaling attributes not available in this PyQt6 version
@@ -6864,6 +6954,10 @@ def main_kiosk():
     """
     try:
         logging.info("=== Starting Fatih Client in KIOSK MODE ===")
+        if not _tek_ornek_al():
+            logging.info("Zaten calisan bir client var — kiosk ornegi cikiyor (tek-ornek).")
+            return
+        _uyku_engelle()
         app = QApplication(sys.argv)
 
         # Create a simplified kiosk window

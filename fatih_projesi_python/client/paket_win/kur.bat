@@ -26,11 +26,18 @@ if errorlevel 1 (
 REM Readme.txt paket kokunde doldurulduysa yanina tasi (kurulum kodu otomatik okunur)
 if exist "%~dp0Readme.txt" copy /Y "%~dp0Readme.txt" "%HEDEF%\Readme.txt" >nul
 
+REM Bekci (watchdog) betigini de yanina koy (dakikada bir calisir).
+if exist "%~dp0bekci.bat" copy /Y "%~dp0bekci.bat" "%HEDEF%\bekci.bat" >nul
+
 REM Klasoru GIZLE + sistem (ogrenci Explorer'da gormesin). Icindeki calisma etkilenmez.
 attrib +h +s "%KOK%" >nul 2>&1
 
 REM Oturum acilisinda kilit modunda otomatik baslat
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v MebreTahta /t REG_SZ /d "\"%HEDEF%\client.exe\" --win-kiosk" /f >nul
+
+REM WATCHDOG: dakikada bir bekci.bat -> client olmuse yeniden baslat (systemd karsiligi).
+REM Kullanici oturumunda calisir (GUI gelsin); /RL LIMITED = yonetici gerekmez.
+schtasks /Create /TN "MebreTahtaBekci" /TR "\"%HEDEF%\bekci.bat\"" /SC MINUTE /MO 1 /RL LIMITED /F >nul 2>&1
 
 echo.
 echo ============================================================
