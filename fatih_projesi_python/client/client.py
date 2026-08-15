@@ -5730,10 +5730,14 @@ class FatihClientApp(QWidget):
             ":wait\r\n"
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
-            'robocopy "%s" "%s" /MIR /XF bekci.bat Readme.txt config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'robocopy "%s" "%s" /MIR /XF Readme.txt config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            # Yedek konumu da yeni surumle tazele (watchdog bunu yapamaz; kendi klasoru kilitli).
+            # Yeni surum yedekte olmazsa, ana silininca watchdog ESKI surumu geri koyardi.
+            'robocopy "%s" "%s" /MIR /XF config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'attrib +h +s "C:\\ProgramData\\MebreSvc" >nul 2>&1\r\n'
             'schtasks /Change /TN "MebreTahtaBekci" /ENABLE >nul 2>&1\r\n'  # watchdog geri acik
             'start "" /D "%s" "%s\\client.exe" --win-kiosk\r\n'
-        ) % (app_dir, kurulum, log, kurulum, kurulum)
+        ) % (app_dir, kurulum, log, app_dir, r"C:\ProgramData\MebreSvc\app", log, kurulum, kurulum)
         with open(bat, 'w', encoding='utf-8') as f:
             f.write(icerik)
 
@@ -6931,6 +6935,51 @@ def _uyku_engelle():
     except Exception as e:
         logging.warning(f"Uyku engelleme basarisiz (kritik degil): {e}")
 
+def _watchdog_check():
+    """WINDOWS BEKCI + SELF-HEAL (C# ConfigServices karsiligi) — client.exe --watchdog ile
+    zamanlanmis gorevden DAKIKADA BIR calisir. client.exe KONSOLSUZ GUI oldugu icin bu
+    calisma HIC PENCERE ACMAZ (eski healer.bat/VBS console-flash sorunu boylece biter).
+
+    Bu exe YEDEK konumdan (C:\\ProgramData\\MebreSvc\\app) calisir; ana klasor silinse bile
+    yedekten geri koyar. Hicbir GUI/QApplication yaratmadan hemen cikar."""
+    import socket, subprocess, shutil
+    MAIN = r"C:\pf\Tahta"
+    main_exe = os.path.join(MAIN, "client.exe")
+    yedek_dir = os.path.dirname(os.path.abspath(sys.executable))  # bu exe'nin klasoru = yedek
+
+    # 1) SELF-HEAL: ana exe yoksa (silinmis/adi degismis) YEDEKTEN geri koy.
+    if not os.path.isfile(main_exe) and os.path.isfile(os.path.join(yedek_dir, "client.exe")):
+        try:
+            if os.path.isdir(MAIN):
+                shutil.rmtree(MAIN, ignore_errors=True)
+            os.makedirs(r"C:\pf", exist_ok=True)
+            shutil.copytree(yedek_dir, MAIN)
+            try:
+                subprocess.run(["attrib", "+h", "+s", r"C:\pf"], timeout=10)
+            except Exception:
+                pass
+        except Exception as e:
+            logging.error(f"[BEKCI] self-heal kopyalama hatasi: {e}")
+
+    # 2) Ana client CALISIYOR MU? Tek-ornek portuna baglanabiliyorsak calisiyordur.
+    calisyor = False
+    try:
+        _s = socket.create_connection(("127.0.0.1", 47591), timeout=2)
+        _s.close()
+        calisyor = True
+    except Exception:
+        calisyor = False
+
+    # 3) Calismiyorsa ana client'i --win-kiosk ile baslat.
+    if not calisyor and os.path.isfile(main_exe):
+        try:
+            subprocess.Popen([main_exe, "--win-kiosk"], cwd=MAIN, close_fds=True)
+        except Exception as e:
+            logging.error(f"[BEKCI] baslatma hatasi: {e}")
+
+    # NOT: Yedek senkronu BURADA yapilamaz — watchdog exe YEDEKTEN calisir, kendi klasorunu
+    # (kilitli) degistiremez. Guncelleme sonrasi yedegi guncelle.bat tazeler (§9.2 apply_update).
+
 def main():
     try:
         logging.info("Starting Fatih Client application...")
@@ -7767,6 +7816,15 @@ if __name__ == '__main__':
                 print(f"Admin password: {SETTINGS.get('admin_password', '803580')}")
             except Exception as e:
                 print(f"❌ Configuration error: {e}")
+            sys.exit(0)
+        elif sys.argv[1] == '--watchdog':
+            # WINDOWS BEKCI: zamanlanmis gorevden calisir. GUI/QApplication YARATMAZ ->
+            # konsolsuz exe oldugu icin HIC PENCERE ACMAZ (eski bat/VBS console-flash biter).
+            try:
+                if IS_WINDOWS:
+                    _watchdog_check()
+            except Exception as _e:
+                logging.error(f"[BEKCI] hata: {_e}")
             sys.exit(0)
         elif sys.argv[1] == '--kiosk':
             print("Running in KIOSK mode (pre-login lock screen)")

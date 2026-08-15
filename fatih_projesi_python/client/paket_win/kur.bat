@@ -5,9 +5,9 @@ REM MEBRE AKILLI TAHTA — WINDOWS KURULUM (W6-3 / §9.1 / §9.2)
 REM ============================================================================
 REM Ne yapar:
 REM   1) Program dosyalarini C:\pf\Tahta'ya kopyalar (C# 'C:\pf' konvansiyonu) + GIZLER.
-REM   2) AYNI dosyalarin YEDEGINI C:\ProgramData\MebreSvc\app'e koyar + healer.bat.
-REM      -> C# self-heal: ana klasor silinse healer yedekten geri koyar.
-REM   3) Dakikada bir healer.bat calistiran zamanlanmis gorev (watchdog+self-heal).
+REM   2) AYNI dosyalarin YEDEGINI C:\ProgramData\MebreSvc\app'e koyar (self-heal kaynagi).
+REM      -> ana klasor silinse watchdog yedekten geri koyar.
+REM   3) Dakikada bir "client.exe --watchdog" calistiran gorev (KONSOLSUZ GUI -> pencere ACMAZ).
 REM   4) Programi DOGRUDAN KILIT EKRANI (--win-kiosk) baslatir; operator SAG TIK ile tanitir.
 REM ----------------------------------------------------------------------------
 set KOK=C:\pf
@@ -26,11 +26,9 @@ if errorlevel 1 (
 REM Readme.txt paket kokunde doldurulduysa yanina tasi (kurulum kodu otomatik okunur)
 if exist "%~dp0Readme.txt" copy /Y "%~dp0Readme.txt" "%HEDEF%\Readme.txt" >nul
 
-REM YEDEK + HEALER (ayri gizli konum -> ana klasor silinse hayatta kalir)
+REM YEDEK (ayri gizli konum -> ana klasor silinse watchdog buradan geri koyar).
 if not exist "%SVC%" mkdir "%SVC%"
 xcopy /E /I /Y "%~dp0app" "%SVC%\app" >nul
-if exist "%~dp0healer.bat" copy /Y "%~dp0healer.bat" "%SVC%\healer.bat" >nul
-if exist "%~dp0healer_launch.vbs" copy /Y "%~dp0healer_launch.vbs" "%SVC%\healer_launch.vbs" >nul
 attrib +h +s "%SVC%" >nul 2>&1
 
 REM Ana klasoru de GIZLE (ogrenci Explorer'da gormesin).
@@ -39,9 +37,10 @@ attrib +h +s "%KOK%" >nul 2>&1
 REM Oturum acilisinda kilit modunda otomatik baslat
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v MebreTahta /t REG_SZ /d "\"%HEDEF%\client.exe\" --win-kiosk" /f >nul
 
-REM WATCHDOG + SELF-HEAL: dakikada bir healer (yedek konumdan), GIZLI (VBS -> pencere cakmaz).
-REM Kullanici oturumunda calisir (GUI gelsin); /RL LIMITED = yonetici gerekmez.
-schtasks /Create /TN "MebreTahtaBekci" /TR "wscript.exe //B \"%SVC%\healer_launch.vbs\"" /SC MINUTE /MO 1 /RL LIMITED /F >nul 2>&1
+REM WATCHDOG + SELF-HEAL: dakikada bir YEDEKTEKI client.exe --watchdog. client.exe KONSOLSUZ
+REM GUI oldugu icin HIC PENCERE ACMAZ (eski healer.bat/VBS console-flash sorunu bitti). Ana
+REM client'i baslatir + ana klasor silinse yedekten geri koyar. /RL LIMITED = yonetici gerekmez.
+schtasks /Create /TN "MebreTahtaBekci" /TR "\"%SVC%\app\client.exe\" --watchdog" /SC MINUTE /MO 1 /RL LIMITED /F >nul 2>&1
 
 echo.
 echo ============================================================
