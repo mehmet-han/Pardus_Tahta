@@ -4,12 +4,22 @@ REM ============================================================================
 REM MEBRE AKILLI TAHTA — WINDOWS KURULUM (W6-3 / §9.1 / §9.2)
 REM ============================================================================
 REM Ne yapar:
+REM   0) YONETICI degilse kendini yukseltir (C:\pf + otomatik giris icin gerekli).
 REM   1) Program dosyalarini C:\pf\Tahta'ya kopyalar (C# 'C:\pf' konvansiyonu) + GIZLER.
-REM   2) AYNI dosyalarin YEDEGINI C:\ProgramData\MebreSvc\app'e koyar (self-heal kaynagi).
-REM      -> ana klasor silinse watchdog yedekten geri koyar.
-REM   3) Dakikada bir "client.exe --watchdog" calistiran gorev (KONSOLSUZ GUI -> pencere ACMAZ).
-REM   4) Programi DOGRUDAN KILIT EKRANI (--win-kiosk) baslatir; operator SAG TIK ile tanitir.
+REM   2) Yedegi C:\ProgramData\MebreSvc\app'e koyar (self-heal kaynagi).
+REM   3) Dakikada bir "client.exe --watchdog" gorevi (KONSOLSUZ -> pencere ACMAZ).
+REM   4) OTOMATIK GIRIS: boot'ta parola SORULMADAN masaustu -> kilit (C# gibi).
+REM   5) Programi DOGRUDAN KILIT EKRANI (--win-kiosk) baslatir; operator SAG TIK ile tanitir.
 REM ----------------------------------------------------------------------------
+
+REM --- [0] Yonetici yukseltmesi (self-elevate) ---
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Yonetici izni gerekiyor, yukseltiliyor...
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
+
 set KOK=C:\pf
 set HEDEF=C:\pf\Tahta
 set SVC=C:\ProgramData\MebreSvc
@@ -41,6 +51,15 @@ REM WATCHDOG + SELF-HEAL: dakikada bir YEDEKTEKI client.exe --watchdog. client.e
 REM GUI oldugu icin HIC PENCERE ACMAZ (eski healer.bat/VBS console-flash sorunu bitti). Ana
 REM client'i baslatir + ana klasor silinse yedekten geri koyar. /RL LIMITED = yonetici gerekmez.
 schtasks /Create /TN "MebreTahtaBekci" /TR "\"%SVC%\app\client.exe\" --watchdog" /SC MINUTE /MO 1 /RL LIMITED /F >nul 2>&1
+
+REM OTOMATIK GIRIS (C# karsiligi): boot'ta parola SORULMASIN -> dogrudan masaustu -> kilit.
+REM Hesap parolasi bosaltilir (kiosk kilidi zaten guvenlik; C# de boyle yapiyordu) + AutoAdminLogon.
+net user "%USERNAME%" "" >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v LimitBlankPasswordUse /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon /t REG_SZ /d "1" /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultUserName /t REG_SZ /d "%USERNAME%" /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultPassword /t REG_SZ /d "" /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultDomainName /t REG_SZ /d "%COMPUTERNAME%" /f >nul 2>&1
 
 echo.
 echo ============================================================
