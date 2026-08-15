@@ -5466,6 +5466,22 @@ class FatihClientApp(QWidget):
     # NOT: Eski v4-tarzi _get_headers (User-Key/UserCore/cFnc) KALDIRILDI — kullanilmiyordu.
     # v6 runtime'inin tum sunucu iletisimi NetworkClient uzerinden v5'e (Bearer + X-Timestamp) gider.
 
+    def _poll_hizini_ayarla(self, kilitli):
+        """ACIKken poll HIZLI (2 sn), kilitliyken normal (5 sn). Saha bulgusu: acik tahtada
+        kilit komutu gec yakalaniyordu, ogrenci o pencerede tahtaya dalıyordu. Sunucu komut
+        yazilinca poll cache'ini kendisi dusurdugu icin komut sonrasi poll TAZE gelir; yani
+        client poll araligi = gercek kilit gecikmesi. Acik pencere kisaldikca risk azalir.
+        (Gercek 'aninda kilit' icin sunucu->tahta PUSH gerek; v5 brief'inde yaziliyor.)"""
+        try:
+            if not hasattr(self, 'timer'):
+                return
+            _ms = 5000 if kilitli else 2000
+            if self.timer.interval() != _ms:
+                self.timer.setInterval(_ms)
+                logging.info(f"Poll araligi {int(_ms/1000)} sn ({'kilitli' if kilitli else 'acik'}).")
+        except Exception:
+            pass
+
     def poll_server(self):
         def _poll_task():
             commands = self.network_client.ctrl_post()
@@ -6006,6 +6022,7 @@ class FatihClientApp(QWidget):
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1", reason)
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
+            self._poll_hizini_ayarla(True)   # kilitli -> normal poll (5 sn)
 
             # 3) Güvenlik zorlaması (C# LockSystm) — EKRAN ÖRTÜLDÜKTEN SONRA (yavaş olabilir).
             #    Windows önizlemede (--win-kiosk YOK) zorlama YOK (tuzak olmasın).
@@ -6113,6 +6130,7 @@ class FatihClientApp(QWidget):
         # Acilis sebebi sunucuya bildirilir (illegal acilis uyarisinin kaynagi budur).
         self.acknowledge_command("tahtaLock", "0", reason)
         self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
+        self._poll_hizini_ayarla(False)  # ACIK -> HIZLI poll (2 sn): kilit komutu cabuk yakalansin
 
         # YETKISIZ ACILIS DENETIMI (kullanici istegi): tahta YALNIZCA su yetkili yollarla acilmali:
         # sunucu/mobil komutu, cevrimdisi sifre, kriz kodu, admin sifresi, uyku modu, zamanlanmis.
