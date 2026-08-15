@@ -6083,6 +6083,25 @@ class FatihClientApp(QWidget):
         # Acilis sebebi sunucuya bildirilir (illegal acilis uyarisinin kaynagi budur).
         self.acknowledge_command("tahtaLock", "0", reason)
         self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
+
+        # YETKISIZ ACILIS DENETIMI (kullanici istegi): tahta YALNIZCA su yetkili yollarla acilmali:
+        # sunucu/mobil komutu, cevrimdisi sifre, kriz kodu, admin sifresi, uyku modu, zamanlanmis.
+        # Bunlarin DISINDA bir sebeple acilirsa bir OLAYdir -> hata gunlugune (kaynak='tahta') dusur.
+        _r = reason or ''
+        _yetkili = any(_k in _r for _k in (
+            'Sunucudan', 'Mobilden', 'Yönetim', 'Yonetim', 'panel',   # sunucu/panel komutu
+            'ile acildi', 'ile açıldı',                                # offline/kriz/admin sifre girisi
+            'Admin', 'admin', 'Kriz', 'kriz',                          # admin / kriz
+            'Uyku', 'uyku', 'Zamanlanmış', 'Zamanlanmis', 'zamanlan',  # uyku / zamanlanmis
+        ))
+        if not _yetkili:
+            try:
+                _hata_bildir('acilis', 'uyari',
+                             f'Yetkisiz/beklenmeyen acilis: {_r or "(sebep yok)"}',
+                             f"tahta={SETTINGS.get('board_id','?')} kurum={SETTINGS.get('corporate_code','?')}")
+                logging.warning(f"[YETKISIZ ACILIS] sebep='{_r}' -> hata gunlugune bildirildi.")
+            except Exception:
+                pass
         
         # Fatih kilidi açıldıktan sonra Pardus/GNOME ekran kilidini aktif et
         # İPTAL: MebreCep veya USB ile açıldığında işletim sistemi şifresi sormasın
