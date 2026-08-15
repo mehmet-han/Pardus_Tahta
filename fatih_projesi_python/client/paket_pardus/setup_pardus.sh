@@ -172,11 +172,24 @@ chmod 644 /etc/xdg/autostart/fatih-client-autostart.desktop
 
 # --- [5/6] Uzaktan kaldırma yetkisi + tty/zap kilidi (sertleştirme korundu) ---
 echo "[5/6] Güvenlik sertleştirmeleri..."
+# Uzaktan KALDIRMA + uzaktan GUNCELLEME icin dar yetkiler (ikisi de argumansiz).
+_SUDO_SATIR=""
 if [ -f "$BETIK_DIR/uninstall.sh" ]; then
     cp "$BETIK_DIR/uninstall.sh" /usr/local/bin/fatih-uninstall
     chown root:root /usr/local/bin/fatih-uninstall
     chmod 700 /usr/local/bin/fatih-uninstall
-    printf '%s\n' 'etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall ""' > /etc/sudoers.d/fatih-client
+    _SUDO_SATIR='etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-uninstall ""'
+fi
+if [ -f "$BETIK_DIR/fatih-update.sh" ]; then
+    cp "$BETIK_DIR/fatih-update.sh" /usr/local/bin/fatih-update
+    chown root:root /usr/local/bin/fatih-update
+    chmod 700 /usr/local/bin/fatih-update
+    # §9.2: uzaktan guncelleme. Argumansiz — staging yolu betikte sabit (disaridan yonlendirilemez).
+    _SUDO_SATIR="$_SUDO_SATIR
+etapadmin ALL=(root) NOPASSWD: /usr/local/bin/fatih-update"
+fi
+if [ -n "$_SUDO_SATIR" ]; then
+    printf '%s\n' "$_SUDO_SATIR" > /etc/sudoers.d/fatih-client
     chmod 440 /etc/sudoers.d/fatih-client
     chown root:root /etc/sudoers.d/fatih-client
     visudo -c -f /etc/sudoers.d/fatih-client >/dev/null 2>&1 || { rm -f /etc/sudoers.d/fatih-client; echo "  ⚠ sudoers geçersiz, kaldırıldı."; }

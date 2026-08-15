@@ -5554,45 +5554,188 @@ class FatihClientApp(QWidget):
         # Guncelleme: uyku degil + hedef var + surumden farkli + tahta KILITLI (ders ortasini kesmez).
         hedef = getattr(nc, 'son_guncelle_hedef', '') or ''
         mevcut = SETTINGS.get('version', '') or ''
-        if hedef and hedef != mevcut and self.is_locked:
+        if hedef and hedef == mevcut:
+            # Zaten hedef surumdeyiz (guncelleme basarili ya da gereksiz) — sunucudaki
+            # guncelle_hedef bayragini bosla ki bir daha denenmesin (ACK ile temizle).
+            try:
+                self.network_client.set_value("guncelle_hedef", "")
+                logging.info(f"[GUNCELLEME] hedef surumdeyiz ({mevcut}) — guncelle_hedef temizlendi.")
+            except Exception:
+                pass
+        elif hedef and hedef != mevcut and self.is_locked:
             self.apply_update(hedef)
+
+    def _guncelle_taban_url(self):
+        """Paket indirme taban adresi. Config'te 'guncelle_url' varsa o, yoksa varsayilan."""
+        return (get_setting('guncelle_url', '') or 'https://mebre.com.tr/exe').rstrip('/')
+
+    def _paket_adi(self):
+        """Genel paket adi = her zaman en yeni surum (siteye ustune yazilir). Platforma gore."""
+        return 'MebreAkilliTahta_Windows.zip' if IS_WINDOWS else 'MebreAkilliTahta_Pardus.zip'
+
+    def _dosya_indir(self, url, hedef_yol, timeout=180):
+        """URL'yi hedef_yol'a indir (stream). Basari=True. HTTPS zorunlu (verify=True)."""
+        try:
+            with requests.get(url, stream=True, timeout=timeout, verify=True) as r:
+                if r.status_code != 200:
+                    logging.error(f"[GUNCELLEME] indirme HTTP {r.status_code}: {url}")
+                    return False
+                with open(hedef_yol, 'wb') as f:
+                    for parca in r.iter_content(chunk_size=1 << 16):
+                        if parca:
+                            f.write(parca)
+            return os.path.getsize(hedef_yol) > 0
+        except Exception as e:
+            logging.error(f"[GUNCELLEME] indirme hatasi: {e}")
+            return False
 
     def apply_update(self, hedef):
         """Hedef surume otomatik guncelle (§9.2). SADECE tahta KILITLIYKEN cagirilir (ders kesilmez).
-        Imzali paketi indir -> SHA-256/imza DOGRULA -> uygula -> yeniden baslat. Basarisizlikta
-        hata denetimine (§9.6) 'guncelleme' olarak rapor et; basaride tahta yeni surumle acilinca
-        poll'da bunu bildirir + guncelle_hedef ACK ile boslanir.
+        Paketi indir -> DOGRULA (Windows: Authenticode imza; Pardus: SHA-256) -> uygula -> yeniden
+        baslat. Basarisizlikta hata denetimine (§9.6) 'guncelleme' rapor edilir; basaride tahta
+        yeni surumle acilinca poll'da bunu bildirir + guncelle_hedef ACK ile boslanir.
 
-        GUVENLIK: `guncelle_url` config'te TANIMLI DEGILSE hicbir sey yapma. Paket/imzalama boru
-        hatti (§9.1/§9.4) tamamlanana kadar bu yol DORMANT kalir — yarim bir self-swap tahtalari
-        bricklemesin. URL tanimlaninca: {guncelle_url}/Fatih_Client_Kurulum_{surum}.zip indirilir."""
+        Config kimligi (device_token) KORUNUR: Windows'ta AppData'da, Pardus'ta config.ini takas
+        disinda tutulur. Ayni hedef tekrar denenmez (basarisizlikta sonsuz dongu yok)."""
         if getattr(self, '_guncelleme_calisiyor', False):
             return
+        if hedef and hedef == getattr(self, '_son_denenen_hedef', None):
+            return  # bu hedef zaten denendi — dongu koruma
         self._guncelleme_calisiyor = True
+        self._son_denenen_hedef = hedef
 
         def _worker():
+            import tempfile, shutil, zipfile
+            calisma = None
             try:
-                base_url = get_setting('guncelle_url', '') or ''
-                if not base_url:
-                    # Boru hatti henuz yok — sadece bir kez logla, tahtayi beklet.
-                    logging.info(f"[GUNCELLEME] hedef={hedef} ama guncelle_url tanimsiz — "
-                                 f"paket boru hatti (§9.1/§9.4) bekleniyor, atlandi.")
-                    return
-                logging.info(f"[GUNCELLEME] {SETTINGS.get('version')} -> {hedef} basliyor (url={base_url}).")
-                # 1) Paketi indir (imzali/sifreli). 2) SHA-256/imza dogrula. 3) Uygula (platform'a gore:
-                #    Pardus /opt/fatih-client swap + watchdog restart; Windows exe/installer). 4) ACK ile
-                #    guncelle_hedef'i bosla. — Bu adimlar §9.4 (paket format + imza) ile tamamlanacak;
-                #    su an cati hazir, gercek swap boru hatti kesinlesince eklenecek.
-                #    Basari sonrasi restart, watchdog/servise birakilir.
-                raise NotImplementedError("apply_update swap adimi §9.4 (paket/imza) ile tamamlanacak")
+                base = self._guncelle_taban_url()
+                paket = self._paket_adi()
+                url = f"{base}/{paket}"
+                logging.warning(f"[GUNCELLEME] {SETTINGS.get('version')} -> {hedef} basliyor (url={url}).")
+
+                calisma = tempfile.mkdtemp(prefix='mebre_upd_')
+                zip_yol = os.path.join(calisma, paket)
+                if not self._dosya_indir(url, zip_yol):
+                    raise RuntimeError("paket indirilemedi")
+
+                ayikla = os.path.join(calisma, 'yeni')
+                with zipfile.ZipFile(zip_yol) as z:
+                    z.extractall(ayikla)
+                app_dir = os.path.join(ayikla, 'app')
+                if not os.path.isdir(app_dir):
+                    raise RuntimeError("pakette 'app' klasoru yok")
+
+                if IS_WINDOWS:
+                    self._guncelle_windows(app_dir, hedef)
+                    return  # guncelleyici baslatildi, uygulama kapaniyor (temp'i silme)
+                else:
+                    self._guncelle_pardus(zip_yol, app_dir, base, paket, hedef)
+                    # buraya donerse servis restart tetiklendi
             except Exception as e:
                 logging.error(f"[GUNCELLEME] basarisiz: {e}")
                 _hata_bildir("guncelleme", "kritik", f"apply_update {hedef}: {e}",
                              f"mevcut={SETTINGS.get('version')} hedef={hedef}")
+                if calisma:
+                    shutil.rmtree(calisma, ignore_errors=True)
             finally:
                 self._guncelleme_calisiyor = False
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _win_imza_gecerli(self, exe):
+        """Windows: yeni client.exe Authenticode imzasi GECERLI + bizim sertifika mi?
+        Kurcalanmis/sahte paket boylece reddedilir (SmartScreen'in yaptigi kontrolun ayni)."""
+        import subprocess
+        try:
+            ps = ("$s=Get-AuthenticodeSignature -LiteralPath %r; "
+                  "if($s.Status -ne 'Valid'){exit 3}; "
+                  "if($s.SignerCertificate.Subject -notmatch 'HATUNO'){exit 4}; exit 0") % exe
+            r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
+                               capture_output=True, timeout=60)
+            if r.returncode != 0:
+                logging.error(f"[GUNCELLEME] imza reddedildi (kod {r.returncode}).")
+            return r.returncode == 0
+        except Exception as e:
+            logging.error(f"[GUNCELLEME] imza dogrulama hatasi: {e}")
+            return False
+
+    def _guncelle_windows(self, app_dir, hedef):
+        """Windows takas: imza dogrula -> guncelleyici bat baslat -> uygulamayi kapat.
+        Calisan exe kendini silemedigi icin bat, client kapaninca dosyalari degistirip
+        --win-kiosk ile yeniden baslatir. config AppData'da oldugu icin kimlik korunur."""
+        import subprocess
+        yeni_exe = os.path.join(app_dir, 'client.exe')
+        if not os.path.isfile(yeni_exe):
+            raise RuntimeError("yeni client.exe yok")
+        if not self._win_imza_gecerli(yeni_exe):
+            raise RuntimeError("Authenticode imza dogrulanamadi")
+
+        kurulum = os.path.dirname(os.path.abspath(sys.executable))
+        if not os.path.isfile(os.path.join(kurulum, 'client.exe')):
+            raise RuntimeError(f"kurulum klasoru bulunamadi ({kurulum})")
+
+        ust = os.path.dirname(app_dir)
+        bat = os.path.join(ust, 'guncelle.bat')
+        log = os.path.join(ust, 'guncelle.log')
+        icerik = (
+            "@echo off\r\n"
+            "chcp 65001 >nul\r\n"
+            ":wait\r\n"
+            'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
+            "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
+            'robocopy "%s" "%s" /MIR /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'start "" /D "%s" "%s\\client.exe" --win-kiosk\r\n'
+        ) % (app_dir, kurulum, log, kurulum, kurulum)
+        with open(bat, 'w', encoding='utf-8') as f:
+            f.write(icerik)
+
+        logging.warning(f"[GUNCELLEME] Windows guncelleyici baslatiliyor, uygulama kapaniyor. hedef={hedef}")
+        DETACHED = 0x00000008  # DETACHED_PROCESS: client kapansa da bat yasar
+        subprocess.Popen(['cmd', '/c', bat], creationflags=DETACHED, close_fds=True)
+        QTimer.singleShot(800, QApplication.quit)
+
+    def _guncelle_pardus(self, zip_yol, app_dir, base, paket, hedef):
+        """Pardus takas: SHA-256 dogrula -> sabit staging'e koy -> sudo fatih-update (root:
+        swap + servis restart). client.bin /opt'ta root:etapadmin oldugu icin etapadmin
+        kendisi yazamaz; dar yetkili guncelleyici yapar (fatih-uninstall deseni)."""
+        import shutil, subprocess
+        sha_url = f"{base}/{paket}.sha256"
+        sha_yol = zip_yol + '.sha256'
+        beklenen = None
+        if self._dosya_indir(sha_url, sha_yol, timeout=30):
+            try:
+                beklenen = open(sha_yol).read().strip().split()[0].lower()
+            except Exception:
+                beklenen = None
+        if not beklenen or len(beklenen) != 64:
+            raise RuntimeError("beklenen SHA-256 alinamadi")
+        h = hashlib.sha256()
+        with open(zip_yol, 'rb') as f:
+            for blok in iter(lambda: f.read(1 << 20), b''):
+                h.update(blok)
+        if h.hexdigest().lower() != beklenen:
+            raise RuntimeError("SHA-256 uyusmuyor (paket bozuk/degistirilmis)")
+        if not os.path.isfile(os.path.join(app_dir, 'client.bin')):
+            raise RuntimeError("yeni client.bin yok")
+
+        # Sabit staging (sudoers bu yolu bekler): ~/.mebre_upd/app
+        staging = os.path.join(os.path.expanduser('~'), '.mebre_upd')
+        app_hedef = os.path.join(staging, 'app')
+        shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, mode=0o700, exist_ok=True)
+        shutil.copytree(app_dir, app_hedef)
+        try:
+            os.chmod(os.path.join(app_hedef, 'client.bin'), 0o750)
+        except Exception:
+            pass
+
+        logging.warning(f"[GUNCELLEME] Pardus: sudo fatih-update cagriliyor. hedef={hedef}")
+        r = subprocess.run(['sudo', '-n', '/usr/local/bin/fatih-update'],
+                           capture_output=True, timeout=120)
+        if r.returncode != 0:
+            raise RuntimeError(f"fatih-update basarisiz ({r.returncode}): "
+                               f"{r.stderr.decode('utf-8', 'ignore')[:200]}")
+        # Basari: servis restart tetiklendi, bu surec birazdan sonlanacak.
 
     def process_commands(self, commands):
         if len(commands) < 4:
