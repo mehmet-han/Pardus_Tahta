@@ -38,9 +38,16 @@ def main():
     print(f'Paketleniyor: {os.path.basename(hedef)}')
     print('NOT: client.exe IMZALANDI MI? Imza zip\'ten ONCE atilmali (§9.1).')
 
+    # GUVENLIK: kaldirma betigi PAKETE GIRMEZ. Paket sitede herkese acik; kaldir.bat
+    # ekli olsaydi indiren biri kilidi kaldirabilirdi. Kaldirma YALNIZCA (a) ynt5'ten
+    # uzaktan (cihaz-kimlik dogrulamali) ya da (b) client menusunden admin sifresiyle.
+    HARIC = {'kaldir.bat', 'kaldir_LOKAL.bat'}
+
     with zipfile.ZipFile(hedef, 'w', zipfile.ZIP_DEFLATED) as z:
-        # Sablon dosyalar (kur/kaldir/Readme) zip kokune
+        # Sablon dosyalar (kur/Readme/healer) zip kokune — kaldir.bat HARIC
         for ad in os.listdir(PAKET_SABLON):
+            if ad in HARIC:
+                continue
             z.write(os.path.join(PAKET_SABLON, ad), ad)
         # Derlenmis uygulama app\ altina
         for kok, _dizinler, dosyalar in os.walk(DIST):
