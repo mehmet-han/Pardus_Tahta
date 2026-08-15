@@ -83,3 +83,6 @@ fatih_projesi_python/client/nuitka_build_win/
 *.sha256
 nuitka-crash-report.xml
 **/nuitka-crash-report.xml
+
+surum_windows.txt
+surum_pardus.txt

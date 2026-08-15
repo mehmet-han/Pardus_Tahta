@@ -29,10 +29,16 @@ def main():
         print('HATA: client.exe yok — once build_windows_nuitka.bat calistirin.')
         return 1
 
-    surum = 'V0_00_00'
+    surum_nokta = 'V0.00.00'
     vf = os.path.join(BURA, 'version.txt')
     if os.path.isfile(vf):
-        surum = open(vf, encoding='utf-8').read().strip().replace('.', '_')
+        surum_nokta = open(vf, encoding='utf-8').read().strip()
+    surum = surum_nokta.replace('.', '_')
+
+    # ynt5 update modali bunu okuyup hedef surumu OTOMATIK doldurur (operator elle yazmasin).
+    # Zip ile birlikte /exe/ altina yuklenir.
+    with open(os.path.join(BURA, 'surum_windows.txt'), 'w', encoding='utf-8') as f:
+        f.write(surum_nokta)
 
     hedef = os.path.join(BURA, f'Fatih_Client_Kurulum_Win_{surum}.zip')
     print(f'Paketleniyor: {os.path.basename(hedef)}')

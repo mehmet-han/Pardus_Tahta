@@ -55,10 +55,15 @@ def main():
     if not docker_cp_dist():
         return 1
 
-    surum = 'V0_00_00'
+    surum_nokta = 'V0.00.00'
     vf = os.path.join(GECICI, 'version.txt')
     if os.path.isfile(vf):
-        surum = open(vf, encoding='utf-8').read().strip().replace('.', '_')
+        surum_nokta = open(vf, encoding='utf-8').read().strip()
+    surum = surum_nokta.replace('.', '_')
+
+    # ynt5 update modali bunu okuyup Pardus hedef surumunu OTOMATIK doldurur. /exe/ altina yuklenir.
+    with open(os.path.join(BURA, 'surum_pardus.txt'), 'w', encoding='utf-8') as f:
+        f.write(surum_nokta)
 
     hedef = os.path.join(BURA, 'MebreAkilliTahta_Pardus.zip')
     print(f'Paketleniyor: {os.path.basename(hedef)}  (surum {surum})')
