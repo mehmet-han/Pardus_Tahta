@@ -193,10 +193,12 @@ def setup_configuration():
                 shutil.copy(DEFAULT_CONFIG_PATH, USER_CONFIG_PATH)
                 logging.info(f"Copied default config to {USER_CONFIG_PATH}")
             else:
-                logging.error(f"Default config not found at {DEFAULT_CONFIG_PATH}. Cannot create user config.")
-                # If default is missing, we can't proceed with creating a user config.
-                # The app will likely fail later, which is appropriate.
-                return DEFAULT_CONFIG_PATH # Fallback to trying to read the (missing) default
+                # Varsayilan sablon YOKSA (Windows sifir kurulum: kur.bat config yazmaz) bile
+                # KULLANICI YOLUNU (AppData) dondur — asagidaki bootstrap [settings]'i buraya yazar.
+                # KRITIK: eskiden goreli "config.ini" (kurulum klasoru) donuyordu; tanitim orada
+                # saklaniyor ve apply_update'in /MIR takasi onu SILIYORDU. AppData takas disidir.
+                logging.warning(f"Varsayilan config sablonu yok — {USER_CONFIG_PATH} bootstrap ile olusacak.")
+                return USER_CONFIG_PATH
         except Exception as e:
             logging.error(f"Could not create user configuration: {e}")
             # Fallback to default config path if user config cannot be created
@@ -208,6 +210,32 @@ CONFIG_PATH = setup_configuration()
 
 config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
+
+# SIFIR TAHTA BOOTSTRAP: hic config yoksa (ozellikle Windows'ta ilk kurulum — kur.bat
+# config yazmaz; Pardus'ta setup yazar) [settings] bolumu olmaz ve `config['settings']`
+# KeyError atardi -> program acilistan once coker, kilit ekrani HIC gelmezdi. Cozum:
+# yoksa makul varsayilanlarla olustur + kullanici config'ine yaz. Boylece sifir tahta da
+# acilir, kilit ekranini gosterir; operator SAG TIK -> tanitim ile kurum/kurulum kodunu girer.
+if not config.has_section('settings'):
+    logging.warning("config.ini/[settings] yok — sifir tahta varsayilanlari olusturuluyor.")
+    config['settings'] = {
+        'version': 'V6.00.00',
+        'sub_version': '1',
+        'corporate_code': '0',
+        'ntp_servers': 'time.windows.com,time.google.com,time.cloudflare.com,time.apple.com',
+        'board_id': '0',
+        'board_name': 'Tahta',
+        'admin_password': '803580',
+        'password_changed': 'false',
+    }
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as _cf:
+            config.write(_cf)
+        logging.info(f"Varsayilan config yazildi: {CONFIG_PATH}")
+    except Exception as _e:
+        logging.warning(f"Varsayilan config yazilamadi (bellekte devam): {_e}")
+
 SETTINGS = config['settings']
 
 # --- Surum: TEK DOGRULUK KAYNAGI version.txt ---
