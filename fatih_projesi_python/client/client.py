@@ -5601,21 +5601,40 @@ class FatihClientApp(QWidget):
         """Genel paket adi = her zaman en yeni surum (siteye ustune yazilir). Platforma gore."""
         return 'MebreAkilliTahta_Windows.zip' if IS_WINDOWS else 'MebreAkilliTahta_Pardus.zip'
 
-    def _dosya_indir(self, url, hedef_yol, timeout=180):
-        """URL'yi hedef_yol'a indir (stream). Basari=True. HTTPS zorunlu (verify=True)."""
-        try:
-            with requests.get(url, stream=True, timeout=timeout, verify=True) as r:
-                if r.status_code != 200:
-                    logging.error(f"[GUNCELLEME] indirme HTTP {r.status_code}: {url}")
-                    return False
-                with open(hedef_yol, 'wb') as f:
-                    for parca in r.iter_content(chunk_size=1 << 16):
-                        if parca:
-                            f.write(parca)
-            return os.path.getsize(hedef_yol) > 0
-        except Exception as e:
-            logging.error(f"[GUNCELLEME] indirme hatasi: {e}")
-            return False
+    def _dosya_indir(self, url, hedef_yol, timeout=300, deneme=4):
+        """URL'yi hedef_yol'a indir (stream). Basari=True. HTTPS zorunlu (verify=True).
+        RETRY (15 Ağu log): saha aginda 36MB indirme ara sira YARIDA KOPUYOR
+        (IncompleteRead). Boyut dogrulanir; kopmada birkac kez tekrar denenir + Content-Length
+        ile TAM indi mi kontrol edilir (yarim dosyayla imza/takas asla yapilmasin)."""
+        for _i in range(1, deneme + 1):
+            try:
+                with requests.get(url, stream=True, timeout=timeout, verify=True) as r:
+                    if r.status_code != 200:
+                        logging.error(f"[GUNCELLEME] indirme HTTP {r.status_code}: {url}")
+                        return False
+                    _beklenen = int(r.headers.get('Content-Length', 0) or 0)
+                    _yazilan = 0
+                    with open(hedef_yol, 'wb') as f:
+                        for parca in r.iter_content(chunk_size=1 << 16):
+                            if parca:
+                                f.write(parca)
+                                _yazilan += len(parca)
+                # Content-Length varsa TAM inmis olmali (yarim dosya = basarisiz).
+                if _beklenen and _yazilan < _beklenen:
+                    raise IOError(f"eksik indi ({_yazilan}/{_beklenen})")
+                if os.path.getsize(hedef_yol) > 0:
+                    return True
+                raise IOError("bos dosya")
+            except Exception as e:
+                logging.error(f"[GUNCELLEME] indirme denemesi {_i}/{deneme} hatasi: {e}")
+                try:
+                    if os.path.isfile(hedef_yol):
+                        os.remove(hedef_yol)   # yarim dosyayi temizle
+                except Exception:
+                    pass
+                if _i < deneme:
+                    time.sleep(5)
+        return False
 
     def apply_update(self, hedef):
         """Hedef surume otomatik guncelle (§9.2). SADECE tahta KILITLIYKEN cagirilir (ders kesilmez).
@@ -5721,21 +5740,24 @@ class FatihClientApp(QWidget):
         ust = os.path.dirname(app_dir)
         bat = os.path.join(ust, 'guncelle.bat')
         log = os.path.join(ust, 'guncelle.log')
-        # /XF: bekci.bat + Readme.txt kurulum klasorune ozel (pakette app/ icinde YOK);
-        # /MIR bunlari silmesin (watchdog + kurulum kodu dosyasi korunsun). config zaten AppData'da.
+        # KRITIK (15 Ağu log bulgusu): eskiden ':wait' ile client.exe'nin KENDILIGINDEN
+        # cikmasini bekliyorduk. Ama WATCHDOG client'i hemen geri baslatiyor -> :wait hic
+        # bitmiyor, dosyalar kilitli, TAKAS YAPILAMIYOR (surum 50'de kaliyordu). Cozum:
+        # watchdog gorevini DISABLE+END + client.exe'yi ZORLA oldur, sonra beklemeden takas et.
+        # /XF: Readme.txt kurulum klasorune ozel (pakette app/ icinde YOK) -> /MIR silmesin.
         icerik = (
             "@echo off\r\n"
             "chcp 65001 >nul\r\n"
-            'schtasks /Change /TN "MebreTahtaBekci" /DISABLE >nul 2>&1\r\n'  # bekci araya girmesin
-            ":wait\r\n"
-            'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
-            "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
+            'schtasks /Change /TN "MebreTahtaBekci" /DISABLE >nul 2>&1\r\n'   # gelecek tetiklemeyi kapat
+            'schtasks /End /TN "MebreTahtaBekci" >nul 2>&1\r\n'               # calisan watchdog'u durdur
+            'taskkill /IM client.exe /F >nul 2>&1\r\n'                        # ana + watchdog client'lari oldur
+            "timeout /t 3 /nobreak >nul\r\n"                                  # dosyalar serbest kalsin
             'robocopy "%s" "%s" /MIR /XF Readme.txt config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
-            # Yedek konumu da yeni surumle tazele (watchdog bunu yapamaz; kendi klasoru kilitli).
-            # Yeni surum yedekte olmazsa, ana silininca watchdog ESKI surumu geri koyardi.
+            # Yedek konumu da yeni surumle tazele (watchdog kendi klasorunu kilitli oldugu icin yapamaz).
             'robocopy "%s" "%s" /MIR /XF config.ini /NFL /NDL /NJH /NJS /NP >> "%s" 2>&1\r\n'
+            'attrib +h +s "C:\\pf" >nul 2>&1\r\n'
             'attrib +h +s "C:\\ProgramData\\MebreSvc" >nul 2>&1\r\n'
-            'schtasks /Change /TN "MebreTahtaBekci" /ENABLE >nul 2>&1\r\n'  # watchdog geri acik
+            'schtasks /Change /TN "MebreTahtaBekci" /ENABLE >nul 2>&1\r\n'    # watchdog geri acik
             'start "" /D "%s" "%s\\client.exe" --win-kiosk\r\n'
         ) % (app_dir, kurulum, log, app_dir, r"C:\ProgramData\MebreSvc\app", log, kurulum, kurulum)
         with open(bat, 'w', encoding='utf-8') as f:
