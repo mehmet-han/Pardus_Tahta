@@ -5472,6 +5472,11 @@ class FatihClientApp(QWidget):
             if commands is not None:
                 logging.info("Successfully polled server.")
                 self.network_status_signal.emit(True)
+
+                # Ag geldi: BEKLEYEN kilit-durum ack'i varsa (boot'ta dusen vb.) simdi gonder.
+                # Boylece kilitli acilan tahta ~1 poll icinde MebreCep'te KIRMIZI'ya doner.
+                if getattr(self, '_bekleyen_kilit_ack', None):
+                    self._kilit_ack_gonder()
                 
                 # --- C# startWork mekanizmasi ---
                 if not self.start_work:
@@ -6173,18 +6178,41 @@ class FatihClientApp(QWidget):
         return False
 
     def acknowledge_command(self, cmd_key, cmd_val, sebep=None):
-        # Notify the server that we have processed a command.
+        """Sunucuya komut/durum ACK'i. tahtaLock -> open_close (MebreCep yesil/kirmizi kaynagi).
+
+        KRITIK (15 Ağu, 5AC videosu): tahta kendi kendine kilitlense de (boot/oto-kilit/sinav/
+        yerel-acma) ack ag YOKSA (ozellikle BOOT'ta ag hazir degil) DUSUYORDU -> open_close 0 kalir
+        -> mobil YESIL (acik) gosterir, tahta kilitlidir. Cozum: kilit durumunu KUYRUKLA; ag gelince
+        (poll basarili) tekrar gonder. SADECE SON durum onemli (tek slot, ustune yazilir)."""
+        if cmd_key == "tahtaLock":
+            self._bekleyen_kilit_ack = (str(cmd_val), sebep)
+            self._kilit_ack_gonder()
+            return
+        # Diger komutlar (shutdown/system_Remove ACK'leri): eski davranis.
         def send_ack():
             self.network_client.set_value(cmd_key, cmd_val)
-            if cmd_key == "tahtaLock":
-                # Cihazın kilitli olup olmadığını MebreCep'e bildiren asıl kolon 'open_close'dir.
-                # C# kodunda (systmlock = true ise "1", false ise "0") gönderiliyordu.
-                # python tarafında cmd_val "1" (kilitli) ve "0" (açık) olarak geliyor.
-                # MebreCep'teki yeşil/kırmızı ışığın doğru tespiti için bu satır gereklidir:
-                # Acilis/kilit SEBEBI de gonderilir -> sunucu denetim kaydina yazar.
-                self.network_client.set_value("open_close", cmd_val, sebep)
-
         threading.Thread(target=send_ack, daemon=True).start()
+
+    def _kilit_ack_gonder(self):
+        """Bekleyen kilit-durum ack'ini arka planda gonder. Basarirsa slotu temizle;
+        basarisizsa slotta KALIR -> poll_server bir sonraki basarili poll'da tekrar cagirir."""
+        beklyen = getattr(self, '_bekleyen_kilit_ack', None)
+        if not beklyen:
+            return
+        def _worker():
+            val, sebep = beklyen
+            try:
+                if self.network_client.set_value("open_close", val, sebep):
+                    # Basari. Ama bu sirada durum degismis olabilir (yeni transisyon) ->
+                    # yalnizca HALA ayni deger bekliyorsa temizle (son durum korunsun).
+                    if getattr(self, '_bekleyen_kilit_ack', None) == beklyen:
+                        self._bekleyen_kilit_ack = None
+                    logging.info(f"[KILIT-ACK] open_close={val} bildirildi (sebep={sebep}).")
+                else:
+                    logging.warning(f"[KILIT-ACK] open_close={val} gonderilemedi — kuyrukta, poll'da tekrar denenecek.")
+            except Exception as e:
+                logging.warning(f"[KILIT-ACK] gonderim hatasi (kuyrukta): {e}")
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _kaldirma_kaniti(self) -> str:
         """Uzaktan kaldirma yetki kaniti: sha256(device_token + REMOVE_SALT).
