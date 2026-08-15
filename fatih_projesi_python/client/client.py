@@ -5907,6 +5907,14 @@ class FatihClientApp(QWidget):
                 self.save_log("Sunucudan kapatma komutu alındı", "system")
                 # Birden fazla kapatma yöntemi dene
                 import subprocess
+                # WINDOWS: ynt5 'Kapat' komutu Linux komutlariyla calismyordu. C#: shutdown /s /f /t 0
+                if IS_WINDOWS:
+                    try:
+                        subprocess.run(['shutdown', '/s', '/f', '/t', '0'], timeout=10)
+                    except Exception as e:
+                        logging.error(f"Windows sunucu-kapatma hatasi: {e}")
+                    QApplication.quit()
+                    return
                 shutdown_commands = [
                     ['dbus-send', '--system', '--print-reply', '--dest=org.freedesktop.login1', '/org/freedesktop/login1', 'org.freedesktop.login1.Manager.PowerOff', 'boolean:true'],
                     ['systemctl', 'poweroff'],
@@ -6677,6 +6685,13 @@ ________________________________________________________________________________
         logging.info("Bilgisayar yeniden başlatılıyor (context menu)")
         self.save_log("Bilgisayar Yeniden Başlatıldı", "system")
         import subprocess
+        # WINDOWS: menu Linux komutlariyla calismyordu (saha bulgusu). C# karsiligi: shutdown /r /f /t 0
+        if IS_WINDOWS:
+            try:
+                subprocess.run(['shutdown', '/r', '/f', '/t', '0'], timeout=10)
+            except Exception as e:
+                logging.error(f"Windows yeniden baslatma hatasi: {e}")
+            return
         # C# karşılığı: cmd /C shutdown -f -r -t 0
         reboot_commands = [
             ['sudo', 'reboot'],
@@ -6711,6 +6726,13 @@ ________________________________________________________________________________
         logging.info("Bilgisayar kapatılıyor (context menu)")
         self.save_log("Bilgisayar Kapatıldı", "system")
         import subprocess
+        # WINDOWS: menu Linux komutlariyla calismyordu (saha bulgusu). C# karsiligi: shutdown /s /f /t 0
+        if IS_WINDOWS:
+            try:
+                subprocess.run(['shutdown', '/s', '/f', '/t', '0'], timeout=10)
+            except Exception as e:
+                logging.error(f"Windows kapatma hatasi: {e}")
+            return
         # C# karşılığı: shutdown /s /f /t 0
         shutdown_commands = [
             ['sudo', 'poweroff'],
