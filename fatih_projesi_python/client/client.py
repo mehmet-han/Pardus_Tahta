@@ -5977,16 +5977,33 @@ class FatihClientApp(QWidget):
         if not self.is_locked: # Prevent redundant locks
             logging.info(f"Locking system: {reason}")
             self.is_locked = True
+            _enforce = (not IS_WINDOWS) or WINDOWS_KIOSK
+
+            # ============================================================================
+            # 1) ÖNCE EKRANI ÖRT (saha bulgusu: kilit ~10 sn geç geliyordu, masaüstü
+            #    görünüyordu, öğrenci o boşlukta müdahale edip sistemi çökertiyordu).
+            #    Eskiden ÖNCE zorlama (kill_all_browsers vb. YAVAŞ) yapılıp SONRA show()
+            #    çağrılıyordu. Artık ÖNCE göster + en-üste-al -> masaüstü ANINDA kaybolur;
+            #    yavaş zorlama BUNUN ARDINDAN, ekran zaten örtülüyken yapılır.
+            # ============================================================================
+            self.login_button.setVisible(True)
+            self.message_label.setVisible(True)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self.login_button.setFocus()
+            if _enforce:
+                self._force_on_top()          # HEMEN en üste (topmost) — beklemesiz
+            QApplication.processEvents()      # ekran hemen boyansın
+
+            # 2) Kayıt + sunucu ACK (ekran zaten örtüldü; bunlar arkada).
             self.last_lock_time = time.time()  # Soğuma + duyuru 3 dk doğum günü kapısı bu andan başlar
-            # Record the lock event
             self.save_log(reason, "lock")
             self.acknowledge_command("tahtaLock", "1", reason)
             self.tahta_lock = -6  # C# NullVal(-6) davranışı - sunucudan yeni geçerli değer gelene kadar bekle
 
-            # --- Güvenlik katmanları (C# LockSystm karşılığı) ---
-            # Windows önizlemede (--win-kiosk YOK) klavye/taskbar/ses/tarayıcı ELE GEÇİRİLMEZ
-            # (tuzak/istenmeyen kapanma olmasın). Linux'ta ve Windows-kiosk'ta tam zorlama.
-            _enforce = (not IS_WINDOWS) or WINDOWS_KIOSK
+            # 3) Güvenlik zorlaması (C# LockSystm) — EKRAN ÖRTÜLDÜKTEN SONRA (yavaş olabilir).
+            #    Windows önizlemede (--win-kiosk YOK) zorlama YOK (tuzak olmasın).
             if _enforce:
                 PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
                 VolumeControl.mute()         # Ses kapat (C# VD)
@@ -5995,36 +6012,14 @@ class FatihClientApp(QWidget):
             else:
                 logging.info("Windows önizleme: kilit görsel (zorlama YOK — --win-kiosk ile aç).")
 
-            # Ensure UI elements are visible
-            self.login_button.setVisible(True)
-            self.message_label.setVisible(True)
-
-            # Show, raise, and activate the window.
-            self.show()
-            self.raise_()
-            self.activateWindow()
-            self.login_button.setFocus()
-
-            QApplication.processEvents()
-
-            # Bilgi panellerini once SON VERIYLE ciz -> ekran aninda dolu gelsin.
-            # (Bu cagri show()+processEvents() SONRASINDA olmali; pencere gorunmeden
-            #  cizilirse layout dogru oturmaz.)
+            # 4) Bilgi panelleri + taze veri (ekran zaten dolu; bunlar zenginleştirir).
             self._restore_info_panels()
-
-            # Ardindan TAZE veri iste: ders icinde verilen aferin / girilen dogum gunu
-            # tahta kilitlenir kilitlenmez gorunsun. Arka planda calisir, ~1 sn sonra
-            # panelleri tazeler; ekran bu sirada bos kalmaz (yukarida zaten cizildi).
             self.refresh_display()
 
-            # Kilit ekranını en üste al (Linux: xdotool/wmctrl; Windows-kiosk: SetWindowPos TOPMOST).
-            # Windows önizlemede topmost YOK (normal pencere).
             if _enforce:
                 QTimer.singleShot(500, self._force_on_top)
                 QTimer.singleShot(1500, self._force_on_top)
-
-            # KeyboardLocker (evdev) — Linux klavye grab'i; Windows'ta no-op (guard'lı).
-            if _enforce:
+                # KeyboardLocker (evdev) — Linux klavye grab'i; Windows'ta no-op (guard'lı).
                 try:
                     if not getattr(self, 'keyboard_locker', None) or not self.keyboard_locker.is_alive():
                         self.keyboard_locker = KeyboardLocker()
@@ -7058,6 +7053,23 @@ def main():
         app = QApplication(sys.argv)
         # Note: High DPI scaling attributes not available in this PyQt6 version
 
+        # ACILISTA HEMEN ORT (saha bulgusu): FatihClientApp init'i + kilit birkac sn surer;
+        # o boslukta MASAUSTU gorunuyordu ve ogrenci mudahale ediyordu. Once HAFIF bir siyah
+        # tam-ekran ortu goster (aninda) -> masaustu HIC gorunmez; kilit ekrani hazir olunca kaldirilir.
+        _acilis_ortu = None
+        if (not IS_WINDOWS) or WINDOWS_KIOSK:
+            try:
+                _acilis_ortu = QWidget()
+                _acilis_ortu.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+                _acilis_ortu.setStyleSheet("background-color: #0b1e2d;")
+                _acilis_ortu.setGeometry(QApplication.primaryScreen().geometry())
+                _acilis_ortu.showFullScreen()
+                _acilis_ortu.raise_()
+                app.processEvents()
+            except Exception as _e:
+                logging.warning(f"Acilis ortusu gosterilemedi: {_e}")
+                _acilis_ortu = None
+
         window = FatihClientApp()
         logging.info("FatihClientApp created successfully")
 
@@ -7073,6 +7085,10 @@ def main():
                 logging.warning("Windows GERÇEK KİOSK modu (--win-kiosk): tam kilit. Panik çıkış: Ctrl+Alt+Shift+Q")
             window.lock_system("Sistem başlatıldı")
             logging.info("System locked on startup")
+
+        # Kilit ekrani geldi -> acilis ortusunu kaldir (biraz gecikmeli, kilit tam otursun).
+        if _acilis_ortu is not None:
+            QTimer.singleShot(2000, _acilis_ortu.close)
 
         print("Application started successfully - login button should be visible")
         sys.exit(app.exec())
