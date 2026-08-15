@@ -2328,6 +2328,11 @@ class NetworkClient:
     """
     def __init__(self, settings):
         self.settings = settings
+        # Long-poll (v5 HAZIR 15 Ağu): son yanittaki 'rev' (durum surumu) — bir sonraki poll'da
+        # geri gonderilir; sunucu ayni rev'de komut yoksa istegi askida tutar. long_poll_destekli:
+        # sunucu 'rev' donduruyorsa True (eski sunucu dondurmez -> istemci fallback aralikla poll'lar).
+        self.son_rev = None
+        self.long_poll_destekli = False
         # Kuresel hata bildiricinin (_hata_bildir/excepthook) ulasabilmesi icin referans.
         global _GLOBAL_NET
         _GLOBAL_NET = self
@@ -2531,20 +2536,37 @@ class NetworkClient:
             except OSError:
                 return False
 
-    def ctrl_post(self):
-        """Yoklama (v5 /poll). Kimlik token'dan gelir; govdede SADECE surum bilgisi var.
+    def ctrl_post(self, wait=0, rev=None):
+        """Yoklama (v5 /poll). Kimlik token'dan gelir; govdede surum + (long-poll) wait/rev var.
         process_commands ile uyum icin LISTE doner: [openClose, message, shutdown, systemRemove, logIstek]
         (hepsi str; mesaj bos ise '0' = v4 default davranisi). Kayit yoksa v5 fail-safe KILITLI doner.
 
-        Surum bildirimi: sunucu tahtanin hangi istemci surumunde oldugunu bilmiyordu. ynt5'teki
-        'Programi Kaldir' butonu yalnizca TAM temizlik yapabilen surumlerde (V6.00.12+) aktif
-        olacagi icin bu bilgi gerekli. Sunucu throttle'li yazar; her yoklamada DB'ye gitmez."""
-        result = self._result(self._make_request("poll", {
+        LONG-POLL (v5 HAZIR 15 Ağu, geriye uyumlu): wait>0 gonderilirse sunucu, ayni rev'de komut
+        yoksa istegi <=wait sn ASKIDA tutar; komut yazilinca <100ms yanit duser -> kilit/ac ANINDA
+        uygulanir. rev = onceki yanittaki durum surumu (ilk cagride None). Yanitta 'rev' varsa
+        long_poll_destekli=True; yoksa (eski sunucu) istemci fallback aralikla poll'a doner.
+
+        Surum bildirimi: sunucu tahtanin hangi istemci surumunde oldugunu bilir (ynt5 'Programi
+        Kaldir' surum kapisi + filo). Sunucu throttle'li yazar; her yoklamada DB'ye gitmez."""
+        govde = {
             "version": str(self.settings.get('version') or ''),
             "platform": "windows" if IS_WINDOWS else "pardus",
-        }))
+        }
+        _timeout = 100
+        if wait and int(wait) > 0:
+            govde["wait"] = int(wait)
+            if rev is not None:
+                govde["rev"] = rev
+            _timeout = int(wait) + 15   # HTTP timeout, sunucu askida tutma tavaninin ustunde olmali
+        result = self._result(self._make_request("poll", govde, timeout=_timeout))
         if result is None:
             return None
+        # Long-poll durum surumu: yanitta 'rev' varsa sakla + destek bayragini kaldir.
+        if "rev" in result:
+            self.son_rev = result.get("rev")
+            self.long_poll_destekli = True
+        else:
+            self.long_poll_destekli = False
         # Guncelleme hedefi + uyku araligi: LISTE SOZLESMESINI bozmadan (process_commands
         # yalniz index 0-4 okur) instance'ta sakla; poll_server bunlari ayrica isler.
         self.son_guncelle_hedef = str(result.get("guncelleHedef", "") or "")
@@ -3158,9 +3180,9 @@ class FatihClientApp(QWidget):
         else:
             logging.info("[NO-LOCK] Skipping initial lock")
 
-        # İlk poll_server'ı geciktir - kilit ekranının kararlı olması için
-        # (Hemen çağırırsak sunucu tahta_lock=0 döndürüp kilidi anında açar)
-        QTimer.singleShot(5000, self.poll_server)
+        # Long-poll dongusunu geciktir - kilit ekranının kararlı olması için
+        # (Hemen başlatırsak sunucu tahta_lock=0 döndürüp kilidi anında açar)
+        QTimer.singleShot(5000, self._poll_baslat)
 
     def init_ui(self):
         self.setWindowTitle("Fatih Client v1.5 - Scheduling Enabled")
@@ -3965,12 +3987,24 @@ class FatihClientApp(QWidget):
             logging.info(f"Help guide shown at ({guide_x},{guide_y})")
 
     def init_network_timer(self):
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.poll_server)
-        # Use configurable polling interval (default 5 seconds)
-        polling_interval = int(SETTINGS.get('polling_interval', 5)) * 1000  # Convert to milliseconds
-        self.timer.start(polling_interval)
-        logging.info(f"Server polling timer started with {polling_interval/1000} second interval")
+        """LONG-POLL (v5 HAZIR 15 Ağu): sabit-aralik QTimer YERINE surekli long-poll dongusu.
+        Sunucu istegi <=wait sn askida tutar; kilit/ac komutu gelince <100ms yanit -> ANINDA
+        uygulanir (videodaki 'once acmadi, sonra acildi' gecikmesi biter). Eski sunucu (rev
+        dondurmeyen) icin fallback: kilitliyken 5sn / acikken 20sn arayla normal poll.
+        Dongu, kilit ekrani kararli olsun diye 5 sn gecikmeyle _poll_baslat ile baslar."""
+        self._poll_wait = 25            # sunucu askida tutma tavani (spec: max 25 sn)
+        self._fallback_poll_sn = 5      # long-poll YOKSA kilitliyken poll araligi
+        self._poll_dur = False
+        self._poll_thread = None
+
+    def _poll_baslat(self):
+        """Long-poll dongu thread'ini baslat (idempotent). init'te 5 sn gecikmeyle cagrilir."""
+        if getattr(self, '_poll_thread', None) and self._poll_thread.is_alive():
+            return
+        self._poll_dur = False
+        self._poll_thread = threading.Thread(target=self._uzun_poll_dongusu, daemon=True)
+        self._poll_thread.start()
+        logging.info(f"Long-poll dongusu baslatildi (wait={self._poll_wait}s, fallback {self._fallback_poll_sn}/20s).")
 
     def init_usb_monitor(self):
         # USB KILIT ACMA KALDIRILDI: yalniz USB KALDIRMA sinyali baglanir (rmove.txt ->
@@ -5467,81 +5501,109 @@ class FatihClientApp(QWidget):
     # v6 runtime'inin tum sunucu iletisimi NetworkClient uzerinden v5'e (Bearer + X-Timestamp) gider.
 
     def _poll_hizini_ayarla(self, kilitli):
-        """ACIKken poll HIZLI (2 sn), kilitliyken normal (5 sn). Saha bulgusu: acik tahtada
-        kilit komutu gec yakalaniyordu, ogrenci o pencerede tahtaya dalıyordu. Sunucu komut
-        yazilinca poll cache'ini kendisi dusurdugu icin komut sonrasi poll TAZE gelir; yani
-        client poll araligi = gercek kilit gecikmesi. Acik pencere kisaldikca risk azalir.
-        (Gercek 'aninda kilit' icin sunucu->tahta PUSH gerek; v5 brief'inde yaziliyor.)"""
-        try:
-            if not hasattr(self, 'timer'):
-                return
-            _ms = 5000 if kilitli else 2000
-            if self.timer.interval() != _ms:
-                self.timer.setInterval(_ms)
-                logging.info(f"Poll araligi {int(_ms/1000)} sn ({'kilitli' if kilitli else 'acik'}).")
-        except Exception:
-            pass
+        """FALLBACK (long-poll YOKSA, eski sunucu) poll araligi: kilitliyken 5sn (ogretmen kapida
+        'Kilidi Aç'i bekliyor olabilir), acikken 20sn (daha az kritik + sunucu yuku). Long-poll
+        aktifken bu KULLANILMAZ: bekleme sunucuda, kilit/ac komutu <100ms uygulanir."""
+        self._fallback_poll_sn = 5 if kilitli else 20
+
+    def _uzun_poll_dongusu(self):
+        """Surekli LONG-POLL dongusu (v5 HAZIR 15 Ağu). Her tur: poll(wait=25, rev) cagir; yanit
+        gelince (ister aninda komutla, ister 25sn askidan sonra) uygula ve HEMEN tekrar poll'a don
+        (bekleme SUNUCUDA, arada uyku YOK). Ag hatasinda 3sn geri cekil (firtina olmasin). Eski
+        sunucu long-poll'u desteklemezse (rev dondurmez) kilit-durumuna gore aralikla nefeslen."""
+        while not getattr(self, '_poll_dur', False):
+            t0 = time.monotonic()
+            try:
+                commands = self.network_client.ctrl_post(
+                    wait=getattr(self, '_poll_wait', 25),
+                    rev=getattr(self.network_client, 'son_rev', None))
+            except Exception as e:
+                logging.error(f"[LONG-POLL] istek hatasi: {e}")
+                commands = None
+            gecen = time.monotonic() - t0
+            try:
+                self._poll_sonuc_uygula(commands)
+            except Exception as e:
+                logging.error(f"[LONG-POLL] sonuc uygulama hatasi: {e}")
+            # PACING:
+            if commands is None:
+                time.sleep(3)                                   # ag/sunucu hatasi -> geri cekil
+            elif not getattr(self.network_client, 'long_poll_destekli', False):
+                time.sleep(max(2, getattr(self, '_fallback_poll_sn', 5)))  # eski sunucu: sabit aralik
+            elif gecen < 0.3:
+                time.sleep(0.3)   # patolojik ani donus -> runaway koruma (komut zaten uygulandi)
+            # else: long-poll destekli + sunucu askida tuttu -> HEMEN don.
+
+    def _poll_sonuc_uygula(self, commands):
+        """Bir poll sonucunu uygula (long-poll dongusu + tek-atis poll_server ortak kullanir).
+        commands None ise ag/sunucu koptu -> internet kontrolu + gerekirse kilit."""
+        if commands is not None:
+            logging.info("Successfully polled server.")
+            self.network_status_signal.emit(True)
+
+            # Ag geldi: BEKLEYEN kilit-durum ack'i varsa (boot'ta dusen vb.) simdi gonder.
+            # Boylece kilitli acilan tahta ~1 poll icinde MebreCep'te KIRMIZI'ya doner.
+            if getattr(self, '_bekleyen_kilit_ack', None):
+                self._kilit_ack_gonder()
+
+            # --- C# startWork mekanizmasi ---
+            if not self.start_work:
+                self.early_wait_ticks += 1
+                if self.early_wait_ticks >= 4:
+                    self.early_wait_ticks = 0
+                    self.start_work = True
+                    logging.info("start_work=True: Sunucu komutlari artik islenecek (C# ewt mekanizmasi)")
+                else:
+                    logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
+                    return
+
+            # ctrl_post artik liste donuyor (v5 JSON'dan); split gerekmiyor.
+            # Safely emit to main thread instead of lambda QTimer which gets garbage collected
+            self.command_signal.emit(commands)
+
+            # Uyku araligi (§9.8) + guncelleme hedefi (§9.2) — liste disi alanlar, ayrica isle.
+            # (ctrl_post bunlari network_client uzerinde sakladi.)
+            try:
+                self._uyku_ve_guncelleme_isle()
+            except Exception as e:
+                logging.error(f"_uyku_ve_guncelleme_isle hata: {e}")
+        else:
+            # İNTERNET VEYA SUNUCU KOPTU
+            self.server_has_spoken = False
+
+            # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
+            has_connection = self.network_client.check_network()
+            self.network_status_signal.emit(has_connection)
+
+            if not has_connection:
+                # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa).
+                # KRIZ PENCERESI ISTISNA: kriz kodu tam da "sunucu/internet yok" diye
+                # giriliyor. Burada kriz kontrolu olmayinca ilk basarisiz poll tahtayi
+                # tekrar kilitliyor ve 24 saatlik pencere hicbir ise yaramiyordu.
+                _kriz = kriz_penceresi_kalan()
+                if _kriz > 0:
+                    logging.warning(
+                        f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
+                elif not self.is_locked:
+                    # USB kilit acma kaldirildi -> internet kopunca dogrudan kilitle (uyku/kriz haric).
+                    logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
+                    QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
+
+                logging.error("Failed to poll server - No Internet connection detected.")
+            else:
+                logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
 
     def poll_server(self):
-        def _poll_task():
-            commands = self.network_client.ctrl_post()
-            if commands is not None:
-                logging.info("Successfully polled server.")
-                self.network_status_signal.emit(True)
-
-                # Ag geldi: BEKLEYEN kilit-durum ack'i varsa (boot'ta dusen vb.) simdi gonder.
-                # Boylece kilitli acilan tahta ~1 poll icinde MebreCep'te KIRMIZI'ya doner.
-                if getattr(self, '_bekleyen_kilit_ack', None):
-                    self._kilit_ack_gonder()
-                
-                # --- C# startWork mekanizmasi ---
-                if not self.start_work:
-                    self.early_wait_ticks += 1
-                    if self.early_wait_ticks >= 4:
-                        self.early_wait_ticks = 0
-                        self.start_work = True
-                        logging.info("start_work=True: Sunucu komutlari artik islenecek (C# ewt mekanizmasi)")
-                    else:
-                        logging.info(f"start_work=False: Sunucu komutu yoksayildi (ewt={self.early_wait_ticks}/4)")
-                        return
-                
-                # ctrl_post artik liste donuyor (v5 JSON'dan); split gerekmiyor.
-                # Safely emit to main thread instead of lambda QTimer which gets garbage collected
-                self.command_signal.emit(commands)
-
-                # Uyku araligi (§9.8) + guncelleme hedefi (§9.2) — liste disi alanlar, ayrica isle.
-                # (ctrl_post bunlari network_client uzerinde sakladi.)
-                try:
-                    self._uyku_ve_guncelleme_isle()
-                except Exception as e:
-                    logging.error(f"_uyku_ve_guncelleme_isle hata: {e}")
-            else:
-                # İNTERNET VEYA SUNUCU KOPTU
-                self.server_has_spoken = False
-                
-                # Gerçekten internet mi yok, yoksa sadece API mi yanıt vermiyor ayırımı
-                has_connection = self.network_client.check_network()
-                self.network_status_signal.emit(has_connection)
-                
-                if not has_connection:
-                    # İnternet koptuğunda kilitli değilsek kilitliyoruz (USB ile açılmadıysa).
-                    # KRIZ PENCERESI ISTISNA: kriz kodu tam da "sunucu/internet yok" diye
-                    # giriliyor. Burada kriz kontrolu olmayinca ilk basarisiz poll tahtayi
-                    # tekrar kilitliyor ve 24 saatlik pencere hicbir ise yaramiyordu.
-                    _kriz = kriz_penceresi_kalan()
-                    if _kriz > 0:
-                        logging.warning(
-                            f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
-                    elif not self.is_locked:
-                        # USB kilit acma kaldirildi -> internet kopunca dogrudan kilitle (uyku/kriz haric).
-                        logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
-                        QTimer.singleShot(0, lambda: self.lock_system("İnternet bağlantısı kesildiği için kilitlendi"))
-                        
-                    logging.error("Failed to poll server - No Internet connection detected.")
-                else:
-                    logging.error("Failed to poll server - Internet exists, but API server failed to respond.")
-
-        threading.Thread(target=_poll_task, daemon=True).start()
+        """Tek-atis yoklama (eski cagri uyumu + gerektiginde elle tetik). Ana surekli mekanizma
+        _uzun_poll_dongusu'dur; bu, long-poll'suz TEK poll yapip sonucu uygular."""
+        def _tek():
+            try:
+                commands = self.network_client.ctrl_post()
+            except Exception as e:
+                logging.error(f"[POLL] tek-atis hatasi: {e}")
+                commands = None
+            self._poll_sonuc_uygula(commands)
+        threading.Thread(target=_tek, daemon=True).start()
 
     # ================= SURELI UYUTMA (§9.8) + OTOMATIK GUNCELLEME (§9.2) =================
     def _uyku_penceresinde(self, bas, bit):

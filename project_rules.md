@@ -390,10 +390,18 @@ Saha bulgusu (5AC videosu): **tahta fiilen KİLİTLİ ama MebreCep YEŞİL (aç�
   şifre) `pollCacheTemizle` çağırıyor. Hepsi doğru. **NOT — kontrol edilecekler:** (a) `open_close` yazan
   HER yeni yol `pollCacheTemizle` çağırmalı; (b) eski PHP `workAll.php` gece kilidi v5'ten geçmez →
   cache'i düşürmez (gece kilidi 5 sn'ye kadar gecikir, kritik değil).
-- **İLERİ — "anında kilit" gerekirse (v5 push):** poll modeliyle gecikme her zaman ≤ poll aralığı. Anlık için
-  **long-poll** önerildi (EN AZ değişiklik, aynı poll ucu): isteği ~25 sn açık tut; komut yazılınca Redis
-  **pub/sub** ile bekleyen isteği uyandır → kilit **<100 ms**. Alternatif WebSocket/SSE (3547 tahtada bağlantı
-  yükü ağır). Detay brief: oturum scratchpad `v5_kilit_gecikme_brief.md`.
+- **LONG-POLL — UYGULANDI ✅ (16 Ağu, V6.00.57; v5 tarafı 15 Ağu'da HAZIR'dı):** "anında kilit" için sabit-aralık
+  QTimer yerine **sürekli long-poll döngüsü** (`client.py` `_uzun_poll_dongusu`/`_poll_baslat`/`_poll_sonuc_uygula`):
+  - **İstek:** `POST /poll` gövdesine `wait:25` (sunucu tavanı) + `rev:<önceki yanıt rev>` eklenir (`ctrl_post(wait,rev)`).
+    İlk poll'da `rev=None`. HTTP timeout `wait+15` (askıda tutmadan önce kopmasın).
+  - **Sunucu:** aynı `rev`'de komut yoksa isteği ≤25 sn askıda tutar; komut yazılınca (Redis pub/sub) **<100 ms**
+    yanıt düşer → kilit/aç **anında** uygulanır. `rev` uyuşmazsa bekletmeden güncel durumu döner.
+  - **İstemci döngüsü:** poll → uygula → `son_rev=yanıt.rev` → **HEMEN tekrar poll** (bekleme sunucuda, arada uyku YOK).
+    Ağ hatasında 3 sn geri çekilir. Patolojik ani-dönüşte 0.3 sn taban (runaway koruma).
+  - **Geriye uyumlu:** yanıtta `rev` yoksa (eski sunucu) `long_poll_destekli=False` → **fallback** sabit-aralık poll
+    (kilitli 5 sn / açık 20 sn; `_poll_hizini_ayarla` bu aralığı ayarlar). Böylece eski sunucuya karşı hammer yok.
+  - **Sonuç:** dinamik 2sn poll'a artık gerek yok — long-poll ile hem kilit hem açma komutları <100 ms. Kabul
+    kriterindeki "Kilidi Aç ≤5 sn" fazlasıyla karşılanır. Detay brief: oturum scratchpad `v5_kilit_gecikme_brief.md`.
 
 - **KABUL KRİTERLERİ:** reboot→kilitli→MebreCep KIRMIZI; uyku→YEŞİL; yerel şifreyle açma→YEŞİL; mobilden
   "Kilidi Aç"→tahta ≤2 sn açık tahtada / ≤5 sn kilitli tahtada. **DURUM: kod BİTTİ + commit'li (V6.00.56);
