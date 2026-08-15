@@ -229,6 +229,23 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
     (mebre.com.tr/exe/).** W6-3 paketleme + obfuscation + sertleştirme **imzadan ÖNCE** biter.
   - İmza sadece elle kurulumu DEĞİL, **otomatik güncellemeyi (9.2) de** güvenceye alır: apply_update aynı imzalı
     .exe'yi indirir → **imza/SHA-256 doğrular** → uygular. "Sahte güncelleme paketi" saldırısı böyle kapanır.
+- **İMZALAMA — PRATİK AKIŞ (YubiKey, DOĞRULANDI ✅ — her sürümde aynen böyle yapıyoruz):**
+  1. **YubiKey USB'yi tak** (Sectigo sertifikası PIV slot 9c'de: ECCP384; thumbprint
+     `6A03915109C1DF5DD2D12F302750D6A5FDDCF89F`, CN=HASAN HATUNOĞLU).
+  2. Derlenmiş `client.exe`'ye signtool ile imza at — **PIN kutusu açılır, PIN'i KULLANICI girer**
+     (PIN kaynağa/koda ASLA yazılmaz; `Desktop\sectigo\Sectigo-Yubikey.txt` düz metinde, taşınmalı):
+     ```
+     signtool sign /sha1 6A03915109C1DF5DD2D12F302750D6A5FDDCF89F /fd SHA256 ^
+        /tr http://timestamp.sectigo.com /td SHA256 ^
+        "...\nuitka_build_win\client.dist\client.exe"
+     ```
+     (signtool yolu: `C:\Program Files (x86)\Windows Kits\10\bin\<sürüm>\x64\signtool.exe`. `/sha1
+     <thumbprint>` = doğru sertifikayı seçer; `/tr`+`/td` RFC 3161 zaman damgası → sertifika bitse de
+     imza geçerli kalır.)
+  3. **Doğrula:** `Get-AuthenticodeSignature <exe>` → **Status: Valid**, Signer CN=HASAN HATUNOĞLU,
+     TimeStamp Sectigo olmalı. (Client `_win_imza_gecerli` bu thumbprint'i PIN'ler; imza ↔ auto-update kapısı.)
+  4. **SIRA KİLİDİ:** imza EN SON kod adımı → **imzadan sonra exe'ye DOKUNMA** (paketleme yalnız zip'ler,
+     exe'yi değiştirmez). Sonra `make_windows_package.py` → `/exe/` yükle.
 - **DAĞITIM / indirme sayfası (mebre.com.tr — kullanıcı düzenliyor):** Paketler `https://mebre.com.tr/exe/`
   altında **sürümlü adlarla** yayınlanır (ör. Windows `Fatih_Client_Kurulum_V1_00_93.zip`, Pardus
   `MebreAkilliTahta.zip`). İndirme alanında **3 program** gösterilecek (bilgisayar+telefon görselinin
