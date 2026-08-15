@@ -6,7 +6,8 @@ REM ============================================================================
 REM Ne yapar:
 REM   1) Program dosyalarini C:\MebreTahta klasorune kopyalar
 REM   2) Oturum acilisinda OTOMATIK baslamayi kaydeder (kilit modu: --win-kiosk)
-REM   3) Programi tanitim icin baslatir (Kurulum Kodu'nu panelden alip girin)
+REM   3) Programi DOGRUDAN KILIT EKRANI (--win-kiosk) olarak baslatir; operator
+REM      kilit ekraninda SAG TIK ile tanitimi yapar. Onizleme/X'li pencere YOK.
 REM ----------------------------------------------------------------------------
 set HEDEF=C:\MebreTahta
 
@@ -26,21 +27,18 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v MebreTahta /t RE
 
 echo.
 echo ============================================================
-echo  KURULUM TAMAM. Simdi TANITIM ekrani aciliyor (onizleme).
+echo  KURULUM TAMAM. Kilit ekrani aciliyor.
 echo ------------------------------------------------------------
-echo  1) Kilit ekraninda bos yere SAG TIKLAYIN.
-echo  2) "Sifre Degistir" ile varsayilan sifreyi degistirin.
-echo  3) Tekrar sag tik - "Tahta Yapilandirmasi":
-echo     Kurum Kodu + 12 haneli Kurulum Kodu + Sifre girin.
-echo  4) "Tahtalari Getir" - sinifi secin - "Onayla".
-echo  5) Tanitim bitince bu pencereyi KAPATIN (sag ustteki X).
-echo     -> Tahta hemen TAM EKRAN kilitlenecektir.
+echo  Kilit ekraninda tanitim icin:
+echo   1) Bos yere SAG TIKLAYIN.
+echo   2) "Sifre Degistir" ile varsayilan sifreyi degistirin.
+echo   3) Tekrar sag tik - "Tahta Yapilandirmasi":
+echo      Kurum Kodu + 12 haneli Kurulum Kodu + Sifre girin.
+echo   4) "Tahtalari Getir" - sinifi secin - "Onayla".
+echo  (Acil cikis gerekirse: Ctrl+Alt+Shift+Q)
 echo ============================================================
 echo.
-REM Onizleme: operator tanitim yapar. Pencereyi KAPATINCA (X) buraya doner.
-start /wait "" /D "%HEDEF%" "%HEDEF%\client.exe"
-
-REM Tanitim bitti (pencere kapandi) -> GERCEK tam-ekran kilit modunu baslat.
-REM Bir sonraki acilista da HKCU\Run kaydi ayni sekilde --win-kiosk baslatir.
-echo Tam ekran kilit modu baslatiliyor...
+REM DOGRUDAN kilit ekrani (--win-kiosk): tam ekran, X yok, taskbar gizli.
+REM Operator kilit ekraninda SAG TIK ile tanitir. Bir sonraki acilista da
+REM HKCU\Run kaydi ayni sekilde --win-kiosk baslatir.
 start "" /D "%HEDEF%" "%HEDEF%\client.exe" --win-kiosk
