@@ -7726,6 +7726,16 @@ if __name__ == '__main__':
     # Konsol cikisini UTF-8'e sabitle: Turkce Windows (cp1254) konsolunda emoji (✅/❌)
     # basimi UnicodeEncodeError ile cokuyordu (--test/--set-enroll-secret/--reset). errors=
     # 'replace' -> hicbir zaman cokmez. Derlenmis (Nuitka) exe'de de gecerli.
+    # KONSOLSUZ (GUI) derlemede sys.stdout/stderr None olur; bare print() cagrilari
+    # 'NoneType has no write' ile COKERDI. devnull'a yonlendir -> konsol penceresi
+    # HIC acilmaz (kiosk'ta siyah cmd penceresi cikmasin) ama print()'ler cokmez.
+    try:
+        if sys.stdout is None:
+            sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+        if sys.stderr is None:
+            sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+    except Exception:
+        pass
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')

@@ -16,7 +16,7 @@ python -m nuitka ^
     --msvc=latest ^
     --enable-plugin=pyqt5 ^
     --assume-yes-for-downloads ^
-    --windows-console-mode=attach ^
+    --windows-console-mode=disable ^
     --include-data-dir=resources=resources ^
     --include-data-files=version.txt=version.txt ^
     --output-dir=nuitka_build_win ^
