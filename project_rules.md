@@ -246,14 +246,32 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
      TimeStamp Sectigo olmalı. (Client `_win_imza_gecerli` bu thumbprint'i PIN'ler; imza ↔ auto-update kapısı.)
   4. **SIRA KİLİDİ:** imza EN SON kod adımı → **imzadan sonra exe'ye DOKUNMA** (paketleme yalnız zip'ler,
      exe'yi değiştirmez). Sonra `make_windows_package.py` → `/exe/` yükle.
-- **DAĞITIM / indirme sayfası (mebre.com.tr — kullanıcı düzenliyor):** Paketler `https://mebre.com.tr/exe/`
-  altında **sürümlü adlarla** yayınlanır (ör. Windows `Fatih_Client_Kurulum_V1_00_93.zip`, Pardus
-  `MebreAkilliTahta.zip`). İndirme alanında **3 program** gösterilecek (bilgisayar+telefon görselinin
-  üzerinde): **(1) MebreOkul · (2) Windows için Akıllı Tahta Kilit · (3) Pardus için Akıllı Tahta Kilit.**
-  Website'i kullanıcı düzenler; biz paketleri bu yola koyarız (her şey bitince).
-- **apply_update BAĞLANTISI:** Otomatik güncelleme (9.2) tam bu `/exe/` URL'lerinden indirir → imza/SHA-256
-  doğrular → uygular. `guncelle_hedef` (hedef sürüm) → indirilecek paket adı türetilir (ör.
-  `Fatih_Client_Kurulum_V1_00_XX.zip`). URL şeması client'ta config alanı olur.
+- **PAKET İSİMLERİ — KESİN (her `/exe/` yüklemesinde bu adlar kullanılır) — DOĞRULANDI ✅:**
+  Taban adres `https://mebre.com.tr/exe` (client config `guncelle_url` ile değişebilir). **İKİ isim şeması var,
+  karıştırma:**
+
+  | Dosya | İsim | Nereden okunur | Kim çeker |
+  |---|---|---|---|
+  | **Windows auto-update paketi** | **`MebreAkilliTahta_Windows.zip`** (SABİT, üstüne yazılır) | `client.py` `_paket_adi()` | Tahta `apply_update` |
+  | **Pardus auto-update paketi** | **`MebreAkilliTahta_Pardus.zip`** (SABİT, üstüne yazılır) | `client.py` `_paket_adi()` | Tahta `apply_update` |
+  | Windows sürüm etiketi | `surum_windows.txt` (içerik ör. `V6.00.56`) | `make_windows_package.py` üretir | ynt5 update modalı (hedefi oto-doldurur) |
+  | Pardus sürüm etiketi | `surum_pardus.txt` | `make_pardus_package.py` üretir | ynt5 update modalı |
+  | Windows manuel indirme | `Fatih_Client_Kurulum_Win_V<surum>.zip` (SÜRÜMLÜ) | `make_windows_package.py` üretir | İnsan (indirme sayfası) |
+  | Pardus manuel indirme + sağlama | `MebreAkilliTahta_Pardus.zip` + `.sha256` | `make_pardus_package.py` üretir | İnsan / Pardus doğrulaması |
+
+  - **KRİTİK:** Auto-update **SÜRÜMLÜ isim TÜREYTMEZ** — daima SABİT `MebreAkilliTahta_<OS>.zip`'i çeker
+    (`{guncelle_url}/{_paket_adi()}`). Yani yeni sürüm çıkınca **sabit-isim zip'i ÜSTÜNE yazmak ŞART**;
+    yoksa tahtalar eski paketi indirir. `make_windows_package.py` sürümlü zip üretir → **onu
+    `MebreAkilliTahta_Windows.zip` olarak da kopyalayıp yükle** (Pardus paketleyici zaten sabit ad verir).
+  - **Paket İÇİ yapı:** zip kökünde `app/` klasörü (içinde imzalı `client.exe`/`client.bin` + kütüphaneler);
+    `apply_update` yalnız `app/`'i alıp takas eder (Win robocopy /MIR, Pardus rsync). Kök ayrıca kur.bat/
+    Readme içerebilir (manuel kurulum için) — auto-update onları yok sayar.
+- **DAĞITIM / indirme sayfası (mebre.com.tr — kullanıcı düzenliyor):** İndirme alanında **3 program**
+  gösterilecek (bilgisayar+telefon görselinin üzerinde): **(1) MebreOkul · (2) Windows için Akıllı Tahta
+  Kilit · (3) Pardus için Akıllı Tahta Kilit.** Website'i kullanıcı düzenler; biz paketleri bu yola koyarız.
+- **apply_update BAĞLANTISI:** Otomatik güncelleme (9.2) bu `/exe/` URL'lerinden SABİT-isim paketini indirir →
+  imza (Win Authenticode thumbprint) / SHA-256 (Pardus) doğrular → uygular. `guncelle_hedef` = hedef SÜRÜM
+  etiketi (indirilecek dosya adı DEĞİL); tahta kendi sürümü ile karşılaştırır, eşitse `guncelle_hedef`'i ACK ile boşlar.
 
 ### 9.2 Zamanlı / okul-bazlı güncelleme (YENİ sistem — asıl acı nokta)
 - **Mevcut:** Uzaktan güncelleme kanalı YOK. Güncelleme %100 elle (`git pull` + `setup.sh`/dosya kopyala,
