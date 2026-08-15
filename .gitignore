@@ -78,3 +78,8 @@ fatih_projesi_python/client/config.ini
 fatih_projesi_python/client/nuitka_build/
 fatih_projesi_python/client/nuitka_build_win/
 *.zip
+
+# Paketleme + build artiklari
+*.sha256
+nuitka-crash-report.xml
+**/nuitka-crash-report.xml
