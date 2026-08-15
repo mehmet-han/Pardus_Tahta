@@ -6148,8 +6148,11 @@ class FatihClientApp(QWidget):
         except Exception:
             kurulum = r"C:\pf\Tahta"
         kok = os.path.dirname(kurulum) or r"C:\pf"                        # C:\pf
+        svc = r"C:\ProgramData\MebreSvc"                                  # yedek + healer konumu
         appdata = os.path.join(os.path.expanduser('~'), '.config', 'fatih-client')
         bat = os.path.join(tempfile.gettempdir(), 'mebre_kaldir.bat')
+        # SIRA: once watchdog gorevini durdur (yoksa healer dosyalari geri koyar!),
+        # sonra Run kaydi, client kapanmasini bekle, en son ana+yedek+kimlik sil.
         icerik = (
             "@echo off\r\n"
             "chcp 65001 >nul\r\n"
@@ -6159,9 +6162,11 @@ class FatihClientApp(QWidget):
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
             'attrib -h -s "%s" >nul 2>&1\r\n'
+            'attrib -h -s "%s" >nul 2>&1\r\n'
             'rmdir /S /Q "%s" >nul 2>&1\r\n'
             'rmdir /S /Q "%s" >nul 2>&1\r\n'
-        ) % (kok, kurulum, appdata)
+            'rmdir /S /Q "%s" >nul 2>&1\r\n'
+        ) % (kok, svc, kurulum, svc, appdata)
         try:
             with open(bat, 'w', encoding='utf-8') as f:
                 f.write(icerik)
