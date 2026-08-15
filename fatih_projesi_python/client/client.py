@@ -5670,18 +5670,34 @@ class FatihClientApp(QWidget):
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    # Sectigo kod imzalama sertifikamizin parmak izi (thumbprint). Imza BUNUNLA sabitlenir.
+    # NOT: sertifika yenilenince (son ~Nis 2027) bu deger guncellenmeli.
+    _IMZA_THUMBPRINT = "6A03915109C1DF5DD2D12F302750D6A5FDDCF89F"
+
     def _win_imza_gecerli(self, exe):
-        """Windows: yeni client.exe Authenticode imzasi GECERLI + bizim sertifika mi?
-        Kurcalanmis/sahte paket boylece reddedilir (SmartScreen'in yaptigi kontrolun ayni)."""
+        """Windows: yeni client.exe BIZIM sertifikamizla mi imzalanmis + kurcalanmamis mi?
+
+        KRITIK (15 Ağu bug'i): eskiden Status -eq 'Valid' istiyordu; bu, tahtanin sertifika
+        ZINCIRIMIZE guvenmesini gerektirir. Sertifikamiz ECC (Sectigo E36); taze/guncellenmemis
+        bir Windows'ta ilgili kok sertifika olmayabilir -> zincir kurulamaz -> 'Valid' cikmaz ->
+        gecerli imza REDDEDILIRDI (sahada gozlemlendi: 'Authenticode imza dogrulanamadi').
+
+        DOGRU YAKLASIM: zincir guvenine BAKMA; imzayi BIZIM sertifikaya (thumbprint) SABITLE +
+        dosya kurcalanmis mi (HashMismatch) ve imzasiz mi (NotSigned) diye bak. Boylece kok
+        sertifika olmasa bile bizim imzali exe'miz kabul edilir; sahte (baska sertifika) ya da
+        kurcalanmis paket reddedilir. Thumbprint eslesmesi = ozel anahtarimiz (YubiKey) sart."""
         import subprocess
         try:
-            ps = ("$s=Get-AuthenticodeSignature -LiteralPath %r; "
-                  "if($s.Status -ne 'Valid'){exit 3}; "
-                  "if($s.SignerCertificate.Subject -notmatch 'HATUNO'){exit 4}; exit 0") % exe
+            ps = ("$s=Get-AuthenticodeSignature -LiteralPath '%s'; "
+                  "if($s.Status -eq 'NotSigned' -or $s.Status -eq 'HashMismatch'){exit 3}; "
+                  "if(-not $s.SignerCertificate){exit 4}; "
+                  "if($s.SignerCertificate.Thumbprint -ne '%s'){exit 5}; exit 0"
+                  ) % (exe, self._IMZA_THUMBPRINT)
             r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                                capture_output=True, timeout=60)
             if r.returncode != 0:
-                logging.error(f"[GUNCELLEME] imza reddedildi (kod {r.returncode}).")
+                logging.error(f"[GUNCELLEME] imza reddedildi (kod {r.returncode}: "
+                              f"3=imzasiz/kurcalanmis 4=sertifika-yok 5=bizim-degil).")
             return r.returncode == 0
         except Exception as e:
             logging.error(f"[GUNCELLEME] imza dogrulama hatasi: {e}")
