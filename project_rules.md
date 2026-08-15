@@ -325,6 +325,45 @@ dağıtımı) çözülmeden sahadaki eski tahtalardan geri dönüş gelmez.
 - **Güvenlik notu:** Uyku sırasında tahta tamamen açık → öğrenci erişimi mümkün; bu KASITLI (sınav modu).
   Aralık sınırlı olduğu için risk bounded; panelde "açık" durumu net gösterilir.
 
+### 9.9 KİLİT DURUMU BİLDİRİMİ (ACK) + KİLİT GECİKMESİ — DOĞRULANDI ✅ (16 Ağu, V6.00.56)
+Saha bulgusu (5AC videosu): **tahta fiilen KİLİTLİ ama MebreCep YEŞİL (açık)** gösteriyordu; ayrıca
+**kilit komutu ~5 sn geç** devreye girip öğrenci o boşlukta tahtaya dalıyordu. İki ayrı kök:
+
+- **Kök 1 — düşen ACK (yeşil sorunu):** Tahta kendi kendine kilitlenince (açılışta kilitli başlama,
+  oto-kilit/çalışma-saati, sınav, yerel şifreyle açma) `open_close` ACK'ini atar. Ama **açılışta ağ
+  hazır değilken ACK düşüyor ve TEKRAR DENENMİYORDU** → kolon 0 kalır → mobil yeşil. (Komut yolu ve v5
+  hep doğruydu; eksik olan retry'di.)
+- **Çözüm 1 — ACK kuyruk + retry (`client.py` `acknowledge_command`/`_kilit_ack_gonder`):** kilit durumu
+  **tek slotlu kuyruğa** yazılır (`_bekleyen_kilit_ack`, üstüne yazılır → **son durum en son**). Gönderim
+  başarısızsa slotta KALIR; `poll_server` bir sonraki **başarılı poll'da** tekrar gönderir (ağ döndü
+  demektir). **En az bir kez teslim, sıra korunur.** Sonuç: kilitli açılan tahta **~1 poll içinde
+  MebreCep'te KIRMIZI**'ya döner. (Eski geçersiz `tahtaLock` kolon çağrısı da kaldırıldı; yalnız `open_close`.)
+
+- **Kök 2 — poll aralığı = kilit gecikmesi:** v5 komut yazınca poll cache'ini kendisi düşürür → komut
+  sonrası poll TAZE gelir; yani gecikme = tahtanın bir sonraki poll'una kadar geçen süre = **client poll
+  aralığı** (sabit 5 sn idi).
+- **Çözüm 2 — dinamik poll (`_poll_hizini_ayarla`):** **AÇIKken 2 sn** (kilit komutu çabuk yakalansın,
+  öğrenci boşluğa dalmasın), **KİLİTLİYken 5 sn** (açma daha az kritik + 3547 tahtada sunucu yükü). `lock_system`
+  → 5 sn, `unlock_system` → 2 sn olarak timer aralığını ayarlar.
+
+- **UYKU semantiği (netleşti):** Uyku/sınav/tatil penceresinde tahta **AÇIK = kullanılabilir → mobilde
+  YEŞİL DOĞRU.** (Bir ara "uyku→kırmızı" düşünüldü, YANLIŞ.) Kural: **açık=yeşil, kilitli=kırmızı.** Uyku'ya
+  girişte `unlock_system` zaten `open_close=0` ACK'ler → doğru. §9.8 ile tutarlı.
+
+- **v5 tarafı — bug YOK (incelendi):** `POST /client/akilli_tahta_cihaz/ack` whitelist'li kolona yazıp poll
+  cache'ini düşürüyor; poll 5 sn cache + FAIL-SAFE kilitli; yönetim yazımları (kilitle/aç, tümünü-kapat,
+  şifre) `pollCacheTemizle` çağırıyor. Hepsi doğru. **NOT — kontrol edilecekler:** (a) `open_close` yazan
+  HER yeni yol `pollCacheTemizle` çağırmalı; (b) eski PHP `workAll.php` gece kilidi v5'ten geçmez →
+  cache'i düşürmez (gece kilidi 5 sn'ye kadar gecikir, kritik değil).
+- **İLERİ — "anında kilit" gerekirse (v5 push):** poll modeliyle gecikme her zaman ≤ poll aralığı. Anlık için
+  **long-poll** önerildi (EN AZ değişiklik, aynı poll ucu): isteği ~25 sn açık tut; komut yazılınca Redis
+  **pub/sub** ile bekleyen isteği uyandır → kilit **<100 ms**. Alternatif WebSocket/SSE (3547 tahtada bağlantı
+  yükü ağır). Detay brief: oturum scratchpad `v5_kilit_gecikme_brief.md`.
+
+- **KABUL KRİTERLERİ:** reboot→kilitli→MebreCep KIRMIZI; uyku→YEŞİL; yerel şifreyle açma→YEŞİL; mobilden
+  "Kilidi Aç"→tahta ≤2 sn açık tahtada / ≤5 sn kilitli tahtada. **DURUM: kod BİTTİ + commit'li (V6.00.56);
+  Windows exe derlendi; imza + deploy + saha doğrulaması bekliyor.**
+
 ### 9.7 Sıra önerisi (başla denince)
 1. **Obfuscation + sabit-sır temizliği (9.4)** — diğer her şeyin ön koşulu; sırlar açıkken diğer sertleştirme
    yarım kalır. 2. **Zamanlı güncelleme (9.2)** — asıl acı nokta + hata denetimini sahaya taşır.
