@@ -178,7 +178,7 @@ cat > /etc/xdg/autostart/fatih-client-autostart.desktop <<EOF
 Type=Application
 Name=Mebre Akıllı Tahta
 Comment=Akıllı Tahta Kilit Sistemi
-Exec=$INSTALL_DIR/client.bin
+Exec=env REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt $INSTALL_DIR/client.bin
 Hidden=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
