@@ -66,6 +66,15 @@ echo "[1/6] Çalışma-anı bağımlılıkları kontrol ediliyor..."
 apt-get install -y --no-install-recommends libxcb-xinerama0 x11-xserver-utils 2>/dev/null || \
     echo "  ⚠ Bazı sistem paketleri kurulamadı (internet yok olabilir) — çoğu zaman sorun olmaz."
 
+# MEB KÖK SERTİFİKASI (FATİH ağı SSL denetimi) — TÜBİTAK BİLGEM YTE kılavuzu (11.12.2024).
+# FATİH/MEB okul ağı HTTPS'i kendi MEB sertifikasıyla açıp inceliyor (SSL inspection).
+# eba-certs paketi MEB kök CA'sını /etc/ssl/certs/ca-certificates.crt'ye ekler -> istemci
+# (REQUESTS_CA_BUNDLE ile sistem demetini kullanir, asagida) apiv5.mebre.com.tr'ye baglanir.
+# Pardus ETAP/Egitim'de zaten kuruludur; duz Pardus'ta biz kuruyoruz. Best-effort (internet lazim).
+apt-get install -y eba-certs 2>/dev/null && echo "  ✓ MEB sertifikasi (eba-certs) kuruldu." || \
+    echo "  ⚠ eba-certs kurulamadi (internet yok ya da depo erisimi). FATİH aginda enroll takilirsa: sudo apt install eba-certs"
+update-ca-certificates 2>/dev/null || true
+
 # --- [2/6] Program dosyaları ---
 echo "[2/6] Program dosyaları kopyalanıyor..."
 pkill -9 -f 'client.bin' 2>/dev/null || true
@@ -145,6 +154,10 @@ Wants=network-online.target
 Type=simple
 User=etapadmin
 Environment=DISPLAY=:0
+# MEB CA'yi (eba-certs) gormesi icin istemci SISTEM CA demetini kullanir; yoksa gomulu
+# certifi'yi kullanip FATİH SSL denetimine takilirdi. requests, verify=True olsa da bu
+# env'i dinler (dogrulandi). Sistem demeti standart CA'lari da icerir -> ev interneti de calisir.
+Environment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/client.bin
 Restart=always
