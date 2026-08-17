@@ -339,6 +339,35 @@ Kaynak: `C:\Github\Fatih_Client_CSharp` (arşiv/referans).
 - **AÇIK — dosya gizli değil:** `/opt/fatih-client` 755 dünya-okunur; config `~/.config` umask 644.
   → **Hedef:** 700/root + gizleme + config 600.
 
+### 9.10 FATİH AĞI SSL DENETİMİ — MEB CA (eba-certs) + REQUESTS_CA_BUNDLE ✅ (17 Ağu, saha)
+**Saha (gerçek Pardus tahta, FATİH internetinde):** enroll "Güvenli bağlantı kurulamadı. Okul ağı
+engelliyor olabilir." Ev internetinde SORUN YOK → sebep **FATİH/MEB okul ağı**. TÜBİTAK BİLGEM YTE
+kılavuzu (`Pardus_Sertifika_Rehberi.pdf`, 11.12.2024) doğruladı: **FATİH ağı HTTPS'i kendi MEB
+sertifikasıyla açıp inceliyor (SSL inspection/MITM).** Tahtanın gittiği adres `apiv5.mebre.com.tr`
+(base URL çözüldü); `mebre.com.tr` okullarda whitelist'te ama subdomain + SSL bump ayrı sorun.
+
+**İki katman, ikisi de şart:**
+1. **MEB kök CA'sı sisteme kurulmalı:** `sudo apt install eba-certs` → `/etc/ssl/certs/ca-certificates.crt`'ye
+   MEB CA ekler. Pardus ETAP/Eğitim'de HAZIR gelir; düz Pardus'ta elle. (Pardus depoları FATİH'te açık.)
+2. **İstemci sistem CA demetini kullanmalı:** client `requests`+**certifi (gömülü)** kullandığından `eba-certs`
+   tek başına YETMEZ. Çözüm: `REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt` — requests bunu
+   `verify=True` olsa da dinler (DOĞRULANDI). `verify` ASLA kapatılmaz (güvenlik korunur). Sistem demeti
+   standart CA'ları da içerdiği için ev interneti de çalışır.
+
+**Kalıcı fix (yeni tahtalar, commit `1c015e0`):** `setup_pardus.sh` → (a) `apt install -y eba-certs` +
+`update-ca-certificates`, (b) systemd servise `Environment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt`.
+
+**MEVCUT tahtaya elle (rebuild GEREKMEZ):**
+```
+sudo apt install -y eba-certs
+sudo mkdir -p /etc/systemd/system/fatih-client-app.service.d
+printf '[Service]\nEnvironment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt\n' | sudo tee /etc/systemd/system/fatih-client-app.service.d/ca.conf
+sudo systemctl daemon-reload && sudo systemctl restart fatih-client-app
+```
+**Windows notu:** Windows tahta FATİH'te ise aynı sorun olur (requests+certifi Windows deposuna bakmaz).
+Çözüm: MEB CA'yı Windows deposuna kur + `REQUESTS_CA_BUNDLE` ya da certifi'ye MEB CA ekle. (5AC şu an
+FATİH'te değil, sorun çıkmadı; gerektiğinde yapılır.)
+
 ### 9.6 Hata denetimi — DOĞRULANDI ✅ (iki OS)
 Tek kod tabanı, **platform-kapısı YOK**: `_hata_bildir`/excepthook/`report_error`/poll-platform hepsi
 Pardus+Windows'ta birebir. Yalnız **güncel client.py** çalışan tahtalarda devreye girer → 9.2 (güncelleme
