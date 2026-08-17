@@ -364,6 +364,14 @@ sudo mkdir -p /etc/systemd/system/fatih-client-app.service.d
 printf '[Service]\nEnvironment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt\n' | sudo tee /etc/systemd/system/fatih-client-app.service.d/ca.conf
 sudo systemctl daemon-reload && sudo systemctl restart fatih-client-app
 ```
+**LAUNCHER TUZAĞI + KESİN FİX (V6.00.59):** `REQUESTS_CA_BUNDLE`'ı önce yalnız systemd servise ekledim
+ama Pardus client'ı GERÇEKTE `/etc/xdg/autostart/fatih-client-autostart.desktop` başlatıyor (masaüstü
+oturumu) — orada env yoktu → fix hiç devreye girmedi, SSL hatası sürdü. Düzeltmeler: (a) autostart
+`.desktop` Exec'ine `env REQUESTS_CA_BUNDLE=...` eklendi (`d0b13ed`), (b) **ASIL: client kodu Linux'ta
+başlangıçta env verilmemişse `REQUESTS_CA_BUNDLE`'ı `/etc/ssl/certs/ca-certificates.crt`'ye kendi set
+eder (`453a046`, V6.00.59)** — nasıl başlatılırsa başlatılsın sistem demetini kullanır, launcher'a bağlı
+değil. eba-certs yine şart (MEB CA'yı o demete koyar). Panik çıkış terminale ulaşmak için: **Ctrl+Alt+Shift+Q**.
+
 **Windows notu:** Windows tahta FATİH'te ise aynı sorun olur (requests+certifi Windows deposuna bakmaz).
 Çözüm: MEB CA'yı Windows deposuna kur + `REQUESTS_CA_BUNDLE` ya da certifi'ye MEB CA ekle. (5AC şu an
 FATİH'te değil, sorun çıkmadı; gerektiğinde yapılır.)
