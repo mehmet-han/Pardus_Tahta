@@ -1422,7 +1422,10 @@ class BoardConfigWidget(QWidget):
 
     def close_widget(self, *args, **kwargs):
         if self.close_callback:
-            self.close_callback()
+            try:
+                self.close_callback()
+            except RuntimeError:
+                pass  # callback hedefi (or. silinmis overlay) yok olmus — sessizce gec
 
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
@@ -1776,7 +1779,10 @@ class ChangePasswordWidget(QWidget):
 
     def close_widget(self, *args, **kwargs):
         if self.close_callback:
-            self.close_callback()
+            try:
+                self.close_callback()
+            except RuntimeError:
+                pass  # callback hedefi (or. silinmis overlay) yok olmus — sessizce gec
 
     def change_password(self, checked=False):
         logging.info("[ChangePassword] change_password called")
@@ -1954,9 +1960,19 @@ class LockScreenOverlay(QFrame):
             self.move(x, y)
 
     def close_overlay(self, *args, **kwargs):
-        self.hide()
-        self.deleteLater()
-        # X11'de parent üzerinde raise_() veya activateWindow() çağırmak, Cinnamon WM'nin 
+        # IDEMPOTENT + GUVENLI (saha hatasi V6.00.57: 'wrapped C/C++ object ... has been deleted').
+        # deleteLater() sonrasi ikinci cagri ( or. ChangePassword close_widget -> close_callback ->
+        # close_overlay) silinmis nesnede self.hide() cagirinca RuntimeError firlatiyordu. Bayrak
+        # tekrar-girisi engeller; try/except zaten silinmis C++ nesnesini no-op yapar.
+        if getattr(self, '_overlay_kapandi', False):
+            return
+        self._overlay_kapandi = True
+        try:
+            self.hide()
+            self.deleteLater()
+        except RuntimeError:
+            pass  # C++ nesnesi zaten silinmis — yapacak bir sey yok
+        # X11'de parent üzerinde raise_() veya activateWindow() çağırmak, Cinnamon WM'nin
         # BypassWindow olarak ayarlanmış pencereyi tamamen un-map etmesine (gizlemesine) neden oluyor.
         # Overlay sadece bir QFrame olduğu için parent hiçbir zaman gerçek bir X11 focus'u kaybetmiş olmadığından
         # odak geri alma koduna gerek yoktur.
