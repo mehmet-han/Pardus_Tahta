@@ -27,6 +27,17 @@ import platform
 # (evdev, pyudev) Windows'ta yuklenemez -> import'u korumali yap. Zorlama katmani (klavye kilidi,
 # USB izleme) platforma gore ayrilir; Windows implementasyonu ayri eklenir (Faz W).
 IS_WINDOWS = platform.system() == 'Windows'
+
+# FATİH/MEB okul ağı SSL denetimi (17 Ağu saha): ağ HTTPS'i kendi MEB sertifikasıyla açıp
+# inceliyor. MEB kök CA'sı 'eba-certs' paketiyle SİSTEM demetine (/etc/ssl/certs/ca-certificates.crt)
+# eklenir. Ama requests VARSAYILAN olarak GÖMÜLÜ certifi'yi kullanır -> MEB CA'yı görmez -> TLS reddi.
+# ÇÖZÜM (launcher'dan BAĞIMSIZ): Linux'ta, env zaten verilmemişse, requests'i sistem demetine yönlendir.
+# Sistem demeti standart CA'ları da içerdiğinden ev interneti de çalışır; verify ASLA kapatılmaz.
+if not IS_WINDOWS and 'REQUESTS_CA_BUNDLE' not in os.environ:
+    _SYS_CA = '/etc/ssl/certs/ca-certificates.crt'
+    if os.path.isfile(_SYS_CA):
+        os.environ['REQUESTS_CA_BUNDLE'] = _SYS_CA
+
 try:
     from evdev import InputDevice, ecodes, list_devices
     from pyudev import Context, Monitor
