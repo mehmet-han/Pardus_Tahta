@@ -29,8 +29,12 @@ echo "========================================================="
 
 # --- [0/6] Ön kontroller ---
 echo "[0/6] Ön kontroller..."
-if [ ! -x "$DIST_DIR/client.bin" ]; then
-    echo "❌ KURULUM DURDURULDU: $DIST_DIR/client.bin yok. USB'yi olduğu gibi kullanın."
+# GUI dosya yoneticisiyle zip acilinca Linux'ta CALISTIRMA izni (+x) sik kaybolur ->
+# client.bin orada olur ama -x DUSER, setup 'yok' sanirdi (saha 17 Ağu). Once +x geri ver,
+# SONRA VARLIGA (-f) bak. Kurulu kopyaya zaten [2/6]'da chmod +x uygulaniyor.
+chmod +x "$DIST_DIR/client.bin" 2>/dev/null || true
+if [ ! -f "$DIST_DIR/client.bin" ]; then
+    echo "❌ KURULUM DURDURULDU: $DIST_DIR/client.bin yok. Zip'i app/ klasörüyle birlikte tam kopyalayın."
     exit 1
 fi
 _BOS_MB=$(df -Pm /opt 2>/dev/null | awk 'NR==2{print $4}')
