@@ -1695,7 +1695,7 @@ class ChangePasswordWidget(QWidget):
         current_label = QLabel("Mevcut Şifre:")
         current_label.setFont(QFont("Arial", 12))
         self.current_field = KeyboardLineEdit()
-        self.current_field.set_on_enter_callback(self.change_password)
+        self.current_field.set_on_enter_callback(self._enter_ilerle)
         self.current_field.setMinimumWidth(250)
         self.current_field.setMinimumHeight(35)
         self.current_field.setFont(QFont("Arial", 12))
@@ -1721,7 +1721,7 @@ class ChangePasswordWidget(QWidget):
         new_label = QLabel("Yeni Şifre:")
         new_label.setFont(QFont("Arial", 12))
         self.new_field = KeyboardLineEdit()
-        self.new_field.set_on_enter_callback(self.change_password)
+        self.new_field.set_on_enter_callback(self._enter_ilerle)
         self.new_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.new_field.setMinimumWidth(250)
         self.new_field.setMinimumHeight(35)
@@ -1782,10 +1782,27 @@ class ChangePasswordWidget(QWidget):
         for field in [self.current_field, self.new_field, self.confirm_field]:
             field.installEventFilter(self)
 
+    def _enter_ilerle(self):
+        """AKILLI ENTER (17 Ağu saha): dokunmatikte tap alt alana odak GECIREMEYEBILIYOR ->
+        operator numpad'e yazip Enter'a basinca bir SONRAKI BOS alana odak+numpad hedefi tasinir;
+        tum alanlar doluysa dogrudan kaydet. Boylece hic tap gerekmeden Enter-Enter-Enter akisi."""
+        for f in (self.current_field, self.new_field, self.confirm_field):
+            if not f.text() and not f.isReadOnly():
+                f.setFocus()
+                self.numpad.set_target(f)
+                return
+        self.change_password()
+
     def eventFilter(self, obj, event):
         """QLineEdit focus olduğunda numpad hedefini güncelle"""
         if event.type() == event.Type.FocusIn and isinstance(obj, QLineEdit):
             self.numpad.set_target(obj)
+        # DOKUNMATIK SAHA FIX (17 Ağu): bazi dokunmatik panellerde tap FocusIn URETMEYEBILIYOR
+        # (operator alt inputa gecemedi, numpad eski alana yazmaya devam etti). Tap'in kendisi
+        # (MouseButtonPress) ile de hedefi tasi + odagi zorla — FocusIn gelmese bile calisir.
+        elif event.type() == event.Type.MouseButtonPress and isinstance(obj, QLineEdit):
+            self.numpad.set_target(obj)
+            obj.setFocus()
         return super().eventFilter(obj, event)
 
     def close_widget(self, *args, **kwargs):
@@ -1806,7 +1823,16 @@ class ChangePasswordWidget(QWidget):
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
             self.status_label.setText("Hata: Tüm alanları doldurun!")
             logging.warning("[ChangePassword] Empty fields detected")
+            # UI-TAKILMA TELEMETRISI (17 Ağu saha): operator dokunmatikte alt alana gecemedi,
+            # ayni dogrulama hatasina defalarca carpti — uzaktan GORUNMUYORDU. 3+ ardarda bos-alan
+            # hatasi = muhtemel odak/dokunmatik sorunu -> hata gunlugune 'uyari' dus (throttle'li).
+            self._bos_alan_sayac = getattr(self, '_bos_alan_sayac', 0) + 1
+            if self._bos_alan_sayac == 3:
+                _hata_bildir("arayuz", "uyari",
+                             "SifreDegistir: 3x 'Tum alanlari doldurun' — dokunmatik odak/giris sorunu olabilir",
+                             f"dolu: mevcut={bool(current)} yeni={bool(new)} tekrar={bool(confirm)}")
             return
+        self._bos_alan_sayac = 0
 
         # Mevcut şifre doğrulama — PBKDF2 veya eski düz metin
         if not admin_sifre_dogru(current):
@@ -1913,6 +1939,14 @@ class LockScreenOverlay(QFrame):
     """
     def __init__(self, parent, title="", content_widget=None, text=""):
         super().__init__(parent)
+        # OPERATOR-FORMDA BAYRAGI (17 Ağu saha): operator yapilandirma/sifre formundayken
+        # internet kesilirse poll'un internet-kaybi KILIDI formun ustune binip isi bozuyordu.
+        # Overlay acikken parent'a zaman damgasi koy; internet-kaybi kilidi bunu gorup 5 dk'ya
+        # kadar ERTELENIR (sunucu/mobil kilit komutlari ETKILENMEZ — sadece internet-kaybi).
+        try:
+            parent._yapilandirma_overlay_ts = time.time()
+        except Exception:
+            pass
         self.setStyleSheet("""
             LockScreenOverlay {
                 background-color: rgba(20, 20, 35, 240);
@@ -1978,6 +2012,13 @@ class LockScreenOverlay(QFrame):
         if getattr(self, '_overlay_kapandi', False):
             return
         self._overlay_kapandi = True
+        try:
+            # Operator formdan cikti -> internet-kaybi kilidi ertelemesi biter.
+            p = self.parent()
+            if p is not None and getattr(p, '_yapilandirma_overlay_ts', None):
+                p._yapilandirma_overlay_ts = None
+        except Exception:
+            pass
         try:
             self.hide()
             self.deleteLater()
@@ -5608,9 +5649,15 @@ class FatihClientApp(QWidget):
                 # giriliyor. Burada kriz kontrolu olmayinca ilk basarisiz poll tahtayi
                 # tekrar kilitliyor ve 24 saatlik pencere hicbir ise yaramiyordu.
                 _kriz = kriz_penceresi_kalan()
+                _ovl_ts = getattr(self, '_yapilandirma_overlay_ts', None)
                 if _kriz > 0:
                     logging.warning(
                         f"Internet yok ama kriz penceresi acik ({_kriz // 60} dk) — kilitlenmiyor.")
+                elif _ovl_ts and (time.time() - _ovl_ts) < 300:
+                    # OPERATOR FORMDA (17 Ağu saha): yapilandirma/sifre overlay'i acikken internet
+                    # kesilirse kilit formun ustune binip operatorun isini bozuyordu. En fazla 5 dk
+                    # ERTELE (kotu niyet siniri); overlay kapaninca ilk basarisiz poll normal kilitler.
+                    logging.warning("Internet yok ama operator yapilandirma formunda — kilit ERTELENDI (<=5 dk).")
                 elif not self.is_locked:
                     # USB kilit acma kaldirildi -> internet kopunca dogrudan kilitle (uyku/kriz haric).
                     logging.warning("İnternet bağlantısı kesildi, sistem kilitleniyor.")
