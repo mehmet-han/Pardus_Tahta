@@ -6112,8 +6112,12 @@ class FatihClientApp(QWidget):
                         with open(log_path, 'r', errors='ignore') as f:
                             lines = f.readlines()
                         last_lines = ''.join(lines[-50:])  # Son 50 satır
-                        self.network_client.save_log(last_lines, "logfile")
-                        self.acknowledge_command("logSend", "0")
+                        # vog MUTLAKA 'logistek' (C# ile ayni): ynt5 'Log Gor' sbort_log'u
+                        # _v_name='logistek' ile okur; 'logfile' gonderince log gelir ama GORUNMEZDI
+                        # (saha: 5AC 'Bekliyor'da kaldi). save_log('logistek') ayrica /log_reset
+                        # cagirip log_istek bayragini sifirlar -> eski whitelist-disi 'logSend'
+                        # ACK'i (400 uretiyordu) kaldirildi.
+                        self.network_client.save_log(last_lines, "logistek")
                 except Exception as le:
                     logging.error(f"Error sending logs: {le}")
 
