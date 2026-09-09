@@ -84,6 +84,20 @@ echo "[2/6] Program dosyaları kopyalanıyor..."
 pkill -9 -f 'client.bin' 2>/dev/null || true
 pkill -9 -f 'main.py'    2>/dev/null || true
 pkill -9 -f 'client.py'  2>/dev/null || true
+pkill -9 -f 'watchdog.py' 2>/dev/null || true
+# ESKİ NESİL (V1 setup.sh, ör. Fatih_Client_Kurulum_V1_00_93) TEMİZLİĞİ (9 Eyl):
+# eski kurulum FARKLI adlı systemd birimleri de bırakıyordu; yeni setup yalnız
+# fatih-client-app'i üstüne yazıyor, bunlar AYAKTA kalıp silinen client.py'yi
+# başlatmaya çalışıyordu (restart döngüsü + journal gürültüsü).
+for _es in fatih-client.service fatih-kiosk-reset.service fatih-prelogin.service; do
+    systemctl disable --now "$_es" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$_es"
+done
+systemctl daemon-reload 2>/dev/null || true
+# Eski kurulumun artık dosyaları (yeni pakette yok; kalırsa kafa karıştırır):
+rm -f  "$INSTALL_DIR/watchdog.py" "$INSTALL_DIR/client.c" "$INSTALL_DIR/fatih-client-app.service" 2>/dev/null || true
+rm -f  "$INSTALL_DIR"/alpemix-*.sh "$INSTALL_DIR"/autologin-switch.sh "$INSTALL_DIR"/diagnose_x11.sh 2>/dev/null || true
+rm -rf "$INSTALL_DIR/__pycache__" 2>/dev/null || true
 # Eski Cython kurulumundan kalan düz kod / .so'ları temizle (öncelik karışmasın).
 rm -f "$INSTALL_DIR/client.py" "$INSTALL_DIR/main.py" "$INSTALL_DIR"/client*.so 2>/dev/null || true
 mkdir -p "$INSTALL_DIR"

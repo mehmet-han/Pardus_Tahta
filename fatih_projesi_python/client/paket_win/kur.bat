@@ -45,6 +45,15 @@ REM project_rules 6). Kaldirma betigi bunu 0'a geri alir - yanlis kurulumda iz k
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableTaskMgr /t REG_DWORD /d 1 /f >nul 2>&1
 
 echo Mebre Akilli Tahta kuruluyor...
+REM Onceki V6 kurulumunun uzerine TEMIZ kurulum (9 Eyl): calisan client durdurulur
+REM (dosyalar kilitliyken xcopy yarim kalabiliyordu) + hedefler SIFIRLANIR ki eski
+REM surumden artik dosya kalmasin. Kimlik/config AppData'dadir, SILINMEZ ->
+REM yeniden tanitim GEREKMEZ.
+schtasks /End /TN "MebreTahtaBekci" >nul 2>&1
+taskkill /IM client.exe /F >nul 2>&1
+timeout /t 2 /nobreak >nul
+rmdir /S /Q "%HEDEF%" >nul 2>&1
+rmdir /S /Q "%SVC%\app" >nul 2>&1
 if not exist "%KOK%" mkdir "%KOK%"
 xcopy /E /I /Y "%~dp0app" "%HEDEF%" >nul
 if errorlevel 1 (
