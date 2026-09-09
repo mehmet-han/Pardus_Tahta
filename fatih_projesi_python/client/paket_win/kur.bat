@@ -81,6 +81,12 @@ REM GUI oldugu icin HIC PENCERE ACMAZ (eski healer.bat/VBS console-flash sorunu 
 REM client'i baslatir + ana klasor silinse yedekten geri koyar. /RL LIMITED = yonetici gerekmez.
 schtasks /Create /TN "MebreTahtaBekci" /TR "\"%SVC%\app\client.exe\" --watchdog" /SC MINUTE /MO 1 /RL LIMITED /F >nul 2>&1
 
+REM UZAKTAN KALDIRMA GOREVI (9 Eyl fix): client SINIRLI kullanici oldugu icin admin-olusturulan
+REM watchdog gorevini + C:\pf'i SILEMIYORDU -> uzaktan kaldirma "uygulandi" der ama watchdog geri
+REM getiriyordu. Bu gorev SYSTEM/HIGHEST calisir; client `schtasks /Run` ile tetikler, SYSTEM her
+REM seyi siler. /SC ONCE + gecmis /ST -> KENDILIGINDEN CALISMAZ, yalniz /Run ile tetiklenir.
+schtasks /Create /TN "MebreTahtaKaldir" /TR "\"%HEDEF%\client.exe\" --kaldir" /SC ONCE /ST 00:00 /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+
 REM OTOMATIK GIRIS (C# karsiligi): boot'ta parola SORULMASIN -> dogrudan masaustu -> kilit.
 REM Hesap parolasi bosaltilir (kiosk kilidi zaten guvenlik; C# de boyle yapiyordu) + AutoAdminLogon.
 net user "%USERNAME%" "" >nul 2>&1

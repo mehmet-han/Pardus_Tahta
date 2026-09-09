@@ -6513,6 +6513,7 @@ class FatihClientApp(QWidget):
         tahta "program kalkti ama internetim/sesim yok, hala kilitleniyor" durumunda kaliyordu.)
         """
         logging.info("SYSTEM REMOVE command received. Uninstalling...")
+        import subprocess
 
         # KRİTİK: ACK'i SENKRON yap — dosyalar silinmeden önce sunucu bilgilendirilmeli.
         # (Yerel/tanitilmamis kaldirmada token yoktur -> basarisiz olur, sorun degil.)
@@ -6524,6 +6525,30 @@ class FatihClientApp(QWidget):
         # WINDOWS: kaldirma farkli (sudo/uninstall betigi yok). Watchdog gorevi + Run kaydi +
         # dosyalar temizlenmeli; yoksa "kaldirdim" dense bile bekci tahtayi geri acar.
         if IS_WINDOWS:
+            # ONCE kullanici-seviyesi temizlik (kendi HKCU'muzu yazabiliriz): Run kaydi +
+            # Gorev Yoneticisi kilidi. HKLM/gorev/C:\pf silme SYSTEM ister -> asagidaki gorev.
+            for args in (
+                ['reg', 'delete', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run', '/v', 'MebreTahta', '/f'],
+                ['reg', 'add', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System', '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '0', '/f'],
+            ):
+                try:
+                    subprocess.run(args, capture_output=True, timeout=10)
+                except Exception:
+                    pass
+            # ASIL FIX (9 Eyl): kaldirmayi YETKILI (SYSTEM) gorevden calistir. client sinirli
+            # kullanici oldugu icin admin-gorevini/C:\pf'i kendisi silemiyordu -> watchdog geri
+            # getiriyordu. Gorev kur.bat'ta olusturuldu; burada sadece tetikliyoruz.
+            try:
+                r = subprocess.run(['schtasks', '/Run', '/TN', 'MebreTahtaKaldir'],
+                                   capture_output=True, timeout=15)
+                if r.returncode == 0:
+                    logging.warning("[KALDIR] SYSTEM kaldirma gorevi tetiklendi. Cikiliyor.")
+                    QApplication.quit()
+                    return
+                logging.warning(f"[KALDIR] SYSTEM gorevi yok/tetiklenemedi (kod {r.returncode}) — eski yola dusuluyor.")
+            except Exception as e:
+                logging.warning(f"[KALDIR] SYSTEM gorevi calistirilamadi ({e}) — eski yola dusuluyor.")
+            # Eski kurulumlar (gorev yok): eski inline bat. yerel=True ise UAC ile yukselir.
             self._remove_system_windows(yerel=yerel)
             return
 
@@ -7319,6 +7344,55 @@ def _uyku_engelle():
             logging.info("Uyku/ekran-kapanma engellendi (Pardus xset s off / -dpms).")
     except Exception as e:
         logging.warning(f"Uyku engelleme basarisiz (kritik degil): {e}")
+
+def _kaldir_uygula():
+    """WINDOWS YETKILI KALDIRMA (SYSTEM) — 'MebreTahtaKaldir' zamanlanmis gorevinden calisir
+    (kur.bat SYSTEM/HIGHEST olusturur). client SINIRLI kullanici oldugu icin admin-olusturulan
+    watchdog gorevini ve C:\\pf'i SILEMIYORDU -> uzaktan kaldirma 'uygulandi' der ama watchdog
+    programi GERI GETIRIYORDU (saha 9 Eyl). Bu fonksiyon SYSTEM haklariyla: watchdog gorevini
+    siler, HKLM auto-login'i geri alir, sonra client kapaninca ana+yedek+tum kullanici config'ini
+    siler (kendini silemedigi icin son supurmeyi AYRI detached bat yapar; C:\\Windows\\Temp
+    yalniz admin yazilabilir -> guvenli). GUI/QApplication YARATMAZ."""
+    import subprocess, tempfile
+    try:
+        # 1) Watchdog gorevini kaldir (SYSTEM yapabilir) — yoksa healer geri getirir.
+        subprocess.run(['schtasks', '/Delete', '/TN', 'MebreTahtaBekci', '/F'],
+                       capture_output=True, timeout=15)
+        # 2) HKLM auto-login geri al + Userinit varsayilana (limited kullanici yapamiyordu).
+        for args in (
+            ['reg', 'add', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon', '/v', 'AutoAdminLogon', '/t', 'REG_SZ', '/d', '0', '/f'],
+            ['reg', 'delete', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon', '/v', 'DefaultPassword', '/f'],
+            ['reg', 'add', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon', '/v', 'Userinit', '/t', 'REG_SZ', '/d', r'C:\Windows\system32\userinit.exe,', '/f'],
+        ):
+            try:
+                subprocess.run(args, capture_output=True, timeout=10)
+            except Exception:
+                pass
+        # 3) Son supurme bati (SYSTEM-yazilabilir C:\Windows\Temp): client.exe'lerin (GUI + bu
+        #    --kaldir + watchdog) hepsi cikinca ana+yedek+HER kullanici config'ini siler.
+        sweep = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Temp', 'mebre_sweep.bat')
+        icerik = (
+            "@echo off\r\n"
+            "chcp 65001 >nul\r\n"
+            "timeout /t 3 /nobreak >nul\r\n"
+            'taskkill /IM client.exe /F >nul 2>&1\r\n'
+            ":wait\r\n"
+            'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
+            "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & taskkill /IM client.exe /F >nul 2>&1 & goto wait )\r\n"
+            'attrib -h -s "C:\\pf" >nul 2>&1\r\n'
+            'attrib -h -s "C:\\ProgramData\\MebreSvc" >nul 2>&1\r\n'
+            'rmdir /S /Q "C:\\pf" >nul 2>&1\r\n'
+            'rmdir /S /Q "C:\\ProgramData\\MebreSvc" >nul 2>&1\r\n'
+            'for /D %%u in ("C:\\Users\\*") do rmdir /S /Q "%%u\\.config\\fatih-client" >nul 2>&1\r\n'
+        )
+        with open(sweep, 'w', encoding='utf-8') as f:
+            f.write(icerik)
+        DETACHED = 0x00000008
+        subprocess.Popen(['cmd', '/c', sweep], creationflags=DETACHED, close_fds=True)
+        logging.warning("[KALDIR] SYSTEM kaldirma uygulandi; supurme bati baslatildi.")
+    except Exception as e:
+        logging.error(f"[KALDIR] hata: {e}")
+
 
 def _watchdog_check():
     """WINDOWS BEKCI + SELF-HEAL (C# ConfigServices karsiligi) — client.exe --watchdog ile
@@ -8231,6 +8305,14 @@ if __name__ == '__main__':
                     _watchdog_check()
             except Exception as _e:
                 logging.error(f"[BEKCI] hata: {_e}")
+            sys.exit(0)
+        elif sys.argv[1] == '--kaldir':
+            # WINDOWS YETKILI KALDIRMA: 'MebreTahtaKaldir' SYSTEM gorevinden calisir. GUI YOK.
+            try:
+                if IS_WINDOWS:
+                    _kaldir_uygula()
+            except Exception as _e:
+                logging.error(f"[KALDIR] hata: {_e}")
             sys.exit(0)
         elif sys.argv[1] == '--kiosk':
             print("Running in KIOSK mode (pre-login lock screen)")
