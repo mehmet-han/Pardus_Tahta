@@ -6464,6 +6464,10 @@ class FatihClientApp(QWidget):
             'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v AutoAdminLogon /t REG_SZ /d "0" /f >nul 2>&1\r\n'
             'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v DefaultPassword /f >nul 2>&1\r\n'
             'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v DefaultUserName /f >nul 2>&1\r\n'
+            # Eski C# mirasi / kur.bat sertlestirmesi geri alinir: Gorev Yoneticisi acilir,
+            # Userinit varsayilana doner (sondaki virgul standart) — makine temiz kalir.
+            'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableTaskMgr /t REG_DWORD /d 0 /f >nul 2>&1\r\n'
+            'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v Userinit /t REG_SZ /d "C:\\Windows\\system32\\userinit.exe," /f >nul 2>&1\r\n'
             ":wait\r\n"
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"

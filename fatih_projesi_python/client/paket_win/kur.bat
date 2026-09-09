@@ -24,6 +24,26 @@ set KOK=C:\pf
 set HEDEF=C:\pf\Tahta
 set SVC=C:\ProgramData\MebreSvc
 
+REM --- [0.5] ESKI SURUM TEMIZLIGI (C# FatihProjesi + eski Python denemeleri) ---
+REM Eski C# programi Winlogon Userinit'ini C:\pf\Systm\FatihProjesi.exe YAPIYORDU.
+REM !! SIRA KRITIK: ONCE Userinit varsayilana dondurulur, SONRA dosyalar silinir.
+REM    (Once silinirse makine OTURUM ACAMAZ hale gelir.) Sonundaki virgul Windows standardi.
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Userinit /t REG_SZ /d "C:\Windows\system32\userinit.exe," /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoRestartShell /t REG_DWORD /d 1 /f >nul 2>&1
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v FatihProjesi /f >nul 2>&1
+taskkill /IM FatihProjesi.exe /F >nul 2>&1
+taskkill /IM ConfigServices.exe /F >nul 2>&1
+taskkill /IM usp.exe /F >nul 2>&1
+rmdir /S /Q "C:\pf\Systm" >nul 2>&1
+rmdir /S /Q "C:\Windws" >nul 2>&1
+rmdir /S /Q "C:\Configure" >nul 2>&1
+del /F /Q "C:\Systm.sys" >nul 2>&1
+del /F /Q "%ProgramFiles%\Systm.sys" >nul 2>&1
+rmdir /S /Q "C:\MebreTahta" >nul 2>&1
+REM Gorev Yoneticisi kilidi (C# mirasi) tahtada BILINCLI KORUNUR/SETLENIR (kiosk sertlestirme,
+REM project_rules 6). Kaldirma betigi bunu 0'a geri alir - yanlis kurulumda iz kalmaz.
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableTaskMgr /t REG_DWORD /d 1 /f >nul 2>&1
+
 echo Mebre Akilli Tahta kuruluyor...
 if not exist "%KOK%" mkdir "%KOK%"
 xcopy /E /I /Y "%~dp0app" "%HEDEF%" >nul
