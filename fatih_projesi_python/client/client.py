@@ -55,7 +55,8 @@ from platform_layer import get_platform
 # Linux'ta ayrı bir moda ait, çakışmasın diye ayrı bayrak.) Bayrak YOKSA Windows GÜVENLİ
 # ÖNİZLEME'de kalır: normal pencere, klavye/taskbar/tarayıcı ELE GEÇİRİLMEZ (mobilden
 # "kilitle" gelse bile tuzak olmaz). Linux'ta bu bayrağın etkisi yoktur.
-# Not: gerçek kiosk'ta bile klavye kilidinin panik-çıkışı (Ctrl+Alt+Shift+Q) HEP aktiftir.
+# Not: panik-çıkış (Ctrl+Alt+Shift+Q) TANITILMIŞ tahtada ADMIN ŞİFRESİ sorar (9 Eyl);
+# tanıtılmamış cihazda serbesttir. Başarılı çıkış 24 saatlik kriz penceresi açar.
 WINDOWS_KIOSK = IS_WINDOWS and ('--win-kiosk' in sys.argv)
 
 # --- Global flag: development mode (--no-lock) ---
@@ -1057,7 +1058,7 @@ class PowerManager:
 
 class ShortcutManager:
     @staticmethod
-    def disable(): get_platform().disable_shortcuts()
+    def disable(panic_cb=None): get_platform().disable_shortcuts(panic_cb=panic_cb)
     @staticmethod
     def restore(): get_platform().restore_shortcuts()
 
@@ -6216,7 +6217,10 @@ class FatihClientApp(QWidget):
             if _enforce:
                 PanelManager.hide()          # Taskbar gizle (C# TastbarWindows)
                 VolumeControl.mute()         # Ses kapat (C# VD)
-                ShortcutManager.disable()    # Kısayolları/klavye kilidi (panik-çıkışlı)
+                # Panik kombinasyonu (Ctrl+Alt+Shift+Q) artık hook'u BIRAKMAZ; istemciye
+                # devredilir -> tanitilmis tahtada SIFRE sorulur (9 Eyl: dolasan kaldirma
+                # receteleri sifresiz panikle ise yariyordu). Tanitilmamissa serbest.
+                ShortcutManager.disable(panic_cb=self._panik_istegi)
                 kill_all_browsers()          # Tarayıcıları kapat (C# KillAllItem)
             else:
                 logging.info("Windows önizleme: kilit görsel (zorlama YOK — --win-kiosk ile aç).")
@@ -6792,6 +6796,37 @@ class FatihClientApp(QWidget):
         logging.warning("Invalid password - does not match config or offline algorithm")
         offline_register_failure()
         return False
+
+    def _panik_istegi(self):
+        """Klavye hook thread'inden gelir (Windows) -> ana thread'e tasi."""
+        QTimer.singleShot(0, self._panik_dialog)
+
+    def _panik_dialog(self):
+        """PANIK CIKIS (9 Eyl guvenlik karari): tanitilmis tahtada ADMIN SIFRESI (ya da kriz
+        kodu) sorulur — ogrenci Ctrl+Alt+Shift+Q ile masaustune inemez, dolasan kaldirma
+        recetesi degersizlesir. Tanitilmamis cihazda (yanlis kurulum) sifresiz serbest.
+        Basarili cikis KRIZ PENCERESI acar (24 saat otomatik kilit yok; kullanici istegi:
+        'panik cikisla kurtulan 24 saat kilitlenmesin') — sunucu/mobil kilit komutu gelirse
+        pencere zaten kapanir (merkez ustun, process_commands 'sunucudan kilit komutu')."""
+        from PyQt5.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+        if not (get_setting('device_token', '') or ''):
+            logging.warning("[PANIK] Tanitilmamis cihaz — sifresiz cikis + 24 saat pencere.")
+            kriz_penceresi_baslat()
+            self.unlock_system("Panik çıkış ile açıldı (tanıtılmamış cihaz)")
+            return
+        sifre, ok = QInputDialog.getText(self, "Panik Çıkış", "Yönetici şifresi (ya da kriz kodu):", QLineEdit.Password)
+        if not ok:
+            return
+        girilen = (sifre or '').strip()
+        if admin_sifre_dogru(girilen):
+            kriz_penceresi_baslat()
+            self.unlock_system("Panik çıkış (admin şifresi) ile açıldı")
+        elif validate_kriz_password(girilen):
+            # validate_kriz_password basarida pencereyi kendisi baslatir.
+            self.unlock_system("Panik çıkış (kriz kodu) ile açıldı")
+        else:
+            self.save_log("Panik cikis: yanlis sifre denemesi", "lock")
+            QMessageBox.warning(self, "Panik Çıkış", "Şifre yanlış.")
 
     def yerel_kaldir(self, checked=False):
         """TANITILMAMIS cihazda menuden kaldirma: admin sifresi dogrulanir, onay alinir,

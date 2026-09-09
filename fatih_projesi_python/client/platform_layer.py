@@ -86,9 +86,11 @@ class PlatformBackend:
         """Uyku/ekran kapanması/ekran koruyucuyu devre dışı bırak."""
         pass
 
-    def disable_shortcuts(self, auto_release_sec=None):
+    def disable_shortcuts(self, auto_release_sec=None, panic_cb=None):
         """Tehlikeli klavye kısayollarını devre dışı bırak (kilitlenince).
-        auto_release_sec: test için N sn sonra otomatik bırak (platform destekliyorsa)."""
+        auto_release_sec: test için N sn sonra otomatik bırak (platform destekliyorsa).
+        panic_cb: panik kombinasyonunda (Ctrl+Alt+Shift+Q) çağrılır — verilirse hook
+        BIRAKILMAZ, karar üst katmanındır (şifre sorma vb.); None ise eski davranış (bırak)."""
         pass
 
     def restore_shortcuts(self):
@@ -248,7 +250,9 @@ class LinuxBackend(PlatformBackend):
         except Exception as e:
             logging.error(f"Error disabling sleep: {e}")
 
-    def disable_shortcuts(self, auto_release_sec=None):
+    def disable_shortcuts(self, auto_release_sec=None, panic_cb=None):
+        # panic_cb Linux'ta kullanılmaz: fiziksel klavye evdev ile grab'lidir, kombinasyon
+        # dinlenmez (panik çıkışın Linux karşılığı: sağ tık menüsü + admin şifresi).
         if NO_LOCK_MODE:
             logging.info("[NO-LOCK] disable_shortcuts() skipped")
             return
@@ -392,8 +396,17 @@ if IS_WINDOWS:
                     alt = self._down(self.VK_MENU)
                     shift = self._down(self.VK_SHIFT)
 
-                    # PANİK: Ctrl+Alt+Shift+Q -> bırak
+                    # PANİK: Ctrl+Alt+Shift+Q. panic_cb varsa hook BIRAKILMAZ — üst katman
+                    # (istemci) şifre sorup karar verir; yoksa eski davranış: kilidi bırak.
                     if vk == self.PANIC_VK and ctrl and alt and shift:
+                        cb = getattr(self, '_panic_cb', None)
+                        if cb:
+                            logging.info("PANİK kombinasyonu — istemciye devrediliyor (şifre sorulacak).")
+                            try:
+                                threading.Thread(target=cb, daemon=True).start()
+                            except Exception as e:
+                                logging.error(f"panic_cb çağrılamadı: {e}")
+                            return 1
                         logging.info("PANİK: klavye kilidi bırakılıyor (Ctrl+Alt+Shift+Q)")
                         self.stop()
                         return 1
@@ -430,7 +443,8 @@ if IS_WINDOWS:
                 self._hook = None
             logging.info("Klavye kilidi bırakıldı.")
 
-        def start(self, auto_release_sec=None):
+        def start(self, auto_release_sec=None, panic_cb=None):
+            self._panic_cb = panic_cb
             if self._thread and self._thread.is_alive():
                 return
             self._thread = threading.Thread(target=self._thread_proc, daemon=True)
@@ -588,13 +602,14 @@ class WindowsBackend(PlatformBackend):
         except Exception as e:
             logging.error(f"force_window_on_top (Windows) error: {e}")
 
-    def disable_shortcuts(self, auto_release_sec=None):
+    def disable_shortcuts(self, auto_release_sec=None, panic_cb=None):
         """Kilit-atlatma tuşlarını engelle (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4).
-        Panik: Ctrl+Alt+Shift+Q. auto_release_sec verilirse N sn sonra kendini bırakır (test)."""
+        Panik: Ctrl+Alt+Shift+Q — panic_cb verilirse hook BIRAKILMAZ, cb çağrılır
+        (istemci şifre sorar; 9 Eyl güvenlik kararı). auto_release_sec: test."""
         if NO_LOCK_MODE:
             logging.info("[NO-LOCK] disable_shortcuts() skipped")
             return
-        self._keylock.start(auto_release_sec=auto_release_sec)
+        self._keylock.start(auto_release_sec=auto_release_sec, panic_cb=panic_cb)
 
     def restore_shortcuts(self):
         """Klavye kilidini bırak."""
