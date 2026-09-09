@@ -2649,6 +2649,28 @@ class NetworkClient:
             str(result.get("logIstek", 0)),
         ]
 
+    def sahipsiz_nabiz(self):
+        """TANITILMAMIS kurulum nabzi (9 Eyl saha: yanlislikla kurulan bilgisayarlar ynt5'te
+        gorunmuyordu). Kimlik yok -> Bearer'siz hafif uc: sunucu IP+hostname+platform+surum
+        kaydeder, ynt5 'Sahipsiz Kurulumlar'da listeler. Yanit {kaldir:true} ise panel bu
+        kurulumu kaldirilmak uzere isaretlemistir -> True doner, cihaz kendini kaldirir.
+        Tanitim yapildigi anda bu nabiz tamamen durur (init_sahipsiz_nabiz kontrol eder)."""
+        try:
+            import socket as _s
+            govde = {
+                "platform": "windows" if IS_WINDOWS else "pardus",
+                "surum": str(self.settings.get('version') or ''),
+                "hostname": str(_s.gethostname() or '')[:60],
+            }
+            r = requests.post(self._base_url() + "/sahipsiz", json=govde,
+                              headers={"X-Timestamp": str(int(time.time()))}, timeout=15, verify=True)
+            if r.status_code == 200:
+                j = r.json() or {}
+                return bool((j.get('result') or {}).get('kaldir'))
+        except Exception as e:
+            logging.info(f"sahipsiz nabiz gonderilemedi: {e}")
+        return False
+
     def set_value(self, column, value, sebep=None):
         """Komut ACK'i (v5 /ack). Kolon whitelist: open_close/shutdown/system_Remove/log_istek/message.
 
@@ -3225,6 +3247,7 @@ class FatihClientApp(QWidget):
 
         self.init_ui()
         self.init_network_timer()
+        self.init_sahipsiz_nabiz()  # tanitilmamis kurulum nabzi (tanitilmissa no-op)
         self.init_usb_monitor()   # yalniz USB KALDIRMA (rmove.txt); USB kilit acma kaldirildi
         self.init_maintenance_timer()
         self.init_time_timer()
@@ -4064,6 +4087,30 @@ class FatihClientApp(QWidget):
         self._fallback_poll_sn = 5      # long-poll YOKSA kilitliyken poll araligi
         self._poll_dur = False
         self._poll_thread = None
+
+    def init_sahipsiz_nabiz(self):
+        """Tanitilmamis cihaz nabzi: acilistan 20 sn sonra + 10 dk'da bir. Tanitim yapilinca
+        kendini durdurur. Panelden 'kaldir' isaretlenmisse remove_system(yerel=True) calisir."""
+        if get_setting('device_token', '') or '':
+            return   # tanitilmis tahta — nabiz yok
+        self._sahipsiz_timer = QTimer(self)
+        self._sahipsiz_timer.timeout.connect(self._sahipsiz_atim)
+        self._sahipsiz_timer.start(10 * 60 * 1000)
+        QTimer.singleShot(20000, self._sahipsiz_atim)
+        logging.info("[SAHIPSIZ] Tanitilmamis kurulum nabzi baslatildi (20 sn + 10 dk).")
+
+    def _sahipsiz_atim(self):
+        if get_setting('device_token', '') or '':
+            try:
+                self._sahipsiz_timer.stop()
+            except Exception:
+                pass
+            return
+        def _w():
+            if self.network_client.sahipsiz_nabiz():
+                logging.warning("[SAHIPSIZ] Panelden kaldirma isareti geldi — program kaldiriliyor.")
+                QTimer.singleShot(0, lambda: self.remove_system(yerel=True))
+        threading.Thread(target=_w, daemon=True).start()
 
     def _poll_baslat(self):
         """Long-poll dongu thread'ini baslat (idempotent). init'te 5 sn gecikmeyle cagrilir."""
@@ -6388,10 +6435,16 @@ class FatihClientApp(QWidget):
             logging.error(f"Kaldirma kaniti uretilemedi: {e}")
             return ''
 
-    def _remove_system_windows(self):
-        """Windows uzaktan kaldirma: watchdog gorevini + Run kaydini + dosyalari sil.
-        Calisan exe kendini silemedigi icin AYRI (detached) bir bat, client kapaninca
-        temizligi yapar. Kimlik (AppData config) da silinir -> yeniden kurulumda tekrar tanitilir."""
+    def _remove_system_windows(self, yerel=False):
+        """Windows kaldirma: watchdog gorevini + Run kaydini + dosyalari sil + OTOMATIK GIRISI
+        GERI AL. Calisan exe kendini silemedigi icin AYRI (detached) bir bat, client kapaninca
+        temizligi yapar. Kimlik (AppData config) da silinir -> yeniden kurulumda tekrar tanitilir.
+
+        AUTO-LOGIN GERI ALMA (9 Eyl saha): kur.bat AutoAdminLogon=1 + hesabin parolasini
+        BOSALTIYOR. Yanlislikla kendi bilgisayarina kuran yonetici/velide program kaldirilsa
+        bile parolasiz otomatik giris KALIYORDU. Artik AutoAdminLogon=0 + DefaultPassword
+        silinir (HKLM -> yonetici gerekir; yerel kaldirmada bat UAC ile yukseltilir,
+        yetki yoksa satirlar sessiz gecer, dosya temizligi yine calisir)."""
         import tempfile, subprocess
         try:
             kurulum = os.path.dirname(os.path.abspath(sys.executable))   # C:\pf\Tahta
@@ -6402,12 +6455,15 @@ class FatihClientApp(QWidget):
         appdata = os.path.join(os.path.expanduser('~'), '.config', 'fatih-client')
         bat = os.path.join(tempfile.gettempdir(), 'mebre_kaldir.bat')
         # SIRA: once watchdog gorevini durdur (yoksa healer dosyalari geri koyar!),
-        # sonra Run kaydi, client kapanmasini bekle, en son ana+yedek+kimlik sil.
+        # sonra Run kaydi + auto-login geri alimi, client kapanmasini bekle, en son sil.
         icerik = (
             "@echo off\r\n"
             "chcp 65001 >nul\r\n"
             'schtasks /Delete /TN "MebreTahtaBekci" /F >nul 2>&1\r\n'
             'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v MebreTahta /f >nul 2>&1\r\n'
+            'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v AutoAdminLogon /t REG_SZ /d "0" /f >nul 2>&1\r\n'
+            'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v DefaultPassword /f >nul 2>&1\r\n'
+            'reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v DefaultUserName /f >nul 2>&1\r\n'
             ":wait\r\n"
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
@@ -6420,15 +6476,26 @@ class FatihClientApp(QWidget):
         try:
             with open(bat, 'w', encoding='utf-8') as f:
                 f.write(icerik)
-            DETACHED = 0x00000008
-            subprocess.Popen(['cmd', '/c', bat], creationflags=DETACHED, close_fds=True)
-            logging.info("Windows kaldirma betigi baslatildi (detached). Cikiliyor.")
+            basladi = False
+            if yerel:
+                # Kullanici basinda (tanitilmamis cihaz, menuden kaldirma): UAC ile yukselt ki
+                # HKLM auto-login temizligi + schtasks silme kesin calissin. Kullanici 'Evet' der.
+                try:
+                    subprocess.Popen(['powershell', '-NoProfile', '-Command',
+                                      f'Start-Process cmd -ArgumentList \'/c\',\'"{bat}"\' -Verb RunAs'])
+                    basladi = True
+                except Exception as e:
+                    logging.warning(f"Kaldirma bati yukseltilemedi (UAC reddi?), normal calisacak: {e}")
+            if not basladi:
+                DETACHED = 0x00000008
+                subprocess.Popen(['cmd', '/c', bat], creationflags=DETACHED, close_fds=True)
+            logging.info("Windows kaldirma betigi baslatildi. Cikiliyor.")
         except Exception as e:
             logging.error(f"Windows kaldirma betigi baslatilamadi: {e}")
         QApplication.quit()
 
-    def remove_system(self):
-        """Uzaktan kaldirma (ynt5 -> system_Remove=1).
+    def remove_system(self, yerel=False):
+        """Uzaktan kaldirma (ynt5 -> system_Remove=1) + YEREL kaldirma (yalniz tanitilmamis cihaz).
 
         Temizligi KENDIMIZ yapmiyoruz: kurulumla gelen resmi kaldirma betigini
         (/usr/local/bin/fatih-uninstall) --force ile calistiriyoruz. Boylece uzaktan
@@ -6439,7 +6506,8 @@ class FatihClientApp(QWidget):
         """
         logging.info("SYSTEM REMOVE command received. Uninstalling...")
 
-        # KRİTİK: ACK'i SENKRON yap — dosyalar silinmeden önce sunucu bilgilendirilmeli
+        # KRİTİK: ACK'i SENKRON yap — dosyalar silinmeden önce sunucu bilgilendirilmeli.
+        # (Yerel/tanitilmamis kaldirmada token yoktur -> basarisiz olur, sorun degil.)
         try:
             self.network_client.set_value("system_Remove", "0")
         except Exception as ack_err:
@@ -6448,7 +6516,7 @@ class FatihClientApp(QWidget):
         # WINDOWS: kaldirma farkli (sudo/uninstall betigi yok). Watchdog gorevi + Run kaydi +
         # dosyalar temizlenmeli; yoksa "kaldirdim" dense bile bekci tahtayi geri acar.
         if IS_WINDOWS:
-            self._remove_system_windows()
+            self._remove_system_windows(yerel=yerel)
             return
 
         # Istemci etapadmin olarak calisir, kaldirma ise ROOT isi -> sudo sart.
@@ -6721,6 +6789,30 @@ class FatihClientApp(QWidget):
         offline_register_failure()
         return False
 
+    def yerel_kaldir(self, checked=False):
+        """TANITILMAMIS cihazda menuden kaldirma: admin sifresi dogrulanir, onay alinir,
+        remove_system(yerel=True) calisir. Tanitilmis (device_token'li) cihazda bu yol
+        HIC acilmaz (menune eklenmiyor) — tahtada kaldirma yalnizca ynt5'ten."""
+        if get_setting('device_token', '') or '':
+            return   # guvenlik cifte kilidi: tanitilmissa asla
+        from PyQt5.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+        sifre, ok = QInputDialog.getText(self, "Programı Kaldır", "Yönetici şifresi:", QLineEdit.Password)
+        if not ok:
+            return
+        if not admin_sifre_dogru(sifre or ''):
+            QMessageBox.warning(self, "Programı Kaldır", "Şifre yanlış.")
+            self.save_log("Yerel kaldirma: yanlis sifre denemesi", "lock")
+            return
+        cevap = QMessageBox.question(self, "Programı Kaldır",
+            "Program bu bilgisayardan tamamen kaldırılacak.\n\n"
+            "Otomatik giriş kapatılacak — kaldırma bitince hesabınıza YENİDEN PAROLA KOYMAYI unutmayın\n"
+            "(Ayarlar → Hesaplar → Oturum açma seçenekleri).\n\nDevam edilsin mi?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if cevap != QMessageBox.Yes:
+            return
+        logging.warning("[YEREL KALDIRMA] Tanitilmamis cihazda kullanici kaldirmayi onayladi.")
+        self.remove_system(yerel=True)
+
     def show_context_menu(self, position):
         """Show right-click context menu"""
         context_menu = QMenu(self)
@@ -6764,6 +6856,16 @@ class FatihClientApp(QWidget):
         # logs_action = QAction("Kayıtları Görüntüle", self)
         # logs_action.triggered.connect(self.show_logs)
         # context_menu.addAction(logs_action)
+
+        # YEREL KALDIRMA — YALNIZ TANITILMAMIS cihazda (9 Eyl saha: yanlislikla kendi
+        # bilgisayarina kuran yonetici/veli, tanitim yapilmadigi icin ynt5'ten kaldirilamiyordu).
+        # Tahtalar HEP tanitilidir (device_token var) -> bu madde tahtada HIC gorunmez;
+        # public pakete kaldir.bat koymama guvenlik karari boylece bozulmaz. Admin sifresi
+        # yine sorulur (varsayilan, tanitilmamis cihazda degistirilmemistir).
+        if not (get_setting('device_token', '') or ''):
+            kaldir_action = QAction("Programı Kaldır (bu bilgisayar tanıtılmamış)", self)
+            kaldir_action.triggered.connect(self.yerel_kaldir)
+            context_menu.addAction(kaldir_action)
 
         context_menu.addSeparator()
 
