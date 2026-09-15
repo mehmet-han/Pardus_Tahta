@@ -91,7 +91,9 @@ def main():
         for blok in iter(lambda: f.read(1 << 20), b''):
             h.update(blok)
     ozet = h.hexdigest()
-    with open(hedef + '.sha256', 'w') as f:
+    # newline='\n' SART: Windows'ta CRLF yazilirsa Pardus'ta `sha256sum -c` dosya adini
+    # "\r" ile arar ve "FAILED open or read" der (15 Eyl 2026'da goruldu).
+    with open(hedef + '.sha256', 'w', newline='\n') as f:
         f.write(f'{ozet}  {os.path.basename(hedef)}\n')
 
     shutil.rmtree(GECICI, ignore_errors=True)
