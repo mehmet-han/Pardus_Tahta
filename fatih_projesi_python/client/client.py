@@ -1829,9 +1829,13 @@ class ChangePasswordWidget(QWidget):
             # hatasi = muhtemel odak/dokunmatik sorunu -> hata gunlugune 'uyari' dus (throttle'li).
             self._bos_alan_sayac = getattr(self, '_bos_alan_sayac', 0) + 1
             if self._bos_alan_sayac == 3:
+                # kilitli/klavye_kilidi (15 Eyl 2026): "uc alan da bos" vakasinin sebebi evdev grab'di;
+                # tekrar ederse durumun ayni olup olmadigi kayittan okunsun.
                 _hata_bildir("arayuz", "uyari",
                              "SifreDegistir: 3x 'Tum alanlari doldurun' — dokunmatik odak/giris sorunu olabilir",
-                             f"dolu: mevcut={bool(current)} yeni={bool(new)} tekrar={bool(confirm)}")
+                             f"dolu: mevcut={bool(current)} yeni={bool(new)} tekrar={bool(confirm)} "
+                             f"kilitli={getattr(self.parent, 'is_locked', None)} "
+                             f"klavye_kilidi={getattr(self.parent, 'keyboard_locker', None) is not None}")
             return
         self._bos_alan_sayac = 0
 
@@ -1938,8 +1942,11 @@ class LockScreenOverlay(QFrame):
     QDialog/QMessageBox gibi ayrı bir pencere OLMADIĞI için
     lockscreen hiç kapanmıyor, hiç titresmiyor.
     """
-    def __init__(self, parent, title="", content_widget=None, text=""):
+    def __init__(self, parent, title="", content_widget=None, text="", on_close=None):
         super().__init__(parent)
+        # Kapanista (Kapat butonu / Esc / icerik widget'inin close_callback'i) BIR KEZ cagrilir;
+        # _yonetim_overlay_ac bununla klavye kilidini geri kurar.
+        self._on_close = on_close
         # OPERATOR-FORMDA BAYRAGI (17 Ağu saha): operator yapilandirma/sifre formundayken
         # internet kesilirse poll'un internet-kaybi KILIDI formun ustune binip isi bozuyordu.
         # Overlay acikken parent'a zaman damgasi koy; internet-kaybi kilidi bunu gorup 5 dk'ya
@@ -2025,6 +2032,12 @@ class LockScreenOverlay(QFrame):
             self.deleteLater()
         except RuntimeError:
             pass  # C++ nesnesi zaten silinmis — yapacak bir sey yok
+        cb = getattr(self, '_on_close', None)
+        if cb:
+            try:
+                cb()
+            except Exception as e:
+                logging.error(f"Overlay on_close hatasi: {e}")
         # X11'de parent üzerinde raise_() veya activateWindow() çağırmak, Cinnamon WM'nin
         # BypassWindow olarak ayarlanmış pencereyi tamamen un-map etmesine (gizlemesine) neden oluyor.
         # Overlay sadece bir QFrame olduğu için parent hiçbir zaman gerçek bir X11 focus'u kaybetmiş olmadığından
@@ -2041,6 +2054,48 @@ class LockScreenOverlay(QFrame):
         QListWidget listenin sonuna/başına geldiğinde event'i parent'a sızdırabilir,
         bu da kilit ekranının tetiklenmesine veya focus kaybına yol açar."""
         event.accept()
+
+def _yonetim_overlay_ac(win, title, widget):
+    """Yonetim formunu (Sifre Degistir / Tahta Yapilandirmasi) overlay'de acar ve form acikken
+    FIZIKSEL KLAVYEYI SERBEST BIRAKIR.
+
+    SAHA HATASI (14-15 Eyl 2026, 7 okul / 11 kez, hata gunlugu): "SifreDegistir: 3x 'Tum alanlari
+    doldurun' — dolu: mevcut=False yeni=False tekrar=False". Uc alan da BOS: operator klavyeden
+    yaziyor, hicbir sey girilmiyor. Sebep: form kilit ekranindan (sag tik menusu) aciliyor ve
+    Pardus'ta KeyboardLocker (evdev grab) kilit boyunca TUM tuslari yutuyor. QDialog acan
+    _safe_open_dialog kilidi durduruyordu; overlay tabanli bu iki form durdurmuyordu -> yalniz
+    ekran numpad'i calisiyordu, klavye olu. Form kapaninca (Kapat / Esc / Iptal / basarili
+    degisiklik) tahta HALA kilitliyse grab geri kurulur. Windows'ta locker no-op, zararsiz."""
+    kilit_vardi = False
+    locker = getattr(win, 'keyboard_locker', None)
+    if locker is not None:
+        try:
+            locker.stop()
+            locker.join(timeout=3)
+        except Exception as e:
+            logging.error(f"KeyboardLocker durdurulamadi (overlay): {e}")
+        win.keyboard_locker = None
+        kilit_vardi = True
+        logging.info(f"Klavye kilidi '{title}' formu icin birakildi.")
+
+    def _kapandi():
+        if not kilit_vardi:
+            return
+        # FatihKioskMode'da is_locked yok (kiosk her zaman kilitli) -> varsayilan True.
+        if not getattr(win, 'is_locked', True) or getattr(win, 'keyboard_locker', None) is not None:
+            return   # bu arada acilmis ya da lock_system zaten yeniden grab etmis
+        try:
+            win.keyboard_locker = KeyboardLocker()
+            win.keyboard_locker.start()
+            logging.info(f"Klavye kilidi '{title}' formu kapaninca geri kuruldu.")
+        except Exception as e:
+            logging.error(f"KeyboardLocker geri kurulamadi (overlay): {e}")
+            win.keyboard_locker = None
+
+    overlay = LockScreenOverlay(win, title=title, content_widget=widget, on_close=_kapandi)
+    widget.close_callback = overlay.close_overlay
+    return overlay
+
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
 class ScheduleDialog(QDialog):
@@ -7182,14 +7237,12 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
             return
 
         widget = BoardConfigWidget(self, network_client=self.network_client)
-        overlay = LockScreenOverlay(self, title="Tahta Yapılandırması", content_widget=widget)
-        widget.close_callback = overlay.close_overlay
+        _yonetim_overlay_ac(self, "Tahta Yapılandırması", widget)
 
     def show_change_password(self, checked=False):
         """Show change password dialog"""
         widget = ChangePasswordWidget(self)
-        overlay = LockScreenOverlay(self, title="Şifre Değiştir", content_widget=widget)
-        widget.close_callback = overlay.close_overlay
+        _yonetim_overlay_ac(self, "Şifre Değiştir", widget)
 
     def show_schedule(self, checked=False):
         """Show schedule hours dialog (C# FormGirisCikisSaatleri karşılığı)"""
@@ -8190,14 +8243,12 @@ ________________________________________________________________________________
             return
 
         widget = BoardConfigWidget(self, network_client=self.network_client)
-        overlay = LockScreenOverlay(self, title="Tahta Yapılandırması", content_widget=widget)
-        widget.close_callback = overlay.close_overlay
+        _yonetim_overlay_ac(self, "Tahta Yapılandırması", widget)
 
     def kiosk_show_change_password(self):
         """Kiosk modunda şifre değiştir dialog göster"""
         widget = ChangePasswordWidget(self)
-        overlay = LockScreenOverlay(self, title="Şifre Değiştir", content_widget=widget)
-        widget.close_callback = overlay.close_overlay
+        _yonetim_overlay_ac(self, "Şifre Değiştir", widget)
 
     def kiosk_show_schedule(self):
         """Kiosk modunda giriş/çıkış saatleri dialog göster"""
