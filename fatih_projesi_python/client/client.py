@@ -1742,8 +1742,11 @@ class ChangePasswordWidget(QWidget):
 
         layout.addLayout(form_layout)
 
-        # Embedded Numpad
-        self.numpad = EmbeddedNumpad(on_enter_callback=self.change_password)
+        # Embedded Numpad — Enter AKILLI (15 Eyl 2026 saha: "dolu: mevcut=True yeni=True tekrar=False"
+        # x3): fiziksel Enter _enter_ilerle ile sonraki bos alana geciyordu ama numpad Enter'i dogrudan
+        # change_password calistiriyordu -> operator numpad'den yazip Enter'a basinca alan degismiyor,
+        # "Tum alanlari doldurun" yiyor, dokunmatikte alt alana da tiklayamayinca takiliyordu.
+        self.numpad = EmbeddedNumpad(on_enter_callback=self._enter_ilerle)
         layout.addWidget(self.numpad)
         # Varsayılan şifrede numpad doğrudan "Yeni Şifre" alanına yazsın
         if self._is_default_password:
