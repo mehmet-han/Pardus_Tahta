@@ -6021,19 +6021,31 @@ class FatihClientApp(QWidget):
         sertifika olmasa bile bizim imzali exe'miz kabul edilir; sahte (baska sertifika) ya da
         kurcalanmis paket reddedilir. Thumbprint eslesmesi = ozel anahtarimiz (YubiKey) sart."""
         import subprocess
+        # SEBEP (19 Eyl 2026): ret gerekcesi yalniz tahta logunda kaliyordu; ayni okulda 3 tahtadan
+        # 1'i 64'e cikamadi ve "Log Iste" beklemede kaldi. Status metni + kod + Windows surumu
+        # self._imza_ret_sebebi'ne yazilir, _guncelle_windows bunu hata kaydina koyar.
+        self._imza_ret_sebebi = ''
         try:
             ps = ("$s=Get-AuthenticodeSignature -LiteralPath '%s'; "
+                  "Write-Output ('durum=' + $s.Status + ' parmak=' + "
+                  "$(if($s.SignerCertificate){$s.SignerCertificate.Thumbprint}else{'-'})); "
                   "if($s.Status -eq 'NotSigned' -or $s.Status -eq 'HashMismatch'){exit 3}; "
                   "if(-not $s.SignerCertificate){exit 4}; "
                   "if($s.SignerCertificate.Thumbprint -ne '%s'){exit 5}; exit 0"
                   ) % (exe, self._IMZA_THUMBPRINT)
             r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
-                               capture_output=True, timeout=60)
+                               capture_output=True, timeout=60, stdin=subprocess.DEVNULL,
+                               creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             if r.returncode != 0:
-                logging.error(f"[GUNCELLEME] imza reddedildi (kod {r.returncode}: "
+                cikti = (r.stdout or b'').decode('utf-8', 'replace').strip()[:160]
+                hata = (r.stderr or b'').decode('utf-8', 'replace').strip()[:160]
+                self._imza_ret_sebebi = (f"kod={r.returncode} {cikti} {hata} "
+                                         f"win={platform.platform()}").strip()
+                logging.error(f"[GUNCELLEME] imza reddedildi ({self._imza_ret_sebebi}; "
                               f"3=imzasiz/kurcalanmis 4=sertifika-yok 5=bizim-degil).")
             return r.returncode == 0
         except Exception as e:
+            self._imza_ret_sebebi = f"istisna={type(e).__name__}: {str(e)[:120]} win={platform.platform()}"
             logging.error(f"[GUNCELLEME] imza dogrulama hatasi: {e}")
             return False
 
@@ -6046,7 +6058,7 @@ class FatihClientApp(QWidget):
         if not os.path.isfile(yeni_exe):
             raise RuntimeError("yeni client.exe yok")
         if not self._win_imza_gecerli(yeni_exe):
-            raise RuntimeError("Authenticode imza dogrulanamadi")
+            raise RuntimeError(f"Authenticode imza dogrulanamadi [{getattr(self, '_imza_ret_sebebi', '')}]")
 
         kurulum = os.path.dirname(os.path.abspath(sys.executable))
         if not os.path.isfile(os.path.join(kurulum, 'client.exe')):
