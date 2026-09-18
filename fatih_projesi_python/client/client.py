@@ -2058,6 +2058,144 @@ class LockScreenOverlay(QFrame):
         bu da kilit ekranının tetiklenmesine veya focus kaybına yol açar."""
         event.accept()
 
+def _authenticode_dogrula(exe, thumbprint):
+    """Windows Authenticode dogrulama — PowerShell'siz, AGSIZ (WinVerifyTrust + CryptQueryObject).
+
+    Doner: (gecerli: bool, sebep: str). Kabul kosulu: imza var + ozet dosyayla eslesiyor
+    (kurcalanmamis) + PKCS7'deki GERCEK imzalayan sertifikanin SHA-1 parmak izi == thumbprint.
+    Zincir/kok guveni ve iptal kontrolu ARANMAZ: bilerek. Eski/guncellenmemis Windows'ta Sectigo
+    ECC koku yok; okul agi iptal listesi adreslerini blokluyor. Guvenlik parmak izinden gelir:
+    o sertifikayla imza atmak icin YubiKey'deki ozel anahtar gerekir. Imzalayan, "sertifika
+    torbasindan herhangi biri" DEGIL, CMSG_SIGNER_INFO'daki Issuer+SerialNumber ile bulunur
+    (saldirgan bizim genel sertifikamizi pakete ekleyip kendi anahtariyla imzalayamaz).
+    19 Eyl 2026'da yerelde 5 durumla dogrulandi (imzali/imzasiz/kurcalanmis/2 yabanci imza)."""
+    import ctypes
+    import ctypes.wintypes as wt
+    exe = os.path.abspath(exe)
+    crypt32 = ctypes.WinDLL('crypt32', use_last_error=True)
+    wintrust = ctypes.WinDLL('wintrust', use_last_error=True)
+
+    # --- 1) WinVerifyTrust: imza var mi + ozet (hash) dosyayla eslesiyor mu ---
+    class GUID(ctypes.Structure):
+        _fields_ = [('Data1', wt.DWORD), ('Data2', wt.WORD), ('Data3', wt.WORD), ('Data4', ctypes.c_ubyte * 8)]
+
+    class WINTRUST_FILE_INFO(ctypes.Structure):
+        _fields_ = [('cbStruct', wt.DWORD), ('pcwszFilePath', wt.LPCWSTR),
+                    ('hFile', wt.HANDLE), ('pgKnownSubject', ctypes.POINTER(GUID))]
+
+    class WINTRUST_DATA(ctypes.Structure):
+        _fields_ = [('cbStruct', wt.DWORD), ('pPolicyCallbackData', ctypes.c_void_p),
+                    ('pSIPClientData', ctypes.c_void_p), ('dwUIChoice', wt.DWORD),
+                    ('fdwRevocationChecks', wt.DWORD), ('dwUnionChoice', wt.DWORD),
+                    ('pFile', ctypes.POINTER(WINTRUST_FILE_INFO)), ('dwStateAction', wt.DWORD),
+                    ('hWVTStateData', wt.HANDLE), ('pwszURLReference', wt.LPCWSTR),
+                    ('dwProvFlags', wt.DWORD), ('dwUIContext', wt.DWORD),
+                    ('pSignatureSettings', ctypes.c_void_p)]
+
+    # WINTRUST_ACTION_GENERIC_VERIFY_V2 {00AAC56B-CD44-11d0-8CC2-00C04FC295EE}
+    action = GUID(0x00AAC56B, 0xCD44, 0x11d0, (ctypes.c_ubyte * 8)(0x8C, 0xC2, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE))
+    fi = WINTRUST_FILE_INFO(ctypes.sizeof(WINTRUST_FILE_INFO), exe, None, None)
+    wd = WINTRUST_DATA()
+    wd.cbStruct = ctypes.sizeof(WINTRUST_DATA)
+    wd.dwUIChoice = 2                 # WTD_UI_NONE
+    wd.fdwRevocationChecks = 0        # WTD_REVOKE_NONE
+    wd.dwUnionChoice = 1              # WTD_CHOICE_FILE
+    wd.pFile = ctypes.pointer(fi)
+    wd.dwStateAction = 1              # WTD_STATEACTION_VERIFY
+    wd.dwProvFlags = 0x10 | 0x1000    # WTD_REVOCATION_CHECK_NONE | WTD_CACHE_ONLY_URL_RETRIEVAL -> AG YOK
+    wintrust.WinVerifyTrust.restype = ctypes.c_long
+    wintrust.WinVerifyTrust.argtypes = [wt.HWND, ctypes.POINTER(GUID), ctypes.POINTER(WINTRUST_DATA)]
+    rc = wintrust.WinVerifyTrust(None, ctypes.byref(action), ctypes.byref(wd)) & 0xFFFFFFFF
+    wd.dwStateAction = 2              # WTD_STATEACTION_CLOSE
+    wintrust.WinVerifyTrust(None, ctypes.byref(action), ctypes.byref(wd))
+
+    # Kabul: 0 (tam guven) veya yalniz ZINCIR guven sorunlari. Ret: imza yok (0x800B0100),
+    # ozet uyusmuyor/kurcalanmis (0x80096010), bicim bilinmiyor vb.
+    ZINCIR_SORUNLARI = {0x800B0109,  # CERT_E_UNTRUSTEDROOT
+                        0x800B010A,  # CERT_E_CHAINING
+                        0x80092012,  # CRYPT_E_NO_REVOCATION_CHECK
+                        0x80092013,  # CRYPT_E_REVOCATION_OFFLINE
+                        0x800B0101}  # CERT_E_EXPIRED (zaman damgali imzada cikmaz; sertifika
+                                     # yenilenme gecisinde eski paket kabul edilsin)
+    if rc != 0 and rc not in ZINCIR_SORUNLARI:
+        return False, f"WinVerifyTrust=0x{rc:08X}"
+
+    # --- 2) Imzalayan sertifikanin parmak izi (SHA-1) — PKCS7'deki GERCEK imzalayan ---
+    hStore = wt.HANDLE(); hMsg = wt.HANDLE()
+    crypt32.CryptQueryObject.restype = wt.BOOL
+    ok = crypt32.CryptQueryObject(
+        1,                     # CERT_QUERY_OBJECT_FILE
+        wt.LPCWSTR(exe),
+        0x400,                 # CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED
+        2,                     # CERT_QUERY_FORMAT_FLAG_BINARY
+        0, None, None, None, ctypes.byref(hStore), ctypes.byref(hMsg), None)
+    if not ok:
+        return False, f"CryptQueryObject hata {ctypes.get_last_error()}"
+    try:
+        class BLOB(ctypes.Structure):
+            _fields_ = [('cbData', wt.DWORD), ('pbData', ctypes.POINTER(ctypes.c_ubyte))]
+
+        class CRYPT_ALGORITHM_IDENTIFIER(ctypes.Structure):
+            _fields_ = [('pszObjId', ctypes.c_char_p), ('Parameters', BLOB)]
+
+        class CMSG_SIGNER_INFO(ctypes.Structure):
+            _fields_ = [('dwVersion', wt.DWORD), ('Issuer', BLOB), ('SerialNumber', BLOB),
+                        ('HashAlgorithm', CRYPT_ALGORITHM_IDENTIFIER),
+                        ('HashEncryptionAlgorithm', CRYPT_ALGORITHM_IDENTIFIER),
+                        ('EncryptedHash', BLOB), ('AuthAttrs', BLOB), ('UnauthAttrs', BLOB)]
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [('dwLowDateTime', wt.DWORD), ('dwHighDateTime', wt.DWORD)]
+
+        class CERT_PUBLIC_KEY_INFO(ctypes.Structure):
+            _fields_ = [('Algorithm', CRYPT_ALGORITHM_IDENTIFIER), ('PublicKey', BLOB)]
+
+        class CERT_INFO(ctypes.Structure):
+            _fields_ = [('dwVersion', wt.DWORD), ('SerialNumber', BLOB),
+                        ('SignatureAlgorithm', CRYPT_ALGORITHM_IDENTIFIER), ('Issuer', BLOB),
+                        ('NotBefore', FILETIME), ('NotAfter', FILETIME), ('Subject', BLOB),
+                        ('SubjectPublicKeyInfo', CERT_PUBLIC_KEY_INFO), ('IssuerUniqueId', BLOB),
+                        ('SubjectUniqueId', BLOB), ('cExtension', wt.DWORD), ('rgExtension', ctypes.c_void_p)]
+
+        cb = wt.DWORD(0)
+        crypt32.CryptMsgGetParam.restype = wt.BOOL
+        if not crypt32.CryptMsgGetParam(hMsg, 6, 0, None, ctypes.byref(cb)):   # CMSG_SIGNER_INFO_PARAM
+            return False, f"CryptMsgGetParam boyut hata {ctypes.get_last_error()}"
+        buf = ctypes.create_string_buffer(cb.value)
+        if not crypt32.CryptMsgGetParam(hMsg, 6, 0, buf, ctypes.byref(cb)):
+            return False, f"CryptMsgGetParam hata {ctypes.get_last_error()}"
+        si = ctypes.cast(buf, ctypes.POINTER(CMSG_SIGNER_INFO)).contents
+
+        ci = CERT_INFO()
+        ci.Issuer = si.Issuer
+        ci.SerialNumber = si.SerialNumber
+        crypt32.CertFindCertificateInStore.restype = ctypes.c_void_p
+        crypt32.CertFindCertificateInStore.argtypes = [wt.HANDLE, wt.DWORD, wt.DWORD, wt.DWORD,
+                                                       ctypes.c_void_p, ctypes.c_void_p]
+        ctx = crypt32.CertFindCertificateInStore(hStore, 0x10001, 0, 0xB0000,   # CERT_FIND_SUBJECT_CERT
+                                                 ctypes.byref(ci), None)
+        if not ctx:
+            return False, "imzalayan sertifika PKCS7 icinde bulunamadi"
+        try:
+            sha1 = ctypes.create_string_buffer(20); cb2 = wt.DWORD(20)
+            crypt32.CertGetCertificateContextProperty.restype = wt.BOOL
+            crypt32.CertGetCertificateContextProperty.argtypes = [ctypes.c_void_p, wt.DWORD, ctypes.c_void_p,
+                                                                  ctypes.POINTER(wt.DWORD)]
+            if not crypt32.CertGetCertificateContextProperty(ctx, 3, sha1, ctypes.byref(cb2)):  # CERT_SHA1_HASH_PROP_ID
+                return False, "parmak izi okunamadi"
+            parmak = sha1.raw[:cb2.value].hex().upper()
+        finally:
+            crypt32.CertFreeCertificateContext(ctypes.c_void_p(ctx))
+        if parmak != thumbprint.upper():
+            return False, f"imzalayan bizim degil (parmak={parmak})"
+        return True, f"WinVerifyTrust=0x{rc:08X} parmak eslesti"
+    finally:
+        if hMsg:
+            crypt32.CryptMsgClose(hMsg)
+        if hStore:
+            crypt32.CertCloseStore(hStore, 0)
+
+
 def _yonetim_overlay_ac(win, title, widget):
     """Yonetim formunu (Sifre Degistir / Tahta Yapilandirmasi) overlay'de acar ve form acikken
     FIZIKSEL KLAVYEYI SERBEST BIRAKIR.
@@ -6009,6 +6147,29 @@ class FatihClientApp(QWidget):
     _IMZA_THUMBPRINT = "6A03915109C1DF5DD2D12F302750D6A5FDDCF89F"
 
     def _win_imza_gecerli(self, exe):
+        """Windows: yeni client.exe BIZIM sertifikamizla mi imzalanmis + kurcalanmamis mi?
+
+        V6.00.65 (19 Eyl 2026): ONCE agsiz Win32 yolu (_authenticode_dogrula: WinVerifyTrust +
+        CryptQueryObject, iptal/zincir kontrolu YOK, <0.3 sn). Eski PowerShell yolu zincir kurarken
+        Sectigo iptal listesi/zaman damgasi adreslerine internetten ulasmaya calisiyordu; okul agi
+        bloklayinca 60 sn zaman asimi -> "dogrulanamadi". Sultan Fatih'te 36 tahtanin 18'i bu yuzden
+        61'de kaldi, Ozel ERA'da 3 ret sonra sansla gecti. PowerShell yolu yalniz Win32 yolu
+        BEKLENMEDIK sekilde patlarsa (ctypes/DLL) yedek olarak calisir."""
+        self._imza_ret_sebebi = ''
+        try:
+            ok, sebep = _authenticode_dogrula(exe, self._IMZA_THUMBPRINT)
+            if not ok:
+                self._imza_ret_sebebi = f"{sebep} win={platform.platform()}"
+                logging.error(f"[GUNCELLEME] imza reddedildi (Win32): {self._imza_ret_sebebi}")
+            else:
+                logging.info(f"[GUNCELLEME] imza dogrulandi (Win32): {sebep}")
+            return ok
+        except Exception as e:
+            logging.warning(f"[GUNCELLEME] Win32 imza yolu patladi ({type(e).__name__}: {e}); "
+                            f"PowerShell yoluna dusuluyor.")
+            return self._win_imza_gecerli_powershell(exe)
+
+    def _win_imza_gecerli_powershell(self, exe):
         """Windows: yeni client.exe BIZIM sertifikamizla mi imzalanmis + kurcalanmamis mi?
 
         KRITIK (15 Ağu bug'i): eskiden Status -eq 'Valid' istiyordu; bu, tahtanin sertifika
