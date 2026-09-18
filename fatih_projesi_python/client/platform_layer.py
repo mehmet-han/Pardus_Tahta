@@ -602,6 +602,138 @@ class WindowsBackend(PlatformBackend):
         except Exception as e:
             logging.error(f"force_window_on_top (Windows) error: {e}")
 
+    # --- DOKUNMATIK KABUK HAREKETLERI (19 Eyl 2026 — "bücür" videosu) ---
+    # Ogrenci klavye kullanmadi: ekranin SOL KENARINDAN icerí kaydirarak Windows 11 GOREV
+    # GORUNUMU'nu (Masaustu 1/2, "Yeni masaustu", pencere kucuk resimleri) acti; kilit
+    # penceresi baska bir sanal masaustune gecilince gorunmez oluyor. WH_KEYBOARD_LL hook'u
+    # yalniz KLAVYE olaylarini yutar; dokunmatik kenar/3-4 parmak hareketleri kabuga dogrudan
+    # gider. Uc katman: (1) hareketleri ilke ile kapat (asagida), (2) kur.bat ayni ilkeleri
+    # HKLM'ye de yazar, (3) kilit boyunca saniyelik nobetci: pencere on planda/mevcut sanal
+    # masaustunde degilse geri getir + Gorev Gorunumu/Baslat aciksa ESC ile kapat.
+    def harden_touch_gestures(self):
+        """Kenar kaydirma (Task View/Bildirim/Baslat) + 3-4 parmak hareketleri KAPALI.
+        HKCU ilkesi: kiosk kullanicisi yazabilir, yonetici gerekmez. Idempotent."""
+        if NO_LOCK_MODE:
+            return
+        try:
+            import winreg
+            # "Allow edge swipe" ilkesi (Kullanici Yapilandirmasi) — Win10/11.
+            k = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,
+                                   r"Software\Policies\Microsoft\Windows\EdgeUI", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(k, "AllowEdgeSwipe", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(k)
+            # Win11 Ayarlar > Dokunmatik > "Uc ve dort parmak dokunma hareketleri" = kapali.
+            k = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,
+                                   r"Software\Microsoft\Wisp\Touch", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(k, "TouchGestureSetting", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(k)
+            logging.info("Dokunmatik kabuk hareketleri kapatildi (EdgeSwipe/3-4 parmak).")
+        except Exception as e:
+            logging.error(f"harden_touch_gestures hata: {e}")
+
+    # Kabuk pencereleri: Gorev Gorunumu / Baslat / Bildirim merkezi / Arama.
+    _KABUK_SINIFLARI = ("MultitaskingViewFrame", "XamlExplorerHostIslandWindow",
+                        "Windows.UI.Core.CoreWindow", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+                        "TaskListThumbnailWnd", "ForegroundStaging")
+
+    def _on_plandaki_sinif(self):
+        c = self._ctypes
+        h = self._user32.GetForegroundWindow()
+        if not h:
+            return None, ''
+        buf = c.create_unicode_buffer(128)
+        self._user32.GetClassNameW(c.c_void_p(h), buf, 128)
+        return h, buf.value
+
+    def _mevcut_sanal_masaustunde(self, hwnd):
+        """IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop (belgeli COM arayuzu, ctypes
+        ile). Bilinemezse None (eski Windows / COM hatasi) -> nobetci yalniz on-plan kontrolu yapar."""
+        c = self._ctypes
+        try:
+            if getattr(self, '_vdm', None) is None:
+                ole32 = c.windll.ole32
+                ole32.CoInitialize(None)
+
+                class GUID(c.Structure):
+                    _fields_ = [('a', wintypes.DWORD), ('b', wintypes.WORD), ('c', wintypes.WORD),
+                                ('d', c.c_ubyte * 8)]
+
+                def _guid(s):
+                    import uuid
+                    u = uuid.UUID(s).bytes_le
+                    return GUID(int.from_bytes(u[0:4], 'little'), int.from_bytes(u[4:6], 'little'),
+                                int.from_bytes(u[6:8], 'little'), (c.c_ubyte * 8)(*u[8:16]))
+                clsid = _guid('aa509086-5ca9-4c25-8f95-589d3c07b48a')   # CLSID_VirtualDesktopManager
+                iid = _guid('a5cd92ff-29be-454c-8d04-d82879fb3f1b')     # IID_IVirtualDesktopManager
+                p = c.c_void_p()
+                hr = ole32.CoCreateInstance(c.byref(clsid), None, 1, c.byref(iid), c.byref(p))  # INPROC
+                if hr != 0 or not p:
+                    self._vdm = False
+                    return None
+                # vtable: [0]QI [1]AddRef [2]Release [3]IsWindowOnCurrentVirtualDesktop [4]GetWindowDesktopId [5]MoveWindowToDesktop
+                vtbl = c.cast(c.cast(p, c.POINTER(c.c_void_p))[0], c.POINTER(c.c_void_p))
+                FN = c.WINFUNCTYPE(c.c_long, c.c_void_p, c.c_void_p, c.POINTER(wintypes.BOOL))
+                self._vdm = (p, FN(vtbl[3]))
+            if self._vdm is False:
+                return None
+            p, fn = self._vdm
+            b = wintypes.BOOL(1)
+            hr = fn(p, c.c_void_p(int(hwnd)), c.byref(b))
+            return bool(b.value) if hr == 0 else None
+        except Exception as e:
+            logging.debug(f"sanal masaustu kontrolu: {e}")
+            self._vdm = False
+            return None
+
+    def kiosk_guard_tick(self, hwnd):
+        """Kilitliyken saniyede bir: kabuk (Gorev Gorunumu/Baslat) aciksa ESC ile kapat; pencere
+        baska sanal masaustunde ya da on planda degilse geri getir. Doner: mudahale edildi mi."""
+        if NO_LOCK_MODE:
+            return False
+        try:
+            import os
+            c = self._ctypes
+            hwnd = int(hwnd)
+            mudahale = False
+            fg, sinif = self._on_plandaki_sinif()
+            # KENDI penceremiz (giris diyalogu, uyari kutusu, ana pencere) on plandaysa dokunma:
+            # yoksa her saniye odagi ana pencereye ceker, diyaloglar kullanilamaz olur.
+            fg_pid = wintypes.DWORD(0)
+            if fg:
+                self._user32.GetWindowThreadProcessId(c.c_void_p(fg), c.byref(fg_pid))
+            yabanci = bool(fg) and fg_pid.value != os.getpid()
+            if yabanci and sinif in self._KABUK_SINIFLARI:
+                # Gorev Gorunumu / Baslat acik -> ESC kapatir (kabuk kendi kisayolunu tanir).
+                VK_ESCAPE, KEYEVENTF_KEYUP = 0x1B, 0x0002
+                self._user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+                self._user32.keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0)
+                mudahale = True
+            burada = self._mevcut_sanal_masaustunde(hwnd)
+            if burada is False or yabanci:
+                # SwitchToThisWindow pencerenin bulundugu sanal masaustune GECER ve on plana alir
+                # (Alt+Tab ile secmenin programatik karsiligi); SetForegroundWindow tek basina
+                # baska masaustundeki pencereyi getirmez.
+                self._user32.SwitchToThisWindow(c.c_void_p(hwnd), True)
+                # ON PLAN KILIDI: arka plandaki surecin SetForegroundWindow'u Windows tarafindan
+                # reddedilebilir. Bilinen, GUVENLI cozum: kendi surecimizle bir tus olayi uret
+                # (keybd_event ALT) -> "son girdi bizden" sayilir, cagri kabul edilir.
+                # AttachThreadInput BILEREK KULLANILMIYOR: karsi is parcacigi mesgulse UI
+                # is parcacigimizi kilitler (19 Eyl yerel testte asili kaldi).
+                VK_MENU, KEYEVENTF_KEYUP = 0x12, 0x0002
+                self._user32.keybd_event(VK_MENU, 0, 0, 0)
+                self._user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+                self._user32.BringWindowToTop(c.c_void_p(hwnd))
+                self._user32.SetForegroundWindow(c.c_void_p(hwnd))
+                self.force_window_on_top(hwnd)
+                mudahale = True
+            if mudahale:
+                logging.warning(f"[NOBETCI] kabuk mudahalesi geri alindi (on plan sinifi='{sinif}', "
+                                f"masaustunde={burada}).")
+            return mudahale
+        except Exception as e:
+            logging.debug(f"kiosk_guard_tick hata: {e}")
+            return False
+
     def disable_shortcuts(self, auto_release_sec=None, panic_cb=None):
         """Kilit-atlatma tuşlarını engelle (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4).
         Panik: Ctrl+Alt+Shift+Q — panic_cb verilirse hook BIRAKILMAZ, cb çağrılır

@@ -43,6 +43,13 @@ rmdir /S /Q "C:\MebreTahta" >nul 2>&1
 REM Gorev Yoneticisi kilidi (C# mirasi) tahtada BILINCLI KORUNUR/SETLENIR (kiosk sertlestirme,
 REM project_rules 6). Kaldirma betigi bunu 0'a geri alir - yanlis kurulumda iz kalmaz.
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableTaskMgr /t REG_DWORD /d 1 /f >nul 2>&1
+REM DOKUNMATIK KABUK HAREKETLERI KAPALI (19 Eyl 2026, saha videosu): ogrenci sol kenardan
+REM kaydirip Windows 11 Gorev Gorunumu'nu acti, yeni sanal masaustune gecti -> kilit ekrani
+REM gorunmez. Klavye hook'u dokunmatik hareketleri yutamaz. Kenar kaydirma ilkesi HKLM+HKCU,
+REM 3-4 parmak hareketleri HKCU. Client kilitte HKCU'yu her seferinde yeniden yazar.
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\EdgeUI" /v AllowEdgeSwipe /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKCU\Software\Policies\Microsoft\Windows\EdgeUI" /v AllowEdgeSwipe /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Wisp\Touch" /v TouchGestureSetting /t REG_DWORD /d 0 /f >nul 2>&1
 
 echo Mebre Akilli Tahta kuruluyor...
 REM Onceki V6 kurulumunun uzerine TEMIZ kurulum (9 Eyl): calisan client durdurulur

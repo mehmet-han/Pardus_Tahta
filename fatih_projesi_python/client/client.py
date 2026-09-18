@@ -6505,6 +6505,15 @@ class FatihClientApp(QWidget):
                 # receteleri sifresiz panikle ise yariyordu). Tanitilmamissa serbest.
                 ShortcutManager.disable(panic_cb=self._panik_istegi)
                 kill_all_browsers()          # Tarayıcıları kapat (C# KillAllItem)
+                if IS_WINDOWS:
+                    # 19 Eyl 2026 saha videosu: ogrenci dokunmatik kenar kaydirmayla Gorev
+                    # Gorunumu'nu acip yeni sanal masaustune gecti (klavye hook'u bunu yutamaz).
+                    # Ilke ile hareketleri kapat + kilit boyunca saniyelik nobetci.
+                    get_platform().harden_touch_gestures()
+                    if getattr(self, '_kiosk_nobetci', None) is None:
+                        self._kiosk_nobetci = QTimer(self)
+                        self._kiosk_nobetci.timeout.connect(self._kiosk_nobetci_tick)
+                    self._kiosk_nobetci.start(1000)
             else:
                 logging.info("Windows önizleme: kilit görsel (zorlama YOK — --win-kiosk ile aç).")
 
@@ -6525,6 +6534,32 @@ class FatihClientApp(QWidget):
                     logging.error(f"Failed to start KeyboardLocker: {e}")
                     self.keyboard_locker = None
 
+
+    def _kiosk_nobetci_tick(self):
+        """Windows kilit nobetcisi (saniyede 1): Gorev Gorunumu/Baslat acildiysa kapat, pencere
+        baska sanal masaustune dustuyse ya da on plandan indiyse geri getir. Yonetim formu
+        (overlay) acikken ve kilit yokken hicbir sey yapmaz. Mudahale hata gunlugune 'uyari'
+        olarak duser (throttle'li) — hangi okulda kim ugrasiyor gorulsun."""
+        try:
+            if not self.is_locked:
+                return
+            for child in self.children():
+                if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
+                    return
+            if get_platform().kiosk_guard_tick(int(self.winId())):
+                _hata_bildir("guvenlik", "uyari",
+                             "Kilitliyken kabuk mudahalesi geri alindi (Gorev Gorunumu / sanal masaustu)",
+                             f"surum={SETTINGS.get('version')}")
+                # OLAY GECMISI + SUPHELI ACILIS (kullanici: "bu tur acilislarda haber verecekti,
+                # vermedi"): kilit COZULMEDIGI icin acilis uyarisi tetiklenmiyordu. Girisim artik
+                # tahta olay kaydina duser (ynt5 Olay Gecmisi); dakikada en fazla 1 kayit.
+                simdi = time.time()
+                if simdi - getattr(self, '_nobetci_son_olay', 0) > 60:
+                    self._nobetci_son_olay = simdi
+                    self.save_log("Kilit atlatma girisimi: dokunmatik Gorev Gorunumu/sanal masaustu — geri alindi",
+                                  "guvenlik")
+        except Exception as e:
+            logging.debug(f"_kiosk_nobetci_tick: {e}")
 
     def _force_on_top(self):
         """Cinnamon'da kilit ekranını taskbar'ın üstüne zorla al"""
@@ -6596,6 +6631,8 @@ class FatihClientApp(QWidget):
             self.keyboard_locker = None
             
         # --- Güvenlik katmanlarını geri aç (C# LockFree karşılığı) ---
+        if getattr(self, '_kiosk_nobetci', None) is not None:
+            self._kiosk_nobetci.stop()   # Windows kabuk nobetcisi (Gorev Gorunumu/sanal masaustu)
         PanelManager.show()          # Taskbar göster
         VolumeControl.unmute()       # Ses aç (C# VU)
         ShortcutManager.restore()    # Kısayolları geri yükle
@@ -6755,6 +6792,10 @@ class FatihClientApp(QWidget):
             # Userinit varsayilana doner (sondaki virgul standart) — makine temiz kalir.
             'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableTaskMgr /t REG_DWORD /d 0 /f >nul 2>&1\r\n'
             'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" /v Userinit /t REG_SZ /d "C:\\Windows\\system32\\userinit.exe," /f >nul 2>&1\r\n'
+            # Dokunmatik kabuk hareketleri ilkeleri (19 Eyl, harden_touch_gestures) geri alinir.
+            'reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI" /v AllowEdgeSwipe /f >nul 2>&1\r\n'
+            'reg delete "HKCU\\Software\\Policies\\Microsoft\\Windows\\EdgeUI" /v AllowEdgeSwipe /f >nul 2>&1\r\n'
+            'reg delete "HKCU\\Software\\Microsoft\\Wisp\\Touch" /v TouchGestureSetting /f >nul 2>&1\r\n'
             ":wait\r\n"
             'tasklist /FI "IMAGENAME eq client.exe" | find /I "client.exe" >nul\r\n'
             "if not errorlevel 1 ( timeout /t 2 /nobreak >nul & goto wait )\r\n"
