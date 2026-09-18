@@ -2082,6 +2082,13 @@ def _yonetim_overlay_ac(win, title, widget):
         logging.info(f"Klavye kilidi '{title}' formu icin birakildi.")
 
     def _kapandi():
+        # X klavye grab'ini birak (asagidaki _KlavyeUstlenici); form yokken tuslar bize gelmesin.
+        try:
+            g = QWidget.keyboardGrabber()
+            if g is not None:
+                g.releaseKeyboard()
+        except Exception:
+            pass
         if not kilit_vardi:
             return
         # FatihKioskMode'da is_locked yok (kiosk her zaman kilitli) -> varsayilan True.
@@ -2097,7 +2104,52 @@ def _yonetim_overlay_ac(win, title, widget):
 
     overlay = LockScreenOverlay(win, title=title, content_widget=widget, on_close=_kapandi)
     widget.close_callback = overlay.close_overlay
+    # Odaktaki alan klavyeyi X SEVIYESINDE ustlenir (V6.00.65) — evdev serbest olsa da kilit
+    # penceresi X11BypassWindowManagerHint yuzunden WM'den klavye odagi ALMIYOR; tuslar baska
+    # pencereye gidiyordu (17-18 Eyl: V6.00.64'te klavye_kilidi=False ama uc alan yine bos).
+    overlay._klavye_ustlenici = _KlavyeUstlenici(widget)
     return overlay
+
+
+class _KlavyeUstlenici(QObject):
+    """Formdaki QLineEdit'ler odak/tap aldiginda QWidget.grabKeyboard() cagirir.
+
+    grabKeyboard X'te xcb_grab_keyboard yapar: tus olaylari pencere yoneticisinin odagindan
+    bagimsiz olarak DOGRUDAN o alana gelir. Kilit penceresi WM'yi atladigi icin normal odak
+    yolu calismiyordu; _safe_open_dialog'un QDialog'u gercek bir pencere olup odak aldigi
+    icin orada sorun yoktu. Windows'ta zararsiz (SetCapture benzeri, zaten odak var).
+    Grab, alan degistikce tasinir; overlay kapaninca _kapandi() birakir; widget silinirse
+    Qt kendisi birakir."""
+    def __init__(self, widget):
+        super().__init__(widget)
+        self._alanlar = [w for w in widget.findChildren(QLineEdit) if not w.isReadOnly()]
+        for w in self._alanlar:
+            w.installEventFilter(self)
+        # Ilk grab: odaktaki alan, yoksa ilk bos/yazilabilir alan (widget'lar odagi 100ms sonra
+        # veriyor; onlarin arkasindan gel).
+        QTimer.singleShot(200, self._ilk_grab)
+
+    def _ilk_grab(self):
+        try:
+            f = QApplication.focusWidget()
+            if not (isinstance(f, QLineEdit) and f in self._alanlar):
+                f = next((w for w in self._alanlar if not w.text()), self._alanlar[0] if self._alanlar else None)
+                if f is not None:
+                    f.setFocus()
+            if f is not None and f.isVisible():
+                f.grabKeyboard()
+                logging.info("Klavye X seviyesinde forma ustlenildi.")
+        except Exception as e:
+            logging.error(f"Klavye ustlenilemedi: {e}")
+
+    def eventFilter(self, obj, event):
+        try:
+            if isinstance(obj, QLineEdit) and event.type() in (event.Type.FocusIn, event.Type.MouseButtonPress):
+                if QWidget.keyboardGrabber() is not obj and obj.isVisible():
+                    obj.grabKeyboard()
+        except Exception:
+            pass
+        return False   # olayi yutma; widget'larin kendi eventFilter'lari (numpad hedefi) calissin
 
 
 # --- Schedule Display Dialog (C# FormGirisCikisSaatleri karşılığı) ---
