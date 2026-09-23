@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 import subprocess as _subprocess
 import hashlib
 import platform
+import uuid   # _cihaz_izi yedegi (MAC) — machine-id/MachineGuid okunamazsa
 
 # --- Platform tespiti ---
 # client.py Pardus (Linux) ve Windows'ta ortak calisir. Linux'a OZEL girdi/USB kutuphaneleri
@@ -115,6 +116,44 @@ _HATA_SON = {}                     # imza -> son gonderim zamani (ayni hatayi sp
 _HATA_MIN_ARALIK = 300            # ayni imzali hata en fazla 5 dk'da bir gonderilir
 _HATA_SAATLIK_TAVAN = 20         # saatte en fazla 20 hata (spam/agirlik koruma)
 _HATA_SAAT = [0, 0]               # [saat penceresi baslangici, o pencerede gonderilen sayisi]
+
+def _cihaz_izi() -> str:
+    """Makineye ozgu, KALICI ve kimlik tasimayan parmak izi (16 hex).
+
+    NEDEN (23 Eyl 2026): sahipsiz kurulum kaydi (ip, hostname) ile tekilleniyordu. ETAP
+    tahtalarinda hostname hep ayni ('etap') ve okulun tek dis IP'si var -> ayni okuldaki tum
+    sahipsiz cihazlar TEK satirda birlesiyor, panelden 'kaldir' hepsini birden kaldiriyordu.
+    Kaynak: Linux machine-id / Windows MachineGuid (kurulumla gelir, yeniden kurulumda degismez);
+    bulunamazsa MAC. Ham deger GONDERILMEZ: SHA-256 ozetinin ilk 16 hanesi gider (geri
+    cevrilemez, cihazi yalniz bizim kayitlarimizda ayirt eder)."""
+    ham = ''
+    try:
+        if IS_WINDOWS:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0,
+                                winreg.KEY_READ | getattr(winreg, 'KEY_WOW64_64KEY', 0)) as k:
+                ham = str(winreg.QueryValueEx(k, "MachineGuid")[0] or '')
+        else:
+            for yol in ('/etc/machine-id', '/var/lib/dbus/machine-id'):
+                try:
+                    with open(yol, 'r', encoding='utf-8') as f:
+                        ham = f.read().strip()
+                    if ham:
+                        break
+                except OSError:
+                    continue
+    except Exception as e:
+        logging.debug(f"_cihaz_izi kaynak okunamadi: {e}")
+    if not ham:
+        try:
+            ham = f"mac:{uuid.getnode()}"
+        except Exception:
+            return ''
+    try:
+        return hashlib.sha256(ham.encode('utf-8')).hexdigest()[:16]
+    except Exception:
+        return ''
+
 
 def _hata_bildir(tur, seviye, mesaj, detay=None):
     """Hatayi (cokme/operasyon) sunucuya best-effort, throttle'li, arka planda gonderir.
@@ -2957,6 +2996,10 @@ class NetworkClient:
                 "platform": "windows" if IS_WINDOWS else "pardus",
                 "surum": str(self.settings.get('version') or ''),
                 "hostname": str(_s.gethostname() or '')[:60],
+                # CIHAZ IZI (23 Eyl 2026): kayit eskiden (ip, hostname) ile tekildi; ETAP
+                # tahtalarinin bilgisayar adi ayni ve okulun tek dis IP'si var -> ayni okuldaki
+                # TUM sahipsiz cihazlar tek satirda birlesiyordu ve 'kaldir' hepsini kaldirirdi.
+                "cihaz_iz": _cihaz_izi(),
             }
             r = requests.post(self._base_url() + "/sahipsiz", json=govde,
                               headers={"X-Timestamp": str(int(time.time()))}, timeout=15, verify=True)
