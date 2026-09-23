@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QLi
                            QVBoxLayout, QHBoxLayout, QFormLayout, QWidget, QDialog, QGridLayout,
                            QMenu, QSystemTrayIcon, QTextEdit, QMessageBox, QStyle, QComboBox, QAction, QFrame,
                            QListWidget, QListWidgetItem, QScrollArea, QStackedWidget)
-from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor, QFontMetrics
+from PyQt5.QtGui import QPixmap, QScreen, QFont, QIcon, QCursor, QFontMetrics, QColor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
 from datetime import datetime, timedelta
 import subprocess as _subprocess
@@ -1502,8 +1502,21 @@ class BoardConfigWidget(QWidget):
                         board_id = board.get("boardId", "N/A")
                         board_name = board.get("name") or f"Tahta {board_id}"
                         pasif = "" if board.get("aktif", 1) else " (pasif)"
-                        item = QListWidgetItem(f"{board_id} - {board_name}{pasif}")
+                        # DOLU SINIF UYARISI (23 Eyl 2026 saha): 737238'de iki cihaz ayni gun
+                        # 8/G'ye tanitildi; ikincisi birincinin kimligini iptal etti ve iptal olan
+                        # cihaz sunucuya hic ulasamadigi icin UZAKTAN KALDIRILAMADI (teknisyen
+                        # panelde tek satir gordugu icin durumu fark etmedi). Liste artik dolu
+                        # siniflari isaretler; secilirse kaydetmeden once onay sorulur.
+                        dolu = bool(board.get("tanitilmis"))
+                        etiket = f"{board_id} - {board_name}{pasif}"
+                        if dolu:
+                            etiket += "  ⚠ KURULU"
+                        item = QListWidgetItem(etiket)
                         item.setData(Qt.UserRole, board_id)
+                        if dolu:
+                            item.setForeground(QColor("#ffaa00"))
+                            item.setToolTip(f"Bu sınıfa zaten bir cihaz tanıtılmış "
+                                            f"(son görülme: {board.get('sonGorulme') or 'bilinmiyor'}).")
                         self.board_list_widget.addItem(item)
 
                     self.board_list_widget.setCurrentRow(0)
@@ -1563,6 +1576,32 @@ class BoardConfigWidget(QWidget):
                 break
 
         corporate_code = self.corporate_code_field.text().strip()
+
+        # DOLU SINIF ONAYI (23 Eyl 2026 saha): secilen sinifa zaten bir cihaz tanitilmissa,
+        # devam etmek o cihazin kimligini IPTAL eder. Iptal olan cihaz sunucuya hic ulasamaz:
+        # panelde gorunmez, uzaktan kaldirilamaz, kilit ekraniyla calismaya devam eder
+        # (737238'de iki cihaz 8/G'ye tanitildi, biri boyle ortada kaldi). Teknisyen bunu
+        # BILEREK secsin diye acik onay soruluyor.
+        _secili = next((b for b in self.boards if b.get("boardId") == selected_board_id), {})
+        if _secili.get("tanitilmis"):
+            _kutu = QMessageBox(self)
+            _kutu.setIcon(QMessageBox.Warning)
+            _kutu.setWindowTitle("Bu sınıfta kurulu cihaz var")
+            _kutu.setText(
+                f"{board_name} sınıfına zaten bir cihaz tanıtılmış "
+                f"(son görülme: {_secili.get('sonGorulme') or 'bilinmiyor'}).\n\n"
+                "Devam ederseniz o cihaz devre dışı kalır: panelde görünmez, uzaktan "
+                "KALDIRILAMAZ ve kilit ekranıyla çalışmaya devam eder. Eski cihaz hâlâ "
+                "kullanımdaysa önce onu kaldırın.\n\nDevam edilsin mi?")
+            _kutu.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            _kutu.setDefaultButton(QMessageBox.No)
+            _kutu.button(QMessageBox.Yes).setText("Evet, devam et")
+            _kutu.button(QMessageBox.No).setText("Vazgeç")
+            _kutu.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+            if _kutu.exec() != QMessageBox.Yes:
+                self.status_label.setStyleSheet("color: #ffaa00;")
+                self.status_label.setText("Tanıtım iptal edildi (sınıfta kurulu cihaz korundu).")
+                return
 
         # v6: tahta secildi -> cihaz token'i uret (/enroll). Token OLMADAN config yazMA;
         # yarim yazilirsa tahta kimliksiz kalir ve fail-safe ile kilitli acilir (sebebi de gorunmez).
@@ -2699,7 +2738,15 @@ class NetworkClient:
 
             if response.status_code != 200:
                 logging.error(f"API Error: {response.status_code} @ {endpoint}")
+                # KIMLIK REDDI (23 Eyl 2026): 401 = cihaz token'i artik gecersiz. Tek sebebi
+                # ayni sinifa BASKA bir cihazin tanitilmasi (KIMLIK DEVRI). Boyle bir cihaz
+                # hicbir komut alamaz -> panelde gorunmez, uzaktan kaldirilamaz, kilit ekraniyla
+                # calismaya devam eder. Ust katman bunu gorup sahipsiz nabza doner (asagida
+                # _kimlik_reddi_kontrol). Gecici 401 ihtimaline karsi ardarda 3 kez sart.
+                if response.status_code == 401:
+                    self.kimlik_red_sayac = getattr(self, 'kimlik_red_sayac', 0) + 1
                 return None
+            self.kimlik_red_sayac = 0
             return response
         except requests.exceptions.SSLError as e:
             _url = None
@@ -4337,10 +4384,41 @@ class FatihClientApp(QWidget):
         self._poll_dur = False
         self._poll_thread = None
 
-    def init_sahipsiz_nabiz(self):
+    def _kimlik_reddi_kontrol(self):
+        """Sunucu cihaz kimligini ardarda reddettiyse (401 x3) tahtayi GORUNUR kil.
+
+        SAHA (23 Eyl 2026, kurum 737238): ayni sinifa ikinci cihaz tanitilinca birincinin kimligi
+        iptal oldu. O cihaz komut alamadigi icin uzaktan kaldirma ona ULASMADI; panelde hic
+        gorunmedigi icin de kimse fark etmedi, kilit ekraniyla calismaya devam etti.
+        Artik: kimligi reddedilen tahta sahipsiz nabza DONER (panelde 'Sahipsiz Kurulumlar'da
+        belirir, oradan uzaktan kaldirilabilir) ve ekranda 'yeniden tanitilmali' uyarisi gosterir.
+        Kilit davranisi DEGISMEZ (ogrenci serbest kalmasin)."""
+        if getattr(self, '_kimlik_reddedildi', False):
+            return
+        if getattr(self.network_client, 'kimlik_red_sayac', 0) < 3:
+            return
+        self._kimlik_reddedildi = True
+        logging.error("[KIMLIK] Sunucu cihaz kimligini reddetti (401 x3) — muhtemelen bu sinifa "
+                      "baska bir cihaz tanitildi. Sahipsiz nabiz aciliyor.")
+        _hata_bildir("kimlik", "kritik",
+                     "Tahta kimligi gecersiz (401) — sinifa baska cihaz tanitilmis olabilir",
+                     f"surum={SETTINGS.get('version')} tahta={SETTINGS.get('board_name', '')}")
+        try:
+            self.message_label.setText("⚠ Bu tahta yeniden tanıtılmalı (kimlik geçersiz). "
+                                       "Okul yönetimi Mebre ile iletişime geçmeli.")
+            self.message_label.setVisible(True)
+        except Exception:
+            pass
+        self.init_sahipsiz_nabiz(zorla=True)
+
+    def init_sahipsiz_nabiz(self, zorla=False):
         """Tanitilmamis cihaz nabzi: acilistan 20 sn sonra + 10 dk'da bir. Tanitim yapilinca
-        kendini durdurur. Panelden 'kaldir' isaretlenmisse remove_system(yerel=True) calisir."""
-        if get_setting('device_token', '') or '':
+        kendini durdurur. Panelden 'kaldir' isaretlenmisse remove_system(yerel=True) calisir.
+        zorla=True: kimligi REDDEDILEN tahta icin (token var ama gecersiz) — bkz.
+        _kimlik_reddi_kontrol."""
+        if getattr(self, '_sahipsiz_timer', None) is not None:
+            return   # zaten calisiyor
+        if not zorla and (get_setting('device_token', '') or ''):
             return   # tanitilmis tahta — nabiz yok
         self._sahipsiz_timer = QTimer(self)
         self._sahipsiz_timer.timeout.connect(self._sahipsiz_atim)
@@ -4349,7 +4427,8 @@ class FatihClientApp(QWidget):
         logging.info("[SAHIPSIZ] Tanitilmamis kurulum nabzi baslatildi (20 sn + 10 dk).")
 
     def _sahipsiz_atim(self):
-        if get_setting('device_token', '') or '':
+        # Kimligi reddedilen tahtada token DOLU ama gecersiz -> nabiz DEVAM etmeli.
+        if (get_setting('device_token', '') or '') and not getattr(self, '_kimlik_reddedildi', False):
             try:
                 self._sahipsiz_timer.stop()
             except Exception:
@@ -5901,6 +5980,11 @@ class FatihClientApp(QWidget):
     def _poll_sonuc_uygula(self, commands):
         """Bir poll sonucunu uygula (long-poll dongusu + tek-atis poll_server ortak kullanir).
         commands None ise ag/sunucu koptu -> internet kontrolu + gerekirse kilit."""
+        # Kimlik reddi (401 x3) — ag hatasindan ayri bir durum; bkz. _kimlik_reddi_kontrol.
+        try:
+            self._kimlik_reddi_kontrol()
+        except Exception as e:
+            logging.debug(f"_kimlik_reddi_kontrol: {e}")
         if commands is not None:
             logging.info("Successfully polled server.")
             self.network_status_signal.emit(True)
