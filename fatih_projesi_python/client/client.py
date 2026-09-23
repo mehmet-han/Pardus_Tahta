@@ -6708,10 +6708,17 @@ class FatihClientApp(QWidget):
             for child in self.children():
                 if type(child).__name__ == 'LockScreenOverlay' and child.isVisible():
                     return
-            if get_platform().kiosk_guard_tick(int(self.winId())):
+            _sonuc = get_platform().kiosk_guard_tick(int(self.winId()))
+            if isinstance(_sonuc, dict) and _sonuc.get('mudahale') and _sonuc.get('gercek_girisim'):
+                # Ozete pencere sinifi GIRER: boylece hata gunlugunde ayri satirlar olusur ve
+                # "ogrenci Gorev Gorunumu acti" ile "arka planda bir uygulama one ziplıyor"
+                # birbirinden ayirt edilir (23 Eyl: 169 tetikleme, sebebi ayirt edilemedi).
+                _sinif = _sonuc.get('sinif') or '?'
                 _hata_bildir("guvenlik", "uyari",
-                             "Kilitliyken kabuk mudahalesi geri alindi (Gorev Gorunumu / sanal masaustu)",
-                             f"surum={SETTINGS.get('version')}")
+                             f"Kilitliyken kabuk mudahalesi geri alindi ({_sinif})",
+                             f"surum={SETTINGS.get('version')} sinif={_sinif} "
+                             f"surec={_sonuc.get('surec') or '?'} "
+                             f"masaustunde={_sonuc.get('masaustunde')}")
                 # OLAY GECMISI + SUPHELI ACILIS (kullanici: "bu tur acilislarda haber verecekti,
                 # vermedi"): kilit COZULMEDIGI icin acilis uyarisi tetiklenmiyordu. Girisim artik
                 # tahta olay kaydina duser (ynt5 Olay Gecmisi); dakikada en fazla 1 kayit.

@@ -728,11 +728,41 @@ class WindowsBackend(PlatformBackend):
                 mudahale = True
             if mudahale:
                 logging.warning(f"[NOBETCI] kabuk mudahalesi geri alindi (on plan sinifi='{sinif}', "
-                                f"masaustunde={burada}).")
-            return mudahale
+                                f"masaustunde={burada}, surec={fg_pid.value}).")
+                # TANI BILGISI (23 Eyl 2026): ilk surumde kayda yalniz 'surum' yaziliyordu ve
+                # 169 tetiklemenin ogrenci girisimi mi yoksa yanlis alarm mi oldugu anlasilmadi.
+                # Artik hangi pencere/surec one gecti ve sanal masaustu kontrolu ne dedi, kayda girer.
+                # 'gercek_girisim': kabuk penceresi (Gorev Gorunumu/Baslat) ya da BASKA sanal
+                # masaustune gecis. Sadece odak kaybi (baska pencere one gecti) rutin sayilir:
+                # geri alinir ama kayda dusmez, yoksa gunluk gurultuye boguluyor (23 Eyl: 169).
+                return {'mudahale': True, 'sinif': sinif or '?', 'masaustunde': burada,
+                        'surec': self._surec_adi(fg_pid.value),
+                        'gercek_girisim': bool(sinif in self._KABUK_SINIFLARI or burada is False)}
+            return {'mudahale': False}
         except Exception as e:
             logging.debug(f"kiosk_guard_tick hata: {e}")
-            return False
+            return {'mudahale': False}
+
+    def _surec_adi(self, pid):
+        """PID -> calistirilabilir adi (explorer.exe vb.). Bulunamazsa ''. Yalniz taniya yarar."""
+        try:
+            if not pid:
+                return ''
+            c = self._ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            h = self._kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+            if not h:
+                return ''
+            try:
+                buf = c.create_unicode_buffer(260)
+                boyut = wintypes.DWORD(260)
+                if self._kernel32.QueryFullProcessImageNameW(h, 0, buf, c.byref(boyut)):
+                    return buf.value.rsplit('\\', 1)[-1][:40]
+            finally:
+                self._kernel32.CloseHandle(h)
+        except Exception:
+            pass
+        return ''
 
     def disable_shortcuts(self, auto_release_sec=None, panic_cb=None):
         """Kilit-atlatma tuşlarını engelle (Win/Alt+Tab/Alt+Esc/Ctrl+Esc/Alt+F4).
