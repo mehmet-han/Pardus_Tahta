@@ -1894,6 +1894,14 @@ class ChangePasswordWidget(QWidget):
             except RuntimeError:
                 pass  # callback hedefi (or. silinmis overlay) yok olmus — sessizce gec
 
+    def _alan_vurgula(self, alan, eksik: bool):
+        """Bos alani kirmizi cerceveyle isaretler, dolunca eski gorunume dondurur.
+        Alanin KENDI stili korunur (varsayilan sifrede 'Mevcut Sifre' gri/readOnly gorunuyor;
+        duz setStyleSheet onu siliyordu)."""
+        if not hasattr(alan, '_orijinal_stil'):
+            alan._orijinal_stil = alan.styleSheet()
+        alan.setStyleSheet(alan._orijinal_stil + ("border: 2px solid #ff4444;" if eksik else ""))
+
     def change_password(self, checked=False):
         logging.info("[ChangePassword] change_password called")
         current = self.current_field.text()
@@ -1902,9 +1910,25 @@ class ChangePasswordWidget(QWidget):
         logging.info(f"[ChangePassword] fields: current_len={len(current)}, new_len={len(new)}, confirm_len={len(confirm)}")
 
         if not current or not new or not confirm:
+            # HANGI ALAN EKSIK (23 Eyl 2026 saha): mesaj "Tum alanlari doldurun" idi; operator
+            # hangi kutunun bos oldugunu goremeyince ayni hataya defalarca carpiyordu — 15 okul /
+            # 27 kez. V6.00.65'te giris CALISIYOR (Kadirli: mevcut=True yeni=True tekrar=False),
+            # yani kalan sorun yol gosterme. Artik eksik alan ADIYLA soylenir, odak + numpad
+            # hedefi oraya tasinir ve kutu kirmizi cerceveyle isaretlenir.
+            _alanlar = [("Mevcut Şifre", self.current_field, current),
+                        ("Yeni Şifre", self.new_field, new),
+                        ("Yeni Şifre (Tekrar)", self.confirm_field, confirm)]
+            _eksik = [(ad, w) for ad, w, deger in _alanlar if not deger]
+            for _ad, _w, _deger in _alanlar:
+                self._alan_vurgula(_w, not _deger)
+            _ilk_ad, _ilk_w = _eksik[0]
+            _ilk_w.setFocus()
+            self.numpad.set_target(_ilk_w)
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
-            self.status_label.setText("Hata: Tüm alanları doldurun!")
-            logging.warning("[ChangePassword] Empty fields detected")
+            self.status_label.setText(
+                f"Hata: '{_ilk_ad}' alanı boş." if len(_eksik) == 1
+                else "Hata: Eksik alanlar: " + ", ".join(ad for ad, _ in _eksik))
+            logging.warning(f"[ChangePassword] Empty fields detected: {[ad for ad, _ in _eksik]}")
             # UI-TAKILMA TELEMETRISI (17 Ağu saha): operator dokunmatikte alt alana gecemedi,
             # ayni dogrulama hatasina defalarca carpti — uzaktan GORUNMUYORDU. 3+ ardarda bos-alan
             # hatasi = muhtemel odak/dokunmatik sorunu -> hata gunlugune 'uyari' dus (throttle'li).
@@ -1919,13 +1943,24 @@ class ChangePasswordWidget(QWidget):
                              f"klavye_kilidi={getattr(self.parent, 'keyboard_locker', None) is not None}")
             return
         self._bos_alan_sayac = 0
+        for _w in (self.current_field, self.new_field, self.confirm_field):
+            self._alan_vurgula(_w, False)   # kirmizi cerceveler kalksin
 
         # Mevcut şifre doğrulama — PBKDF2 veya eski düz metin
         if not admin_sifre_dogru(current):
+            self._yanlis_sifre_sayac = getattr(self, '_yanlis_sifre_sayac', 0) + 1
+            self._alan_vurgula(self.current_field, True)
+            self.current_field.setFocus()
+            self.numpad.set_target(self.current_field)
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
-            self.status_label.setText("Hata: Mevcut şifre yanlış!")
+            # 2. denemeden sonra YOL GOSTER (23 Eyl saha): operator mevcut sifreyi bilmiyorsa
+            # ayni ekranda tikaniyor; ekran ona ne yapacagini soylemiyordu.
+            self.status_label.setText(
+                "Hata: Mevcut şifre yanlış! Bilmiyorsanız okul yönetimi Mebre ile görüşmeli."
+                if self._yanlis_sifre_sayac >= 2 else "Hata: Mevcut şifre yanlış!")
             logging.warning("[ChangePassword] Wrong current password")
             return
+        self._yanlis_sifre_sayac = 0
 
         if new != confirm:
             self.status_label.setStyleSheet("color: #ff4444; font-size: 15px; font-weight: bold;")
