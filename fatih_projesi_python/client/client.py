@@ -117,6 +117,27 @@ _HATA_MIN_ARALIK = 300            # ayni imzali hata en fazla 5 dk'da bir gonder
 _HATA_SAATLIK_TAVAN = 20         # saatte en fazla 20 hata (spam/agirlik koruma)
 _HATA_SAAT = [0, 0]               # [saat penceresi baslangici, o pencerede gonderilen sayisi]
 
+def _surum_ayikla(s):
+    """'V6.00.64' / 'V6.00.64.1' -> (6, 0, 64, 1). Cozulemezse None."""
+    try:
+        parcalar = str(s or '').strip().lstrip('vV').split('.')
+        sayilar = tuple(int(p) for p in parcalar if p != '')
+        return sayilar if sayilar else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _surum_daha_yeni(mevcut, aday) -> bool:
+    """aday, mevcuttan GERCEKTEN yeni mi? Ana surum 6'nin altindaki adaylar (v4 mirasi
+    'V2.13' gibi) yok sayilir — bkz. periyodik bakim icindeki /version notu."""
+    m, a = _surum_ayikla(mevcut), _surum_ayikla(aday)
+    if not a or a[0] < 6:
+        return False
+    if not m:
+        return False
+    return a > m
+
+
 def _cihaz_izi() -> str:
     """Makineye ozgu, KALICI ve kimlik tasimayan parmak izi (16 hex).
 
@@ -5805,8 +5826,14 @@ class FatihClientApp(QWidget):
                         logging.warning(f"Could not find schedule for board ID {my_board_id_str} in server response.")
 
                 # Check for version updates
+                # ⚠ ESKI UC (23 Eyl 2026 saha logu): /version, v4'ten kalma `vercion_s` kaydini
+                # doner — MASAUSTU programin surumu (orn. "V2.13"), tahtanin surumu DEGIL. Eskiden
+                # "!= mevcut" diye bakiliyordu: her tahta surekli "Guncelleme mevcut: v2.13" rozeti
+                # gosteriyor ve logu dolduruyordu (Sultan Fatih logunda saniyede bir satir).
+                # Artik SAYISAL karsilastirma: yalniz GERCEKTEN daha yeni bir V6+ surumu rozet acar.
+                # Gercek guncelleme zaten poll'daki `guncelle_hedef` ile yapiliyor (§9.2).
                 new_version = self.network_client.check_version()
-                if new_version and new_version != SETTINGS.get('version'):
+                if new_version and _surum_daha_yeni(SETTINGS.get('version'), new_version):
                     logging.info(f"Version update available: {SETTINGS.get('version')} -> {new_version}")
                     if hasattr(self, 'version_update_label'):
                         QTimer.singleShot(0, lambda: self.version_update_label.setText(f"⬆ Güncelleme mevcut: v{new_version}"))
