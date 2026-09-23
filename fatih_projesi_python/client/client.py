@@ -6224,12 +6224,18 @@ class FatihClientApp(QWidget):
         # Guncelleme: uyku degil + hedef var + surumden farkli + tahta KILITLI (ders ortasini kesmez).
         hedef = getattr(nc, 'son_guncelle_hedef', '') or ''
         mevcut = SETTINGS.get('version', '') or ''
-        if hedef and hedef == mevcut:
+        # SURUM DUSURME YOK (23 Eyl 2026 saha, Sultan Fatih tahta 2): panelde hedef V6.00.64'te
+        # kalmisti, tahta V6.00.65'teydi. "hedef != mevcut" oldugu icin tahta her acilista
+        # guncellemeye kalkiyor, sabit adli paketi (icinde 65) indirip kuruyor, surum yine 65
+        # kaliyor -> sonsuz dongu: her acilista 35 MB indirme + yeniden baslatma.
+        # Artik mevcut surum hedefe ESIT ya da ONDAN YENIYSE hedef temizlenir.
+        if hedef and (hedef == mevcut or _surum_daha_yeni(hedef, mevcut)):
             # Zaten hedef surumdeyiz (guncelleme basarili ya da gereksiz) — sunucudaki
             # guncelle_hedef bayragini bosla ki bir daha denenmesin (ACK ile temizle).
             try:
                 self.network_client.set_value("guncelle_hedef", "")
-                logging.info(f"[GUNCELLEME] hedef surumdeyiz ({mevcut}) — guncelle_hedef temizlendi.")
+                logging.info(f"[GUNCELLEME] surum hedefe esit/ustu (mevcut={mevcut}, hedef={hedef}) "
+                             f"— guncelle_hedef temizlendi.")
             except Exception:
                 pass
         elif hedef and hedef != mevcut and self.is_locked:
