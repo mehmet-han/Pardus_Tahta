@@ -753,6 +753,42 @@ def sync_network_time():
         logging.error(f"Saat senkronu basarisiz: {e}")
         return False
 
+def istek_zamani() -> int:
+    """Sunucuya giden X-Timestamp icin DUZELTILMIS epoch saniye.
+
+    SAHA (29 Eyl 2026): X-Timestamp ham `time.time()` idi; NTP ofseti hic uygulanmiyordu.
+    Sistem saati 5 dk'dan fazla kaymis tahta (bitmis BIOS pili / engelli NTP) her istekte
+    "X-Timestamp outside replay window" -> 401 aliyor, sunucuyla HIC konusamiyordu
+    (kilit komutu, guncelleme, hicbiri). V6.00.66'nin kimlik-reddi korumasi bunu 17 okulda
+    "kimlik gecersiz" diye YANLIS etiketle gorunur kildi."""
+    return int(time.time() + _TIME_OFFSET_SEC)
+
+
+def saati_sunucudan_duzelt(yanit) -> bool:
+    """YEDEK SAAT KAYNAGI: sunucu yanitinin HTTP `Date` basligindan ofset hesaplar.
+    FATIH agi NTP'yi (UDP 123) sik sik engelliyor; bu durumda ofset 0 kaliyordu.
+    Her HTTPS yanitinda (401 dahil) Date basligi var -> NTP olmadan da duzeltilir.
+    Ofset 60 sn'den az degisiyorsa dokunmaz (gereksiz oynama olmasin). Doner: duzeltti mi."""
+    global _TIME_OFFSET_SEC, _TIME_SYNCED
+    try:
+        from email.utils import parsedate_to_datetime
+        baslik = yanit.headers.get('Date') if yanit is not None else None
+        if not baslik:
+            return False
+        sunucu = parsedate_to_datetime(baslik).timestamp()
+        yeni = sunucu - time.time()
+        if _TIME_SYNCED and abs(yeni - _TIME_OFFSET_SEC) < 60:
+            return False
+        logging.warning(f"Saat sunucu Date basligindan duzeltildi: ofset {_TIME_OFFSET_SEC:+.0f} -> "
+                        f"{yeni:+.0f} sn (NTP engelli/yanlis olabilir).")
+        _TIME_OFFSET_SEC = yeni
+        _TIME_SYNCED = True
+        return True
+    except Exception as e:
+        logging.debug(f"saati_sunucudan_duzelt: {e}")
+        return False
+
+
 # ESKİ KIRIK ÇEVRİMDIŞI FORMÜL KALDIRILDI (14 Ağu 2026, §9.5):
 # generate_dynamic_password / validate_dynamic_password (C# pctrl.ps/pc karşılığı,
 # "Yıl·gün·dk·85"). Öğrenciler çözmüştü: girdiler (yıl/gün/dakika) herkesçe biliniyordu,
@@ -2805,7 +2841,7 @@ class NetworkClient:
         token = get_setting('device_token', '') or None
         headers = {
             "User-Agent": _agt,
-            "X-Timestamp": str(int(time.time())),
+            "X-Timestamp": str(istek_zamani()),   # NTP/Date ofsetli (bkz. istek_zamani)
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -2839,9 +2875,28 @@ class NetworkClient:
                 # calismaya devam eder. Ust katman bunu gorup sahipsiz nabza doner (asagida
                 # _kimlik_reddi_kontrol). Gecici 401 ihtimaline karsi ardarda 3 kez sart.
                 if response.status_code == 401:
-                    self.kimlik_red_sayac = getattr(self, 'kimlik_red_sayac', 0) + 1
+                    # 401'IN IKI AYRI ANLAMI (29 Eyl 2026 saha): sunucu hem "token gecersiz"
+                    # (gercek kimlik devri) hem "X-Timestamp outside replay window" (tahtanin
+                    # SAATI yanlis) icin 401 donuyor. Ikincisi kimlik sorunu DEGIL: V6.00.66
+                    # 17 okulda saati kaymis tahtalara "yeniden tanitilmali" dedi. Zaman
+                    # damgasi hatasinda saat sunucunun Date basligindan duzeltilir ve kimlik
+                    # sayaci ARTMAZ; bir sonraki istek duzeltilmis saatle gecer.
+                    _desc = ''
+                    try:
+                        _desc = str((response.json() or {}).get('desc') or '')
+                    except Exception:
+                        pass
+                    if 'timestamp' in _desc.lower():
+                        saati_sunucudan_duzelt(response)
+                        logging.warning(f"401 zaman damgasi reddi — saat duzeltildi, kimlik saglam ({endpoint}).")
+                    else:
+                        self.kimlik_red_sayac = getattr(self, 'kimlik_red_sayac', 0) + 1
                 return None
             self.kimlik_red_sayac = 0
+            # NTP hic basarili olmadiysa (FATIH agi UDP 123'u engelliyor olabilir) basarili
+            # yanittaki Date basligiyla saati bir kez kalibre et.
+            if not _TIME_SYNCED:
+                saati_sunucudan_duzelt(response)
             return response
         except requests.exceptions.SSLError as e:
             _url = None
@@ -2880,7 +2935,7 @@ class NetworkClient:
         _agt = _dx("1106170a012c615d534455320e131611")
         headers = {
             "User-Agent": _agt,
-            "X-Timestamp": str(int(time.time())),
+            "X-Timestamp": str(istek_zamani()),   # NTP/Date ofsetli (bkz. istek_zamani)
         }
         if kurulum_kodu:
             headers["X-Kurulum-Kodu"] = kurulum_kodu
@@ -3058,7 +3113,7 @@ class NetworkClient:
                 "cihaz_iz": _cihaz_izi(),
             }
             r = requests.post(self._base_url() + "/sahipsiz", json=govde,
-                              headers={"X-Timestamp": str(int(time.time()))}, timeout=15, verify=True)
+                              headers={"X-Timestamp": str(istek_zamani())}, timeout=15, verify=True)
             if r.status_code == 200:
                 j = r.json() or {}
                 return bool((j.get('result') or {}).get('kaldir'))
@@ -6090,6 +6145,19 @@ class FatihClientApp(QWidget):
             self._kimlik_reddi_kontrol()
         except Exception as e:
             logging.debug(f"_kimlik_reddi_kontrol: {e}")
+        # GERI DONUS (29 Eyl 2026): kimlik reddi durumuna dusmus tahta sonra BASARILI yanit
+        # aldiysa (orn. saat duzeltildi, token aslinda saglam) uyari ve sahipsiz nabiz kalkar.
+        # V6.00.66'da bayrak bir kez kalkinca asla inmiyordu.
+        if commands is not None and getattr(self, '_kimlik_reddedildi', False):
+            self._kimlik_reddedildi = False
+            try:
+                if getattr(self, '_sahipsiz_timer', None) is not None:
+                    self._sahipsiz_timer.stop()
+                    self._sahipsiz_timer = None
+                self.message_label.setText('')
+            except Exception:
+                pass
+            logging.warning("[KIMLIK] Sunucu yeniden kabul etti — kimlik reddi durumu kaldirildi.")
         if commands is not None:
             logging.info("Successfully polled server.")
             self.network_status_signal.emit(True)
