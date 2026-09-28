@@ -1255,11 +1255,15 @@ class EmbeddedNumpad(QWidget):
         return None
 
     def add_char(self, char):
+        # basim: tani sayaci (29 Eyl 2026) — "uc alan da bos" vakalarinda numpad'e hic
+        # basildi mi sorusunu kayittan cevaplamak icin (bkz. ChangePasswordWidget telemetri).
+        self.basim = getattr(self, 'basim', 0) + 1
         w = self._get_field()
         if w:
             w.insert(char)
 
     def backspace(self, checked=False):
+        self.basim = getattr(self, 'basim', 0) + 1
         w = self._get_field()
         if w:
             w.backspace()
@@ -1882,6 +1886,14 @@ class ChangePasswordWidget(QWidget):
         # change_password calistiriyordu -> operator numpad'den yazip Enter'a basinca alan degismiyor,
         # "Tum alanlari doldurun" yiyor, dokunmatikte alt alana da tiklayamayinca takiliyordu.
         self.numpad = EmbeddedNumpad(on_enter_callback=self._enter_ilerle)
+        # YONLENDIRME (29 Eyl 2026 saha): Konak Kazim Karabekir'de 63'ten 66'ya 7 kez "uc alan da
+        # bos". Dokunmatik tahtada fiziksel klavye yoksa kullanici alana dokunup telefon gibi ekran
+        # klavyesi bekliyor, alttaki tus takimini fark etmiyor olabilir. Acik yonlendirme satiri.
+        _ipucu = QLabel("Şifreleri aşağıdaki tuş takımıyla girin. Bir kutuya dokununca o kutuya yazılır.")
+        _ipucu.setWordWrap(True)
+        _ipucu.setAlignment(Qt.AlignCenter)
+        _ipucu.setStyleSheet("color: #9ca3af; font-size: 12px; margin-top: 4px;")
+        layout.addWidget(_ipucu)
         layout.addWidget(self.numpad)
         # Varsayılan şifrede numpad doğrudan "Yeni Şifre" alanına yazsın
         if self._is_default_password:
@@ -1942,6 +1954,9 @@ class ChangePasswordWidget(QWidget):
         elif event.type() == event.Type.MouseButtonPress and isinstance(obj, QLineEdit):
             self.numpad.set_target(obj)
             obj.setFocus()
+            self._alan_dokunma = getattr(self, '_alan_dokunma', 0) + 1   # tani (29 Eyl)
+        elif event.type() == event.Type.KeyPress and isinstance(obj, QLineEdit):
+            self._klavye_tus = getattr(self, '_klavye_tus', 0) + 1       # tani (29 Eyl)
         return super().eventFilter(obj, event)
 
     def close_widget(self, *args, **kwargs):
@@ -1993,11 +2008,24 @@ class ChangePasswordWidget(QWidget):
             if self._bos_alan_sayac == 3:
                 # kilitli/klavye_kilidi (15 Eyl 2026): "uc alan da bos" vakasinin sebebi evdev grab'di;
                 # tekrar ederse durumun ayni olup olmadigi kayittan okunsun.
+                # numpad/klavye/dokunma/ekran (29 Eyl 2026): "uc alan bos" vakasinda giris hic
+                # ulasmadi mi (numpad>0 ama alanlar bos = giris kusuru), yoksa kullanici hic
+                # yazmadi mi (numpad=0, klavye=0 = yonlendirme sorunu)? Ekran olcusu: kucuk
+                # cozunurlukte form tasip tus takimi gorunmuyor olabilir.
+                try:
+                    _ek = QApplication.primaryScreen().size()
+                    _ekran = f"{_ek.width()}x{_ek.height()}"
+                except Exception:
+                    _ekran = '?'
                 _hata_bildir("arayuz", "uyari",
                              "SifreDegistir: 3x 'Tum alanlari doldurun' — dokunmatik odak/giris sorunu olabilir",
                              f"dolu: mevcut={bool(current)} yeni={bool(new)} tekrar={bool(confirm)} "
                              f"kilitli={getattr(self.parent, 'is_locked', None)} "
-                             f"klavye_kilidi={getattr(self.parent, 'keyboard_locker', None) is not None}")
+                             f"klavye_kilidi={getattr(self.parent, 'keyboard_locker', None) is not None} "
+                             f"numpad={getattr(self.numpad, 'basim', 0)} "
+                             f"klavye={getattr(self, '_klavye_tus', 0)} "
+                             f"dokunma={getattr(self, '_alan_dokunma', 0)} "
+                             f"ekran={_ekran} form={self.width()}x{self.height()}")
             return
         self._bos_alan_sayac = 0
         for _w in (self.current_field, self.new_field, self.confirm_field):
