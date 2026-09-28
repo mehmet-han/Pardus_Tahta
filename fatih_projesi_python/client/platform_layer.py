@@ -627,14 +627,29 @@ class WindowsBackend(PlatformBackend):
                                    r"Software\Microsoft\Wisp\Touch", 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(k, "TouchGestureSetting", 0, winreg.REG_DWORD, 0)
             winreg.CloseKey(k)
+            # ILKE HEMEN ETKILI OLSUN (29 Eyl 2026 saha): Windows EdgeUI ilkesini oturum
+            # acilisinda okuyor; otomatik guncellemeyle gelen tahtalarda yeniden oturum acilana
+            # dek kenar kaydirma calismaya devam etti (Sultan Fatih/Final Anadolu'da bildirim
+            # merkezi 300+ kez acildi). "Policy" yayini explorer'a ilkeleri tazelemesini soyler.
+            # Kabuk bunu hemen uygulamazsa bile zarar yok: nobetci zaten geri aliyor.
+            try:
+                sonuc = wintypes.DWORD(0)
+                self._user32.SendMessageTimeoutW(self._ctypes.c_void_p(0xFFFF), 0x001A, 0,
+                                                 self._ctypes.c_wchar_p("Policy"), 0x0002, 2000,
+                                                 self._ctypes.byref(sonuc))
+            except Exception as e:
+                logging.debug(f"Policy yayini gonderilemedi: {e}")
             logging.info("Dokunmatik kabuk hareketleri kapatildi (EdgeSwipe/3-4 parmak).")
         except Exception as e:
             logging.error(f"harden_touch_gestures hata: {e}")
 
     # Kabuk pencereleri: Gorev Gorunumu / Baslat / Bildirim merkezi / Arama.
+    # ForegroundStaging CIKARILDI (29 Eyl 2026): Windows'un HER odak degisiminde kisa sure
+    # olusturdugu gecici pencere; nobetci kilidi one aldiginda da olusuyor ve kendi kendini
+    # "girisim" sayiyordu (99983518'de 139 yanlis alarm).
     _KABUK_SINIFLARI = ("MultitaskingViewFrame", "XamlExplorerHostIslandWindow",
                         "Windows.UI.Core.CoreWindow", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
-                        "TaskListThumbnailWnd", "ForegroundStaging")
+                        "TaskListThumbnailWnd")
 
     def _on_plandaki_sinif(self):
         c = self._ctypes

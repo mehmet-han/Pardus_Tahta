@@ -6815,18 +6815,24 @@ class FatihClientApp(QWidget):
                 # "ogrenci Gorev Gorunumu acti" ile "arka planda bir uygulama one ziplıyor"
                 # birbirinden ayirt edilir (23 Eyl: 169 tetikleme, sebebi ayirt edilemedi).
                 _sinif = _sonuc.get('sinif') or '?'
-                _hata_bildir("guvenlik", "uyari",
-                             f"Kilitliyken kabuk mudahalesi geri alindi ({_sinif})",
-                             f"surum={SETTINGS.get('version')} sinif={_sinif} "
-                             f"surec={_sonuc.get('surec') or '?'} "
-                             f"masaustunde={_sonuc.get('masaustunde')}")
-                # OLAY GECMISI + SUPHELI ACILIS (kullanici: "bu tur acilislarda haber verecekti,
-                # vermedi"): kilit COZULMEDIGI icin acilis uyarisi tetiklenmiyordu. Girisim artik
-                # tahta olay kaydina duser (ynt5 Olay Gecmisi); dakikada en fazla 1 kayit.
+                # HATA GUNLUGUNE YAZILMAZ (29 Eyl 2026): bunlar program hatasi degil GUVENLIK
+                # OLAYI; 4 okulda 560+ kayitla hata gunlugunu bogdu. Yalniz tahta olay kaydina
+                # duser -> ynt5 Supheli Acilislar 'Kilit atlatma' (v5 vog='guvenlik').
+                # Hangi panelin acildigi olay metnine girer (ornegin bildirim merkezi mi, sanal
+                # masaustu mu) — okula geri bildirim verirken ayirt edilsin.
+                _ne = ('sanal masaustu' if _sonuc.get('masaustunde') is False
+                       else {'Windows.UI.Core.CoreWindow': 'bildirim/hizli ayarlar paneli',
+                             'MultitaskingViewFrame': 'Gorev Gorunumu',
+                             'XamlExplorerHostIslandWindow': 'Gorev Gorunumu/Baslat',
+                             'Shell_TrayWnd': 'gorev cubugu',
+                             'Shell_SecondaryTrayWnd': 'gorev cubugu',
+                             'TaskListThumbnailWnd': 'gorev cubugu onizleme'}.get(_sinif, _sinif))
+                # Dakikada en fazla 1 kayit (bir ogrenci art arda denerse olay kaydi sismesin).
                 simdi = time.time()
                 if simdi - getattr(self, '_nobetci_son_olay', 0) > 60:
                     self._nobetci_son_olay = simdi
-                    self.save_log("Kilit atlatma girisimi: dokunmatik Gorev Gorunumu/sanal masaustu — geri alindi",
+                    self.save_log(f"Kilit atlatma girisimi: {_ne} — geri alindi "
+                                  f"({_sinif} / {_sonuc.get('surec') or '?'})",
                                   "guvenlik")
         except Exception as e:
             logging.debug(f"_kiosk_nobetci_tick: {e}")
