@@ -1511,6 +1511,10 @@ class BoardConfigWidget(QWidget):
         confirm_btn.clicked.connect(self.confirm_selection)
         confirm_btn.setDefault(True)
         button_layout.addWidget(confirm_btn)
+        self.confirm_btn = confirm_btn
+        # Dolu sinif onayi formun ICINDE iki adimli (bkz. confirm_selection); secim degisince sifirla.
+        self._dolu_onay_id = None
+        self.board_list_widget.currentRowChanged.connect(self._dolu_onay_sifirla)
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
@@ -1614,7 +1618,8 @@ class BoardConfigWidget(QWidget):
                         item = QListWidgetItem(etiket)
                         item.setData(Qt.UserRole, board_id)
                         if dolu:
-                            item.setForeground(QColor("#ffaa00"))
+                            # Koyu turuncu: liste zemini acik; #ffaa00 sahada zor okunuyordu (30 Eyl foto).
+                            item.setForeground(QColor("#b45309"))
                             item.setToolTip(f"Bu sınıfa zaten bir cihaz tanıtılmış "
                                             f"(son görülme: {board.get('sonGorulme') or 'bilinmiyor'}).")
                         self.board_list_widget.addItem(item)
@@ -1653,6 +1658,14 @@ class BoardConfigWidget(QWidget):
             self.status_label.setStyleSheet("color: #ff5555;")
             self.status_label.setText("Hata: Ağ hatası oluştu.")
 
+    def _dolu_onay_sifirla(self, *args):
+        """Dolu sinif onayini geri al: dugme eski haline doner (secim degisti ya da onay kullanildi)."""
+        if getattr(self, '_dolu_onay_id', None) is None:
+            return
+        self._dolu_onay_id = None
+        self.confirm_btn.setText("Onayla")
+        self.confirm_btn.setStyleSheet("")
+
     def confirm_selection(self, checked=False):
         logging.info("[BoardConfig] confirm_selection called")
         
@@ -1682,26 +1695,27 @@ class BoardConfigWidget(QWidget):
         # panelde gorunmez, uzaktan kaldirilamaz, kilit ekraniyla calismaya devam eder
         # (737238'de iki cihaz 8/G'ye tanitildi, biri boyle ortada kaldi). Teknisyen bunu
         # BILEREK secsin diye acik onay soruluyor.
+        #
+        # ONAY FORMUN ICINDE, AYRI PENCERE YOK (30 Eyl 2026 saha, 749349 V6.00.67): onay eskiden
+        # QMessageBox idi. Pardus'ta kilit penceresi X11BypassWindowManagerHint ile WM'yi atliyor;
+        # WM'nin yonettigi kutu onun ALTINDA kaliyordu -> gorunmeyen modal exec() tum girisi
+        # kesti, tahta "Onayla"ya basildigi anda dondu (yalniz yeniden baslatma kurtardi).
+        # Artik ilk basista durum satirinda uyari + dugme "Evet, yine de tanıt" olur; ikinci
+        # basis devam ettirir. Liste secimi degisirse onay sifirlanir.
         _secili = next((b for b in self.boards if b.get("boardId") == selected_board_id), {})
-        if _secili.get("tanitilmis"):
-            _kutu = QMessageBox(self)
-            _kutu.setIcon(QMessageBox.Warning)
-            _kutu.setWindowTitle("Bu sınıfta kurulu cihaz var")
-            _kutu.setText(
-                f"{board_name} sınıfına zaten bir cihaz tanıtılmış "
-                f"(son görülme: {_secili.get('sonGorulme') or 'bilinmiyor'}).\n\n"
-                "Devam ederseniz o cihaz devre dışı kalır: panelde görünmez, uzaktan "
-                "KALDIRILAMAZ ve kilit ekranıyla çalışmaya devam eder. Eski cihaz hâlâ "
-                "kullanımdaysa önce onu kaldırın.\n\nDevam edilsin mi?")
-            _kutu.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            _kutu.setDefaultButton(QMessageBox.No)
-            _kutu.button(QMessageBox.Yes).setText("Evet, devam et")
-            _kutu.button(QMessageBox.No).setText("Vazgeç")
-            _kutu.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
-            if _kutu.exec() != QMessageBox.Yes:
-                self.status_label.setStyleSheet("color: #ffaa00;")
-                self.status_label.setText("Tanıtım iptal edildi (sınıfta kurulu cihaz korundu).")
-                return
+        if _secili.get("tanitilmis") and self._dolu_onay_id != selected_board_id:
+            self._dolu_onay_id = selected_board_id
+            self.confirm_btn.setText("Evet, yine de tanıt")
+            self.confirm_btn.setStyleSheet("background-color: #cc5500; color: white;")
+            self.status_label.setStyleSheet("color: #ffaa00; font-weight: bold;")
+            self.status_label.setWordWrap(True)
+            self.status_label.setText(
+                f"⚠ {board_name} sınıfına zaten bir cihaz tanıtılmış "
+                f"(son görülme: {_secili.get('sonGorulme') or 'bilinmiyor'}). Devam ederseniz o "
+                "cihaz devre dışı kalır. Emin değilseniz başka sınıf seçin ya da İptal'e basın; "
+                "eminseniz 'Evet, yine de tanıt'a basın.")
+            return
+        self._dolu_onay_sifirla()
 
         # v6: tahta secildi -> cihaz token'i uret (/enroll). Token OLMADAN config yazMA;
         # yarim yazilirsa tahta kimliksiz kalir ve fail-safe ile kilitli acilir (sebebi de gorunmez).
@@ -1794,12 +1808,14 @@ class BoardConfigWidget(QWidget):
             # Kilit ekranında pencereyi düzgünce kapatmak için 1.5 sn bekle
             QTimer.singleShot(1500, self.close_widget)
 
+        # Hatalar durum satirinda (30 Eyl 2026): form kilit ekrani overlay'inde; QMessageBox Pardus'ta
+        # kilit penceresinin altinda kalip gorunmeyen modal ile ekrani donduruyordu.
         except PermissionError:
-            QMessageBox.critical(self, "İzin Hatası",
-                                 f"Yapılandırma dosyası kaydedilemedi: '{CONFIG_PATH}'.\n"
-                                 "Ayarları değiştirmek için lütfen uygulamayı yönetici olarak çalıştırın (örn. 'sudo').")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText(f"Hata: Yapılandırma dosyası kaydedilemedi (izin yok): {CONFIG_PATH}")
         except Exception as e:
-            QMessageBox.warning(self, "Hata", f"Yapılandırma kaydedilemedi: {e}")
+            self.status_label.setStyleSheet("color: #ff5555;")
+            self.status_label.setText(f"Hata: Yapılandırma kaydedilemedi: {e}")
 
 
 # --- Change Password Dialog ---
@@ -7798,15 +7814,11 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
         # Şifre Zorunluluğu Kuralı:
         _pw = SETTINGS.get('admin_password', '803580')
         if _pw == '803580' or _pw == 'mebre':
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Uyarı")
-            msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
-            msg.exec()
-            
-            QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+            # Overlay, QMessageBox DEGIL (30 Eyl 2026): Pardus'ta kilit penceresi WM'yi atladigi icin
+            # ayri kutu altinda kalip gorunmeyen modal ile ekrani donduruyordu (bkz. confirm_selection).
+            LockScreenOverlay(self, title="Uyarı", text=(
+                "Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan "
+                "yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz."))
             return
 
         widget = BoardConfigWidget(self, network_client=self.network_client)
@@ -8804,15 +8816,11 @@ ________________________________________________________________________________
         # Şifre Zorunluluğu Kuralı:
         _pw = SETTINGS.get('admin_password', '803580')
         if _pw == '803580' or _pw == 'mebre':
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Uyarı")
-            msg.setText("Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz.")
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
-            msg.exec()
-            
-            QTimer.singleShot(50, lambda: (self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive), self.show(), self.raise_(), self.activateWindow()))
+            # Overlay, QMessageBox DEGIL (30 Eyl 2026): Pardus'ta kilit penceresi WM'yi atladigi icin
+            # ayri kutu altinda kalip gorunmeyen modal ile ekrani donduruyordu (bkz. confirm_selection).
+            LockScreenOverlay(self, title="Uyarı", text=(
+                "Tahta yapılandırmasını değiştirmeden önce güvenlik gereği cihazın varsayılan "
+                "yönetim şifresini 'Şifre Değiştir' menüsünden değiştirmelisiniz."))
             return
 
         widget = BoardConfigWidget(self, network_client=self.network_client)
