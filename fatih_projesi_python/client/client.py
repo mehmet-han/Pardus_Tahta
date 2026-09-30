@@ -7541,10 +7541,15 @@ class FatihClientApp(QWidget):
 
         context_menu.addSeparator()
 
-        # Change password
-        change_pass_action = QAction("Şifre Değiştir", self)
-        change_pass_action.triggered.connect(self.show_change_password)
-        context_menu.addAction(change_pass_action)
+        # Change password — KILITLIYKEN YOK (30 Eyl 2026 saha): kilitli tahtada ogretmen care ararken
+        # buraya giriyor, mevcut sifreyi bilmedigi icin bos "Degistir"e basiyordu (19 okul "uc alan
+        # bos" kaydi; 749349). Sifre degistirmek kilidi acmaz. Kilitliyken yalniz FABRIKA sifresi
+        # duruyorsa gosterilir (ilk kurulumda Tahta Yapilandirmasi once sifre degisikligi istiyor).
+        # Ozel sifre yonetici acinca degistirilir (tepsi -> Göster -> sag tik).
+        if not self.is_locked or admin_sifre_varsayilan_mi():
+            change_pass_action = QAction("Şifre Değiştir", self)
+            change_pass_action.triggered.connect(self.show_change_password)
+            context_menu.addAction(change_pass_action)
 
         # Board configuration
         board_config_action = QAction("Tahta Yapılandırması", self)
@@ -8494,10 +8499,12 @@ class FatihKioskMode(QMainWindow):
         board_config_action.triggered.connect(self.kiosk_show_board_config)
         context_menu.addAction(board_config_action)
 
-        # Şifre Değiştir
-        change_pass_action = QAction("Şifre Değiştir", self)
-        change_pass_action.triggered.connect(self.kiosk_show_change_password)
-        context_menu.addAction(change_pass_action)
+        # Şifre Değiştir — kiosk hep kilit ekrani: yalniz FABRIKA sifresinde (bkz. show_context_menu,
+        # 30 Eyl 2026). Ozel sifre, oturum acildiktan sonra ana programin menusunden degistirilir.
+        if admin_sifre_varsayilan_mi():
+            change_pass_action = QAction("Şifre Değiştir", self)
+            change_pass_action.triggered.connect(self.kiosk_show_change_password)
+            context_menu.addAction(change_pass_action)
 
         context_menu.addSeparator()
 
