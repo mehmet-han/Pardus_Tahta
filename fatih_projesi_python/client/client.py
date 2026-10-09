@@ -1517,6 +1517,20 @@ class BoardConfigWidget(QWidget):
         self.board_list_widget.currentRowChanged.connect(self._dolu_onay_sifirla)
 
         layout.addLayout(button_layout)
+
+        # YONETICI SIFRESI BURADAN (9 Eki 2026 saha): V6.00.68 "Sifre Degistir"i kilit menusunden
+        # kaldirdi (ogretmenler care ararken oraya girip bos Degistir'e basiyordu, 19 okul kaydi);
+        # ama yoneticiye kilitliyken ulasabilecegi bir yol kalmadi -> okul "secenek cikmiyor" dedi.
+        # Dugme bu formun icinde: yonetici bulur, ogretmen yanlislikla girmez. Mevcut sifreyi
+        # Sifre Degistir ekrani zaten soruyor.
+        sifre_btn = QPushButton("Yönetici Şifresini Değiştir")
+        sifre_btn.setMinimumHeight(34)
+        sifre_btn.setFont(QFont("Arial", 10))
+        sifre_btn.setFocusPolicy(Qt.NoFocus)
+        sifre_btn.setStyleSheet("background-color: #444444; color: white;")
+        sifre_btn.clicked.connect(self._sifre_degistir_ac)
+        layout.addWidget(sifre_btn)
+
         self.setLayout(layout)
 
     def _connect_focus_tracking(self):
@@ -1542,6 +1556,17 @@ class BoardConfigWidget(QWidget):
                 self.close_callback()
             except RuntimeError:
                 pass  # callback hedefi (or. silinmis overlay) yok olmus — sessizce gec
+
+    def _sifre_degistir_ac(self, checked=False):
+        """Bu formu kapatip Sifre Degistir formunu acar. Once kapat: iki overlay ust uste binmesin
+        ve klavye kilidi/X grab'i tek formun elinde kalsin. Acilis gecikmeli — kapanista geri
+        kurulan klavye kilidinin yeni form icin duzgun birakilabilmesi icin."""
+        win = self.parent
+        ac = getattr(win, 'show_change_password', None) or getattr(win, 'kiosk_show_change_password', None)
+        if ac is None:
+            return
+        self.close_widget()
+        QTimer.singleShot(300, ac)
 
     def fetch_boards(self, checked=False):
         logging.info("[BoardConfig] fetch_boards called")
