@@ -1740,18 +1740,47 @@ class BoardConfigWidget(QWidget):
                 "cihaz devre dışı kalır. Emin değilseniz başka sınıf seçin ya da İptal'e basın; "
                 "eminseniz 'Evet, yine de tanıt'a basın.")
             return
+        # DEVRALMA ICIN KURULUM KODU (13 Eki 2026 saha, 99911259): baska cihazin kullandigi kayda
+        # gecmek icin sunucu kurulum kodu istiyor (yonetici sifresi tek basina yetmez; bir tahtadan
+        # tum okulun kimligi ezilebiliyordu). Kod girilmediyse sunucuya gitmeden yol goster.
+        _kendi_kaydi = str(SETTINGS.get('board_id', '')) == str(selected_board_id)
+        if _secili.get("tanitilmis") and not _kendi_kaydi and not get_setting('kurulum_kodu', ''):
+            self.status_label.setStyleSheet("color: #ffaa00; font-weight: bold;")
+            self.status_label.setText(
+                f"{board_name} sınıfında kurulu cihaz var. Devralmak için Mebre panelinden alınan "
+                "12 haneli Kurulum Kodu'nu girip 'Tahtaları Getir'e, sonra tekrar Onayla'ya basın.")
+            self.kurulum_kodu_field.setFocus()
+            self.numpad.set_target(self.kurulum_kodu_field)
+            return   # onay adimi KORUNUR: kod girilince tekrar "Evet, yine de tanit" istenmez
         self._dolu_onay_sifirla()
 
         # v6: tahta secildi -> cihaz token'i uret (/enroll). Token OLMADAN config yazMA;
         # yarim yazilirsa tahta kimliksiz kalir ve fail-safe ile kilitli acilir (sebebi de gorunmez).
         self.status_label.setStyleSheet("color: #00aaff;")
         self.status_label.setText("Tahta tanıtılıyor, lütfen bekleyin...")
+        # Onayla kilitli: 99911259'da ayni kayda 6 saniyede 6 tanitim (dugmeye ardarda basma).
+        self.confirm_btn.setEnabled(False)
         QApplication.processEvents()
 
-        device_token = self.network_client.enroll(corporate_code, selected_board_id, board_name)
+        try:
+            device_token = self.network_client.enroll(corporate_code, selected_board_id, board_name)
+        finally:
+            self.confirm_btn.setEnabled(True)
         if not device_token:
+            _h = getattr(self.network_client, 'son_enroll_hata', '')
             self.status_label.setStyleSheet("color: #ff5555;")
-            self.status_label.setText("Hata: Tahta tanıtılamadı! Ayarlar kaydedilmedi.")
+            if _h == "dolu":
+                self.status_label.setText(
+                    f"Hata: {board_name} sınıfında kurulu cihaz var; devralmak için geçerli bir "
+                    "Kurulum Kodu gerekli (panelden alın, 'Tahtaları Getir' ile yeniden deneyin).")
+            elif _h == "401":
+                self.status_label.setText("Hata: Kurulum kodu geçersiz ya da süresi dolmuş (401).")
+            elif _h == "403":
+                self.status_label.setText("Hata: Bu tahta bu kuruma ait değil (403).")
+            elif _h in ("ag", "ssl"):
+                self.status_label.setText("Hata: Sunucuya ulaşılamadı. Ağ bağlantısını kontrol edin.")
+            else:
+                self.status_label.setText("Hata: Tahta tanıtılamadı! Ayarlar kaydedilmedi.")
             return
 
         token_enc = _enc2_yaz(device_token)  # §9.3 Acik 2: makineye bagli sifreleme
@@ -3018,6 +3047,14 @@ class NetworkClient:
             if response.status_code != 200:
                 logging.error(f"Enroll API Error: {response.status_code} @ {endpoint}")
                 self.son_enroll_hata = str(response.status_code)
+                # DEVRALMA KAPISI (13 Eki 2026): sunucu, baska cihazin kullandigi kayda kurulum
+                # kodsuz gecisi 403 ile reddeder (v5 service.enroll). Ekranda ayri mesaj icin.
+                if response.status_code == 403:
+                    try:
+                        if 'installation code' in str((response.json() or {}).get('desc') or '').lower():
+                            self.son_enroll_hata = "dolu"
+                    except Exception:
+                        pass
                 return None
             return response
         except requests.exceptions.SSLError as e:
@@ -7571,10 +7608,13 @@ class FatihClientApp(QWidget):
         # bos" kaydi; 749349). Sifre degistirmek kilidi acmaz. Kilitliyken yalniz FABRIKA sifresi
         # duruyorsa gosterilir (ilk kurulumda Tahta Yapilandirmasi once sifre degisikligi istiyor).
         # Ozel sifre yonetici acinca degistirilir (tepsi -> Göster -> sag tik).
-        if not self.is_locked or admin_sifre_varsayilan_mi():
-            change_pass_action = QAction("Şifre Değiştir", self)
-            change_pass_action.triggered.connect(self.show_change_password)
-            context_menu.addAction(change_pass_action)
+        # GERI GELDI, ACIK ADLA (13 Eki 2026 saha): V6.00.68'de kilitliyken kaldirilmis, 69'da yalniz
+        # Tahta Yapilandirmasi icine konmustu; okullar sag tik menusunde aradi, bulamadi ("sifre
+        # degistir calismiyor"). Ad "Yönetici Şifresini Değiştir": ogretmen bunun kilidi ACMADIGINI
+        # addan anlasin (eski sorun: care ararken "Sifre Degistir"e girip bos Degistir'e basiyordu).
+        change_pass_action = QAction("Yönetici Şifresini Değiştir", self)
+        change_pass_action.triggered.connect(self.show_change_password)
+        context_menu.addAction(change_pass_action)
 
         # Board configuration
         board_config_action = QAction("Tahta Yapılandırması", self)
@@ -7842,8 +7882,9 @@ Akıllı tahta güvenliği ve yönetimi için tasarlanmıştır.
     def show_board_config(self, checked=False):
         """Show board configuration dialog"""
         # Şifre Zorunluluğu Kuralı:
-        _pw = SETTINGS.get('admin_password', '803580')
-        if _pw == '803580' or _pw == 'mebre':
+        # admin_sifre_varsayilan_mi (13 Eki 2026): eski duz karsilastirma PBKDF2 ile saklanan
+        # fabrika sifresini TANIMIYORDU -> kapi hic calismiyordu.
+        if admin_sifre_varsayilan_mi():
             # Overlay, QMessageBox DEGIL (30 Eyl 2026): Pardus'ta kilit penceresi WM'yi atladigi icin
             # ayri kutu altinda kalip gorunmeyen modal ile ekrani donduruyordu (bkz. confirm_selection).
             LockScreenOverlay(self, title="Uyarı", text=(
@@ -8526,10 +8567,10 @@ class FatihKioskMode(QMainWindow):
 
         # Şifre Değiştir — kiosk hep kilit ekrani: yalniz FABRIKA sifresinde (bkz. show_context_menu,
         # 30 Eyl 2026). Ozel sifre, oturum acildiktan sonra ana programin menusunden degistirilir.
-        if admin_sifre_varsayilan_mi():
-            change_pass_action = QAction("Şifre Değiştir", self)
-            change_pass_action.triggered.connect(self.kiosk_show_change_password)
-            context_menu.addAction(change_pass_action)
+        # Her zaman gorunur, acik adla (13 Eki 2026) — bkz. show_context_menu.
+        change_pass_action = QAction("Yönetici Şifresini Değiştir", self)
+        change_pass_action.triggered.connect(self.kiosk_show_change_password)
+        context_menu.addAction(change_pass_action)
 
         context_menu.addSeparator()
 
@@ -8846,8 +8887,9 @@ ________________________________________________________________________________
     def kiosk_show_board_config(self):
         """Kiosk modunda tahta yapılandırması göster"""
         # Şifre Zorunluluğu Kuralı:
-        _pw = SETTINGS.get('admin_password', '803580')
-        if _pw == '803580' or _pw == 'mebre':
+        # admin_sifre_varsayilan_mi (13 Eki 2026): eski duz karsilastirma PBKDF2 ile saklanan
+        # fabrika sifresini TANIMIYORDU -> kapi hic calismiyordu.
+        if admin_sifre_varsayilan_mi():
             # Overlay, QMessageBox DEGIL (30 Eyl 2026): Pardus'ta kilit penceresi WM'yi atladigi icin
             # ayri kutu altinda kalip gorunmeyen modal ile ekrani donduruyordu (bkz. confirm_selection).
             LockScreenOverlay(self, title="Uyarı", text=(
